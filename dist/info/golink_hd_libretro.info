@@ -29,4 +29,4 @@ needs_fullpath = "false"
 disk_control = "false"
 is_experimental = "true"
 
-description = "go-link HD is a 2D game engine with a 640x360 pixel art screen for games made with Willy Maker. This version plays a built-in platformer demo for 1 to 4 players: start the core with no content."
+description = "go-link HD is a 2D game engine with a 640x360 pixel art screen for games made with Willy Maker. It plays game packages (.glhd) and, with no content, a built-in platformer demo for 1 to 4 players."

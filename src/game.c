@@ -34,8 +34,7 @@ void hd_static_init(void)
 {
    if (initialized)
       return;
-   hd_art_build();
-   hd_level_build();
+   hd_content_builtin();
    hd_audio_build();
    initialized = 1;
 }

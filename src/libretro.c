@@ -4,13 +4,15 @@
  * frontend calls. It only moves data between the frontend and the engine
  * (hd.h): buttons in, one fixed 60 Hz step, a 640 x 360 XRGB8888 frame and
  * 800 stereo samples at 48 kHz out. Started with no content it plays the
- * built-in demo.
+ * built-in demo; given a game package (.glhd) it plays that game.
  */
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "libretro.h"
 #include "hd.h"
+#include "pack.h"
 
 #ifndef GIT_VERSION
 #define GIT_VERSION ""
@@ -189,6 +191,37 @@ void retro_run(void)
    audio_batch_cb(audio_buf, HD_SAMPLES_PER_FRAME);
 }
 
+static size_t content_size;
+
+/*
+ * A package from its path, for frontends that pass only the path although
+ * need_fullpath is false (go-link's device does).
+ */
+static int read_file(const char *path, uint8_t **out, size_t *size)
+{
+   FILE *f = fopen(path, "rb");
+   long n;
+   uint8_t *buf;
+   if (!f)
+      return 0;
+   if (fseek(f, 0, SEEK_END) != 0 || (n = ftell(f)) < 0 || (unsigned long)n > PACK_MAX_BYTES || fseek(f, 0, SEEK_SET) != 0)
+   {
+      fclose(f);
+      return 0;
+   }
+   buf = (uint8_t *)malloc(n ? (size_t)n : 1);
+   if (!buf || fread(buf, 1, (size_t)n, f) != (size_t)n)
+   {
+      free(buf);
+      fclose(f);
+      return 0;
+   }
+   fclose(f);
+   *out = buf;
+   *size = (size_t)n;
+   return 1;
+}
+
 static void describe_input(void)
 {
 #define PAD_DESC(port)                                                                   \
@@ -218,10 +251,25 @@ bool retro_load_game(const struct retro_game_info *game)
    }
    if (game && (game->data || game->path))
    {
-      /* Game packages (.glhd) come in a later version; this one plays its demo. */
-      log_cb(RETRO_LOG_ERROR, "[go-link HD] this version only plays its built-in demo: start the core with no content\n");
-      return false;
+      const char *err = NULL;
+      uint8_t *file = NULL;
+      int ok;
+      if (!game->data && !read_file(game->path, &file, &content_size))
+      {
+         log_cb(RETRO_LOG_ERROR, "[go-link HD] cannot read %s: it is missing, unreadable or over 256 MB\n", game->path);
+         return false;
+      }
+      ok = file ? hd_content_load(file, content_size, &err) : hd_content_load((const uint8_t *)game->data, game->size, &err);
+      free(file);
+      if (!ok)
+      {
+         log_cb(RETRO_LOG_ERROR, "[go-link HD] this game package cannot be played: %s\n", err);
+         return false;
+      }
+      log_cb(RETRO_LOG_INFO, "[go-link HD] playing %s\n", hd_title);
    }
+   else
+      hd_content_builtin();
    describe_input();
    read_options();
    hd_reset(&state);
@@ -236,7 +284,7 @@ bool retro_load_game_special(unsigned type, const struct retro_game_info *info, 
    return false;
 }
 
-void retro_unload_game(void) {}
+void retro_unload_game(void) { hd_content_builtin(); }
 
 unsigned retro_get_region(void) { return RETRO_REGION_NTSC; }
 

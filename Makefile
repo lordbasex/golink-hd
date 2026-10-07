@@ -71,24 +71,27 @@ else
 	$(CC) $(fpic) $(SHARED) -o $@ $(OBJECTS) $(LDFLAGS)
 endif
 
-%.o: %.c src/hd.h src/fixed.h
+%.o: %.c src/hd.h src/fixed.h src/pack.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # The tests build the engine straight in, without the libretro layer's frontend.
 TEST_BIN := hd_test
-$(TEST_BIN): tests/test.c $(SOURCES_C) src/hd.h src/fixed.h
+$(TEST_BIN): tests/test.c $(SOURCES_C) src/hd.h src/fixed.h src/pack.h
 	$(CC) -std=c99 $(WARNINGS) -O2 -fsanitize=address,undefined -fno-sanitize-recover=all $(INCFLAGS) -o $@ tests/test.c $(SOURCES_C)
 
 test: $(TEST_BIN)
 	./$(TEST_BIN)
 
 # A headless libretro frontend: loads the built core, plays a script, saves PNG frames.
-tools: tools/hdrun
+tools: tools/hdrun tools/glhd
+
+tools/glhd: tools/glhd.c $(ENGINE_C) src/hd.h src/fixed.h src/pack.h
+	$(CC) -std=c99 $(WARNINGS) -O2 $(INCFLAGS) -o $@ tools/glhd.c $(ENGINE_C)
 
 tools/hdrun: tools/hdrun.c
 	$(CC) -std=c99 $(WARNINGS) -O2 -Ilibretro -o $@ $< $(if $(filter unix,$(platform)),-ldl,)
 
 clean:
-	rm -f $(OBJECTS) $(TARGET) $(TEST_BIN) tools/hdrun
+	rm -f $(OBJECTS) $(TARGET) $(TEST_BIN) tools/hdrun tools/glhd
 
 .PHONY: all clean test tools

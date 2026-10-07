@@ -3,7 +3,10 @@
  * hdrun: a headless libretro frontend for tests and screenshots. It loads a
  * built core, plays a button script and writes chosen frames as PNG files.
  *
- *   tools/hdrun CORE [--frames N] [--script FILE] [--shot F1,F2,...] [--out DIR]
+ *   tools/hdrun CORE [--content FILE] [--frames N] [--script FILE] [--shot F1,F2,...] [--out DIR]
+ *
+ * With --content the core gets that file's path (like go-link's device);
+ * without it the core starts with no content.
  *
  * A script line is "FRAME PORT BUTTONS": from that frame on, the port holds
  * those buttons (comma separated: up down left right a b x y start select,
@@ -292,7 +295,8 @@ int main(int argc, char **argv)
    void *core;
    long frames = 600, f, shots[64];
    int nshots = 0, i, next = 0;
-   const char *out = ".";
+   const char *out = ".", *content = NULL;
+   struct retro_game_info game;
    void (*set_environment)(retro_environment_t);
    void (*set_video)(retro_video_refresh_t);
    void (*set_audio)(retro_audio_sample_t);
@@ -307,7 +311,7 @@ int main(int argc, char **argv)
 
    if (argc < 2)
    {
-      fprintf(stderr, "usage: %s CORE [--frames N] [--script FILE] [--shot F1,F2] [--out DIR]\n", argv[0]);
+      fprintf(stderr, "usage: %s CORE [--content FILE] [--frames N] [--script FILE] [--shot F1,F2] [--out DIR]\n", argv[0]);
       return 2;
    }
    for (i = 2; i < argc; i++)
@@ -330,6 +334,8 @@ int main(int argc, char **argv)
       }
       else if (!strcmp(argv[i], "--out") && i + 1 < argc)
          out = argv[++i];
+      else if (!strcmp(argv[i], "--content") && i + 1 < argc)
+         content = argv[++i];
    }
    for (n = 0; n < 256; n++)
    {
@@ -372,9 +378,11 @@ int main(int argc, char **argv)
    set_poll(poll);
    set_input(input);
    init();
-   if (!load_game(NULL))
+   memset(&game, 0, sizeof game);
+   game.path = content;
+   if (!load_game(content ? &game : NULL))
    {
-      fprintf(stderr, "the core refused to start with no content\n");
+      fprintf(stderr, content ? "the core refused %s\n" : "the core refused to start with no content\n", content);
       return 1;
    }
    for (f = 0; f < frames; f++)

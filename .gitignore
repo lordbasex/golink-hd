@@ -7,3 +7,8 @@
 hd_test
 tools/hdrun
 *.dSYM/
+tools/glhd
+*.glhd
+!tests/data/*.glhd
+demo/
+walk.out

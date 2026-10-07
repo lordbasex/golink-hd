@@ -24,6 +24,12 @@ jobs:
           # every platform must draw and sound exactly the same
           tools/hdrun ./$core --frames 460 --script tools/runs/walk.txt > walk.out
           diff tools/runs/walk.expected walk.out
+      - name: Packages
+        run: |
+          # the demo exported, packed and played as a package
+          tools/glhd export-demo demo && tools/glhd pack demo demo.glhd && tools/glhd check demo.glhd
+          core=$(ls golink_hd_libretro.*)
+          tools/hdrun ./$core --content demo.glhd --frames 460 --script tools/runs/walk.txt
 
   windows:
     runs-on: windows-latest

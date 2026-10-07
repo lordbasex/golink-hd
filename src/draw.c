@@ -14,7 +14,7 @@ static int32_t cam_x, cam_y;
 /* Precomputed once: the sky's color per row and the hills' outlines. */
 static uint32_t sky[HD_H];
 static int16_t far_h[1024], near_h[1024];
-static int ready;
+static int32_t ready_gen = -1;
 
 static uint32_t mix(uint32_t a, uint32_t b, int32_t t) /* t in 0..256 */
 {
@@ -54,10 +54,10 @@ static void prepare(void)
 {
    int32_t y;
    for (y = 0; y < HD_H; y++)
-      sky[y] = mix(0x3a6ad0u, 0xbfe6fau, y * 256 / HD_H);
+      sky[y] = mix(hd_sky_top, hd_sky_bottom, y * 256 / HD_H);
    outline(far_h, 7, 250, 120);
    outline(near_h, 99, 310, 70);
-   ready = 1;
+   ready_gen = hd_content_gen;
 }
 
 static void rect(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t c)
@@ -214,7 +214,7 @@ static void level(const hd_state *s)
       {
          int32_t t = hd_cell(tx, ty), sx = tx * TILE - cam_x, sy = ty * TILE - cam_y;
          int32_t i = ty * MAP_W + tx;
-         int got = (uint32_t)tx < MAP_W && (uint32_t)ty < MAP_H && ((s->taken[i >> 5] >> (i & 31)) & 1);
+         int got = tx >= 0 && tx < MAP_W && ty >= 0 && ty < MAP_H && ((s->taken[i >> 5] >> (i & 31)) & 1);
          switch (t)
          {
          case T_GROUND:
@@ -303,8 +303,13 @@ static void hud(const hd_state *s)
    char buf[16];
    if (s->phase == PH_TITLE)
    {
-      text_center("GO-LINK HD", 96, 6, 0xf8c838u);
-      text_center("DEMO", 150, 3, 0xffffffu);
+      if (hd_content_id[0] | hd_content_id[1] | hd_content_id[2] | hd_content_id[3])
+         text_center(hd_title, 110, 4, 0xf8c838u);
+      else
+      {
+         text_center("GO-LINK HD", 96, 6, 0xf8c838u);
+         text_center("DEMO", 150, 3, 0xffffffu);
+      }
       if ((s->frame >> 5) & 1)
          text_center("PRESS START", 230, 2, 0xffffffu);
       text_center("1 TO 4 PLAYERS - B JUMP - Y RUN", 300, 1, 0xffffffu);
@@ -353,7 +358,7 @@ static void hud(const hd_state *s)
 
 void hd_draw(const hd_state *s, uint32_t *out)
 {
-   if (!ready)
+   if (ready_gen != hd_content_gen)
       prepare();
    fb = out;
    cam_x = FX_INT(s->cam_x) + s->shake_x;

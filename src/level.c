@@ -8,7 +8,8 @@
 #include <string.h>
 #include "hd.h"
 
-uint8_t hd_map[MAP_H][MAP_W];
+uint8_t hd_map[MAP_MAX_H][MAP_MAX_W];
+int32_t hd_map_w = 224, hd_map_h = 24;
 int32_t hd_enemy_start[MAX_ENEMIES][2];
 int32_t hd_enemy_count;
 int32_t hd_start_x, hd_start_y;
@@ -111,6 +112,8 @@ void hd_level_build(void)
    const piece *p;
    int32_t x, y;
    memset(hd_map, 0, sizeof hd_map);
+   hd_map_w = 224;
+   hd_map_h = 24;
    hd_enemy_count = 0;
    for (p = pieces; p->kind != P_END; p++)
    {
@@ -167,6 +170,18 @@ void hd_level_build(void)
          break;
       }
    }
+   /* enemies in reading order (top to bottom, left to right), as a package's level lists them */
+   for (x = 1; x < hd_enemy_count; x++)
+      for (y = x; y > 0 && (hd_enemy_start[y][1] < hd_enemy_start[y - 1][1] ||
+                            (hd_enemy_start[y][1] == hd_enemy_start[y - 1][1] && hd_enemy_start[y][0] < hd_enemy_start[y - 1][0]));
+           y--)
+      {
+         int32_t t0 = hd_enemy_start[y][0], t1 = hd_enemy_start[y][1];
+         hd_enemy_start[y][0] = hd_enemy_start[y - 1][0];
+         hd_enemy_start[y][1] = hd_enemy_start[y - 1][1];
+         hd_enemy_start[y - 1][0] = t0;
+         hd_enemy_start[y - 1][1] = t1;
+      }
    hd_start_x = 4 * TILE;
    hd_start_y = 20 * TILE - PH;
 }

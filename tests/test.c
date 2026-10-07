@@ -10,6 +10,7 @@
 #include <string.h>
 #include "libretro.h"
 #include "hd.h"
+#include "pack.h"
 
 static int failures;
 
@@ -145,9 +146,9 @@ static void test_bad_save_states(void)
    CHECK(memcmp(&s, &before, sizeof s) == 0); /* refused loads change nothing */
 
    /* garbage with a right checksum loads, and the game still runs safely */
-   for (i = 16; i < HD_SAVE_SIZE; i++)
+   for (i = HD_SAVE_HEADER; i < HD_SAVE_SIZE; i++)
       save[i] = (uint8_t)(i * 2654435761u >> 24);
-   for (i = 16; i < HD_SAVE_SIZE; i++)
+   for (i = HD_SAVE_HEADER; i < HD_SAVE_SIZE; i++)
       sum = (sum ^ save[i]) * 16777619u;
    w = sum;
    save[12] = (uint8_t)w;
@@ -156,6 +157,139 @@ static void test_bad_save_states(void)
    save[15] = (uint8_t)(w >> 24);
    CHECK(hd_load(&s, save, HD_SAVE_SIZE) == 1);
    run(&s, 300, 420, 4, fb, audio);
+}
+
+static uint8_t *slurp(const char *path, size_t *n)
+{
+   FILE *f = fopen(path, "rb");
+   uint8_t *buf;
+   long len;
+   if (!f)
+      return NULL;
+   fseek(f, 0, SEEK_END);
+   len = ftell(f);
+   fseek(f, 0, SEEK_SET);
+   buf = (uint8_t *)malloc((size_t)len);
+   if (fread(buf, 1, (size_t)len, f) != (size_t)len)
+   {
+      free(buf);
+      buf = NULL;
+   }
+   fclose(f);
+   *n = (size_t)len;
+   return buf;
+}
+
+/* Runs frames and hashes only those after `from` (the title screen shows the game's own title). */
+static uint32_t run_from(hd_state *s, int32_t to, int32_t from)
+{
+   uint32_t h = 2166136261u, pads[MAX_PLAYERS];
+   int32_t f;
+   for (f = 0; f < to; f++)
+   {
+      pads_at(f, 4, pads);
+      hd_step(s, pads);
+      hd_draw(s, fb);
+      hd_mix(s, audio, 1);
+      if (f >= from)
+      {
+         h = fnv(fb, sizeof(uint32_t) * HD_W * HD_H, h);
+         h = fnv(audio, sizeof(int16_t) * HD_SAMPLES_PER_FRAME * 2, h);
+      }
+   }
+   return h;
+}
+
+/*
+ * The demo exported as a package (zip with deflate, PNGs saved by an image
+ * library with real filters and a palette) plays exactly like the built-in one.
+ */
+static void test_package(void)
+{
+   static hd_state a, b;
+   static uint8_t save[HD_SAVE_SIZE];
+   uint8_t *pkg;
+   size_t n, i;
+   const char *err;
+   uint32_t ha, hb;
+   int fails = 0, loaded = 0;
+   static uint8_t map_before[MAP_MAX_H][MAP_MAX_W];
+   static uint32_t hero_before[16 * 24];
+
+   pkg = slurp("tests/data/demo-deflate.glhd", &n);
+   CHECK(pkg != NULL);
+   if (!pkg)
+      return;
+   hd_content_builtin();
+   hd_reset(&a);
+   ha = run_from(&a, 1200, 20);
+   CHECK(hd_content_load(pkg, n, &err) == 1);
+   CHECK(strcmp(hd_title, "go-link HD demo") == 0);
+   hd_reset(&b);
+   hb = run_from(&b, 1200, 20);
+   CHECK(ha == hb);
+   CHECK(memcmp(&a, &b, sizeof a) == 0);
+
+   /* a save state belongs to its game */
+   hd_save(&b, save);
+   CHECK(hd_load(&b, save, HD_SAVE_SIZE) == 1);
+   memcpy(hero_before, hd_hero[3][3].px, sizeof hero_before);
+   hd_content_builtin();
+   CHECK(hd_load(&a, save, HD_SAVE_SIZE) == 0);
+
+   /* every cut fails cleanly, and every damaged byte either fails cleanly or loads
+      the very same game (a byte of a zip's unchecked fields, like a date); the
+      sanitizers watch for any bad read */
+   for (i = 0; i < n; i += 7)
+      if (hd_content_load(pkg, i, &err))
+         fails++;
+   CHECK(fails == 0);
+   CHECK(hd_content_load(pkg, n, &err) == 1);
+   memcpy(map_before, hd_map, sizeof map_before);
+   for (i = 0; i < n; i++)
+   {
+      pkg[i] ^= 0x5a;
+      if (hd_content_load(pkg, n, &err))
+      {
+         loaded++;
+         if (memcmp(map_before, hd_map, sizeof map_before) != 0 || memcmp(hero_before, hd_hero[3][3].px, sizeof hero_before) != 0)
+            fails++;
+      }
+      pkg[i] ^= 0x5a;
+   }
+   printf("  package: %u of %u damaged copies loaded, all the same game\n", (unsigned)loaded, (unsigned)n);
+   CHECK(fails == 0);
+   CHECK(hd_content_load(pkg, n, &err) == 1); /* the buffer was restored */
+   hd_content_builtin();
+   free(pkg);
+}
+
+static void test_json(void)
+{
+   const char *err;
+   static const char text[] = "{\"a\": [1, -2, \"x\\u00e9\"], \"b\": {\"c\": true}}";
+   json *j = hd_json_parse(text, sizeof text - 1, &err);
+   CHECK(j != NULL);
+   if (j)
+   {
+      CHECK(hd_json_at(hd_json_get(j, "a"), 1)->num == -2);
+      CHECK(strcmp(hd_json_at(hd_json_get(j, "a"), 2)->str, "x\xc3\xa9") == 0);
+      CHECK(hd_json_get(hd_json_get(j, "b"), "c")->num == 1);
+      hd_json_free(j);
+   }
+   CHECK(hd_json_parse("1.5", 3, &err) == NULL);
+   CHECK(hd_json_parse("[1,", 3, &err) == NULL);
+   CHECK(hd_json_parse("{\"a\" 1}", 7, &err) == NULL);
+   CHECK(hd_json_parse("[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]", 68, &err) == NULL);
+}
+
+static void test_sha256(void)
+{
+   uint8_t out[32];
+   static const uint8_t abc[32] = { 0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23,
+                                    0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad };
+   hd_sha256((const uint8_t *)"abc", 3, out);
+   CHECK(memcmp(out, abc, 32) == 0);
 }
 
 /* A fake frontend for the libretro API. */
@@ -245,7 +379,10 @@ static void test_libretro(void)
    CHECK(av.geometry.base_width == HD_W && av.geometry.base_height == HD_H);
    CHECK(av.timing.sample_rate == HD_RATE);
 
-   CHECK(!retro_load_game(&content)); /* packages come later */
+   CHECK(!retro_load_game(&content)); /* a path that does not exist */
+   content.path = "tests/data/demo-deflate.glhd";
+   CHECK(retro_load_game(&content)); /* read from its path, as go-link's device passes it */
+   retro_unload_game();
    CHECK(retro_load_game(NULL));
    for (i = 0; i < 120; i++)
    {
@@ -280,6 +417,9 @@ int main(void)
    test_play();
    test_save_state();
    test_bad_save_states();
+   test_json();
+   test_sha256();
+   test_package();
    test_libretro();
    if (failures)
    {

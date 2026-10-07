@@ -1,9 +1,10 @@
 /* Copyright (c) 2026 Federico Pereira <lord.basex@gmail.com> */
 /*
- * Save states: a 16 byte header ("GLHD", the layout version, the state's
- * size, a checksum) and then every 32-bit word of hd_state in little endian,
- * so a save state means the same on every CPU. A save state of another
- * version, size or with a wrong checksum is refused, never misread.
+ * Save states: a 48 byte header ("GLHD", the layout version, the state's
+ * size, a checksum of the body, the game's SHA-256) and then every 32-bit
+ * word of hd_state in little endian, so a save state means the same on every
+ * CPU. A save state of another version, another game, another size or with
+ * a wrong checksum is refused, never misread.
  */
 #include <string.h>
 #include "hd.h"
@@ -37,7 +38,7 @@ void hd_save(const hd_state *s, uint8_t *out)
 {
    const uint32_t n = (uint32_t)(sizeof(hd_state) / 4);
    uint32_t i, w;
-   uint8_t *body = out + 16;
+   uint8_t *body = out + HD_SAVE_HEADER;
    for (i = 0; i < n; i++)
    {
       memcpy(&w, (const uint8_t *)s + i * 4, 4);
@@ -47,6 +48,7 @@ void hd_save(const hd_state *s, uint8_t *out)
    put32(out + 4, HD_STATE_VERSION);
    put32(out + 8, (uint32_t)sizeof(hd_state));
    put32(out + 12, checksum(body, (uint32_t)sizeof(hd_state)));
+   memcpy(out + 16, hd_content_id, 32);
 }
 
 /*
@@ -138,10 +140,12 @@ static void sanitize(hd_state *s)
 int hd_load(hd_state *s, const uint8_t *in, uint32_t size)
 {
    const uint32_t n = (uint32_t)(sizeof(hd_state) / 4);
-   const uint8_t *body = in + 16;
+   const uint8_t *body = in + HD_SAVE_HEADER;
    uint32_t i, w;
-   if (size < 16 || memcmp(in, "GLHD", 4) != 0)
+   if (size < HD_SAVE_HEADER || memcmp(in, "GLHD", 4) != 0)
       return 0;
+   if (memcmp(in + 16, hd_content_id, 32) != 0)
+      return 0; /* another game's */
    if (get32(in + 4) != HD_STATE_VERSION || get32(in + 8) != sizeof(hd_state) || size < HD_SAVE_SIZE)
       return 0;
    if (get32(in + 12) != checksum(body, (uint32_t)sizeof(hd_state)))

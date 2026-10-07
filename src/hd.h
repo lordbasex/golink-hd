@@ -13,6 +13,7 @@
 #ifndef HD_ENGINE_H
 #define HD_ENGINE_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include "fixed.h"
 
@@ -21,7 +22,7 @@
  * The save state's layout version. Bump it whenever hd_state changes; a
  * save state of another version is refused cleanly, never misread.
  */
-#define HD_STATE_VERSION 1
+#define HD_STATE_VERSION 2
 
 /* The logical screen: 16:9, scaled x3 to 1080p and x6 to 4K. */
 #define HD_W 640
@@ -31,8 +32,13 @@
 #define HD_SAMPLES_PER_FRAME (HD_RATE / HD_FPS)
 
 #define TILE 16
-#define MAP_W 224
-#define MAP_H 24
+/* The level's size in cells: the loaded game's, within these limits. */
+#define MAP_MAX_W 1024
+#define MAP_MAX_H 64
+#define MAP_MIN_W (HD_W / TILE)
+#define MAP_MIN_H ((HD_H + TILE - 1) / TILE)
+#define MAP_W hd_map_w
+#define MAP_H hd_map_h
 
 #define MAX_PLAYERS 4
 #define MAX_ENEMIES 48
@@ -142,7 +148,7 @@ typedef struct
    int32_t cam_x, cam_y; /* 16.16, top-left of the screen in the level */
    int32_t music_row, music_tick;
    int32_t part_next, sfx_next;
-   uint32_t taken[(MAP_W * MAP_H + 31) / 32]; /* coins taken, checkpoints reached */
+   uint32_t taken[(MAP_MAX_W * MAP_MAX_H + 31) / 32]; /* coins taken, checkpoints reached */
    hd_player p[MAX_PLAYERS];
    hd_enemy e[MAX_ENEMIES];
    hd_particle part[MAX_PARTICLES];
@@ -172,12 +178,28 @@ extern const uint32_t hd_player_color[MAX_PLAYERS];
 /* Returns 0 when a drawing in the source has a wrong size. */
 int hd_art_build(void);
 
-/* level.c */
-extern uint8_t hd_map[MAP_H][MAP_W];
+/* level.c: the built-in demo's level; content.c loads a package's */
+extern uint8_t hd_map[MAP_MAX_H][MAP_MAX_W];
+extern int32_t hd_map_w, hd_map_h;
 extern int32_t hd_enemy_start[MAX_ENEMIES][2]; /* pixels; count in hd_enemy_count */
 extern int32_t hd_enemy_count;
 extern int32_t hd_start_x, hd_start_y;
 void hd_level_build(void);
+
+/* content.c: what the loaded game is */
+extern char hd_title[64];
+extern uint32_t hd_sky_top, hd_sky_bottom; /* 0xRRGGBB */
+extern uint8_t hd_content_id[32];         /* SHA-256 of the package; zeros for the built-in demo */
+extern int32_t hd_content_gen;            /* changes whenever the content does */
+/* The built-in demo. */
+void hd_content_builtin(void);
+/*
+ * A game package (.glhd). Returns 1, or 0 with a readable *err (and the
+ * built-in demo back in place).
+ */
+int hd_content_load(const uint8_t *data, size_t size, const char **err);
+/* The package format this engine reads (manifest "format"). */
+#define HD_PACKAGE_FORMAT 1
 
 /* game.c */
 void hd_static_init(void);
@@ -195,8 +217,9 @@ void hd_music_step(hd_state *s);
 /* Mixes one frame (HD_SAMPLES_PER_FRAME stereo samples) into out. */
 void hd_mix(hd_state *s, int16_t *out, int music_on);
 
-/* save.c */
-#define HD_SAVE_SIZE (16 + sizeof(hd_state))
+/* save.c: a 48 byte header (see save.c), then the state */
+#define HD_SAVE_HEADER 48
+#define HD_SAVE_SIZE (HD_SAVE_HEADER + sizeof(hd_state))
 /* Writes a save state of HD_SAVE_SIZE bytes. */
 void hd_save(const hd_state *s, uint8_t *out);
 /* Reads one back; returns 0 (and leaves s alone) when it is not ours or of another version. */
