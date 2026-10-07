@@ -1,0 +1,32 @@
+# Software Information
+display_name = "go-link HD"
+authors = "Federico Pereira"
+supported_extensions = "glhd"
+corename = "go-link HD"
+categories = "Game"
+license = "MIT"
+permissions = ""
+display_version = "0.1.0"
+
+# Hardware Information
+manufacturer = "N/A"
+systemname = "go-link HD"
+systemid = "golink_hd"
+
+# Libretro Features
+supports_no_game = "true"
+savestate = "true"
+savestate_features = "deterministic"
+cheats = "false"
+input_descriptors = "true"
+memory_descriptors = "false"
+libretro_saves = "false"
+core_options = "true"
+core_options_version = "2.0"
+load_subsystem = "false"
+hw_render = "false"
+needs_fullpath = "false"
+disk_control = "false"
+is_experimental = "true"
+
+description = "go-link HD is a 2D game engine with a 640x360 pixel art screen for games made with Willy Maker. This version plays a built-in platformer demo for 1 to 4 players: start the core with no content."

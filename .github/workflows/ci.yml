@@ -1,0 +1,40 @@
+# Copyright (c) 2026 Federico Pereira <lord.basex@gmail.com>
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core
+        run: make
+      - name: Tests
+        run: make test
+      - name: Headless run
+        run: |
+          make tools
+          core=$(ls golink_hd_libretro.*)
+          # every platform must draw and sound exactly the same
+          tools/hdrun ./$core --frames 460 --script tools/runs/walk.txt > walk.out
+          diff tools/runs/walk.expected walk.out
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: make mingw-w64-x86_64-gcc
+      - name: Core
+        run: make platform=win CC=gcc

@@ -1,0 +1,156 @@
+/* Copyright (c) 2026 Federico Pereira <lord.basex@gmail.com> */
+/*
+ * Save states: a 16 byte header ("GLHD", the layout version, the state's
+ * size, a checksum) and then every 32-bit word of hd_state in little endian,
+ * so a save state means the same on every CPU. A save state of another
+ * version, size or with a wrong checksum is refused, never misread.
+ */
+#include <string.h>
+#include "hd.h"
+
+/* The state rule (hd.h): only 32-bit fields, so no padding anywhere. */
+typedef char hd_state_is_words[(sizeof(hd_state) % 4 == 0) ? 1 : -1];
+
+static void put32(uint8_t *p, uint32_t v)
+{
+   p[0] = (uint8_t)v;
+   p[1] = (uint8_t)(v >> 8);
+   p[2] = (uint8_t)(v >> 16);
+   p[3] = (uint8_t)(v >> 24);
+}
+
+static uint32_t get32(const uint8_t *p)
+{
+   return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
+/* FNV-1a over the body. */
+static uint32_t checksum(const uint8_t *p, uint32_t n)
+{
+   uint32_t h = 2166136261u, i;
+   for (i = 0; i < n; i++)
+      h = (h ^ p[i]) * 16777619u;
+   return h;
+}
+
+void hd_save(const hd_state *s, uint8_t *out)
+{
+   const uint32_t n = (uint32_t)(sizeof(hd_state) / 4);
+   uint32_t i, w;
+   uint8_t *body = out + 16;
+   for (i = 0; i < n; i++)
+   {
+      memcpy(&w, (const uint8_t *)s + i * 4, 4);
+      put32(body + i * 4, w);
+   }
+   memcpy(out, "GLHD", 4);
+   put32(out + 4, HD_STATE_VERSION);
+   put32(out + 8, (uint32_t)sizeof(hd_state));
+   put32(out + 12, checksum(body, (uint32_t)sizeof(hd_state)));
+}
+
+/*
+ * A save state can come from anywhere (a file, the network), so every value
+ * used as an index or a divisor is brought back into range after loading.
+ */
+#define FAR FX(MAP_W * TILE + 4096)
+#define SPEED FX(64)
+#define COUNT (1 << 30) /* counters that only grow */
+
+static void sanitize(hd_state *s)
+{
+   int32_t i;
+   s->phase = hd_clamp(s->phase, PH_TITLE, PH_CLEAR);
+   s->music_row = hd_clamp(s->music_row, 0, 63);
+   s->part_next = hd_clamp(s->part_next, 0, MAX_PARTICLES - 1);
+   s->sfx_next = hd_clamp(s->sfx_next, MUSIC_CHANNELS, MAX_CHANNELS - 1);
+   s->hitstop = hd_clamp(s->hitstop, 0, 60);
+   s->shake = hd_clamp(s->shake, 0, 60);
+   s->shake_x = hd_clamp(s->shake_x, -8, 8);
+   s->shake_y = hd_clamp(s->shake_y, -8, 8);
+   s->frame = hd_clamp(s->frame, 0, COUNT);
+   s->phase_t = hd_clamp(s->phase_t, 0, COUNT);
+   s->music_tick = hd_clamp(s->music_tick, 0, COUNT);
+   s->paused = s->paused ? 1 : 0;
+   if (!s->rng)
+      s->rng = 1;
+   for (i = 0; i < MAX_CHANNELS; i++)
+   {
+      hd_channel *c = &s->ch[i];
+      if (c->sample < -1 || c->sample >= HD_SAMPLES)
+         c->sample = -1;
+      c->pos = hd_max(c->pos, 0);
+      c->frac &= 0xffff;
+      c->step = hd_clamp(c->step, 0, FX(64));
+      c->vol = hd_clamp(c->vol, 0, 256);
+      c->decay = hd_clamp(c->decay, 0, 256);
+      c->pan = hd_clamp(c->pan, -256, 256);
+   }
+   for (i = 0; i < MAX_PARTICLES; i++)
+   {
+      hd_particle *q = &s->part[i];
+      q->max = hd_clamp(q->max, 0, 1000);
+      q->life = hd_clamp(q->life, 0, q->max); /* drawing divides by max only while life > 0 */
+   }
+   for (i = 0; i < MAX_PARTICLES; i++)
+   {
+      hd_particle *q = &s->part[i];
+      q->x = hd_clamp(q->x, -FAR, FAR);
+      q->y = hd_clamp(q->y, -FAR, FAR);
+      q->vx = hd_clamp(q->vx, -SPEED, SPEED);
+      q->vy = hd_clamp(q->vy, -SPEED, SPEED);
+   }
+   for (i = 0; i < MAX_ENEMIES; i++)
+   {
+      hd_enemy *e = &s->e[i];
+      e->alive = hd_clamp(e->alive, 0, 2);
+      e->squash = hd_clamp(e->squash, 0, 600);
+      e->anim = hd_clamp(e->anim, 0, COUNT);
+      e->x = hd_clamp(e->x, -FAR, FAR);
+      e->y = hd_clamp(e->y, -FAR, FAR);
+      e->vx = hd_clamp(e->vx, -SPEED, SPEED);
+      e->vy = hd_clamp(e->vy, -SPEED, SPEED);
+   }
+   s->cam_x = hd_clamp(s->cam_x, 0, FX(MAP_W * TILE - HD_W));
+   s->cam_y = hd_clamp(s->cam_y, 0, FX(MAP_H * TILE - HD_H));
+   for (i = 0; i < MAX_PLAYERS; i++)
+   {
+      hd_player *p = &s->p[i];
+      p->x = hd_clamp(p->x, -FAR, FAR);
+      p->y = hd_clamp(p->y, -FAR, FAR);
+      p->vx = hd_clamp(p->vx, -SPEED, SPEED);
+      p->vy = hd_clamp(p->vy, -SPEED, SPEED);
+      p->active = p->active ? 1 : 0;
+      p->facing = hd_clamp(p->facing, -1, 1);
+      p->anim = hd_clamp(p->anim, 0, COUNT);
+      p->landed = hd_clamp(p->landed, 0, COUNT);
+      p->coins = hd_clamp(p->coins, 0, COUNT);
+      p->coyote = hd_clamp(p->coyote, 0, 60);
+      p->buffer = hd_clamp(p->buffer, 0, 60);
+      p->drop = hd_clamp(p->drop, 0, 60);
+      p->check_x = hd_clamp(p->check_x, 0, MAP_W * TILE);
+      p->check_y = hd_clamp(p->check_y, 0, MAP_H * TILE);
+      p->respawn = hd_clamp(p->respawn, 0, 600);
+      p->hurt = hd_clamp(p->hurt, 0, 600);
+   }
+}
+
+int hd_load(hd_state *s, const uint8_t *in, uint32_t size)
+{
+   const uint32_t n = (uint32_t)(sizeof(hd_state) / 4);
+   const uint8_t *body = in + 16;
+   uint32_t i, w;
+   if (size < 16 || memcmp(in, "GLHD", 4) != 0)
+      return 0;
+   if (get32(in + 4) != HD_STATE_VERSION || get32(in + 8) != sizeof(hd_state) || size < HD_SAVE_SIZE)
+      return 0;
+   if (get32(in + 12) != checksum(body, (uint32_t)sizeof(hd_state)))
+      return 0;
+   for (i = 0; i < n; i++)
+   {
+      w = get32(body + i * 4);
+      memcpy((uint8_t *)s + i * 4, &w, 4);
+   }
+   sanitize(s);
+   return 1;
+}
