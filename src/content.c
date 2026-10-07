@@ -8,7 +8,8 @@
  *                   "pictures": {"hero": ..., "enemy": ..., "tiles": ..., "coin": ...,
  *                                "checkpoint": ..., "goal": ...}}
  *   level.json     {"width": W, "height": H, "start": [col, row], "rows": ["....", ...]}
- *   the pictures   PNG files of fixed sizes (see the table below)
+ *   the pictures   PNG files of fixed sizes (see the table below); each one is
+ *                  optional, a missing one keeps the built-in demo's
  * Level cells: '.' empty, '#' ground, 'B' brick, '=' one-way platform, 'o' coin,
  * 'C' checkpoint, 'F' goal, 'E' an enemy's start; start is the cell the
  * players stand in. Unknown manifest keys are ignored, so newer packages
@@ -147,9 +148,11 @@ static const char *load_sheet(const hd_zip *zip, const json *pictures, int32_t s
    size_t size;
    uint32_t *px;
    int32_t w, h, c, r, y;
-   if (!name || name->type != JSON_STRING)
+   if (!name)
+      return NULL; /* not in the package: the built-in picture stays */
+   if (name->type != JSON_STRING)
    {
-      snprintf(msg, sizeof msg, "the manifest names no \"%s\" picture", sh->key);
+      snprintf(msg, sizeof msg, "the manifest's \"%s\" picture must be a file name", sh->key);
       return msg;
    }
    png = hd_zip_read(zip, name->str, &size, &err);
@@ -224,8 +227,8 @@ static const char *load_package(const uint8_t *data, size_t size)
       err = "manifest.json has no title";
    else if (!level || level->type != JSON_STRING)
       err = "manifest.json names no level";
-   else if (!pictures || pictures->type != JSON_OBJECT)
-      err = "manifest.json has no pictures";
+   else if (pictures && pictures->type != JSON_OBJECT)
+      err = "manifest.json's pictures must be an object";
    else if (sky && (sky->type != JSON_ARRAY || sky->count != 2 || !parse_color(hd_json_at(sky, 0), &hd_sky_top) || !parse_color(hd_json_at(sky, 1), &hd_sky_bottom)))
       err = "manifest.json's sky must be two colors like \"#3a6ad0\"";
    else

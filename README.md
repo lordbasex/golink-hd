@@ -10,7 +10,7 @@ A package is a zip (stored or deflate) with:
 
 | File | What |
 |---|---|
-| `manifest.json` | `format` (the package format, 1 today), `title`, `version`, `genre` (`platformer`), `players`, `level` (the level's file), `sky` (two colors, top and bottom, like `"#3a6ad0"`, optional) and `pictures` (the file of each picture below) |
+| `manifest.json` | `format` (the package format, 1 today), `title`, `version`, `genre` (`platformer`), `players`, `level` (the level's file), `sky` (two colors, top and bottom, like `"#3a6ad0"`, optional) and `pictures` (the file of each picture below; each is optional: a missing one keeps the built-in demo's) |
 | the level (`level.json`) | `width` (40 to 1024 cells) and `height` (23 to 64), `start` (`[column, row]`, the cell where the players stand) and `rows`: one text per row, a letter per 16 × 16 cell: `.` empty, `#` ground, `B` brick, `=` one-way platform, `o` coin, `C` checkpoint, `F` goal, `E` an enemy |
 | `hero` | 64 × 96 PNG: frames of 16 × 24 (idle, walk, walk, jump) in a row per player, 4 rows |
 | `enemy` | 48 × 16: walk, walk, squashed |

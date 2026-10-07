@@ -12,3 +12,4 @@ tools/glhd
 !tests/data/*.glhd
 demo/
 walk.out
+*.sha256

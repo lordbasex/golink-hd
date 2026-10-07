@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Added
-- Game packages (`.glhd`, format 1): a zip with a manifest, a level and PNG pictures; read with the core's own zip, DEFLATE, PNG, JSON and SHA-256 code (no outside libraries, every read bounds checked). The core takes the package in memory or from its path. Packages of a newer format are refused with a clear message; unknown keys are ignored.
+- Game packages (`.glhd`, format 1): a zip with a manifest, a level and PNG pictures; read with the core's own zip, DEFLATE, PNG, JSON and SHA-256 code (no outside libraries, every read bounds checked). The core takes the package in memory or from its path. Packages of a newer format are refused with a clear message; unknown keys are ignored; every picture is optional (a missing one keeps the built-in art).
 - `tools/glhd`: `export-demo`, `pack` and `check`; `tools/hdrun --content`.
 - Tests: the demo as a deflate package plays the very same game as the built-in one; every cut or damaged copy of it fails cleanly or loads the same game; JSON and SHA-256 checks.
 - The libretro core `golink_hd_libretro` in C99: a 640 × 360 XRGB8888 screen at 60 fps, 48 kHz stereo sound, four RetroPad ports, core options (v2 with a fallback to variables) and input descriptors; it starts with no content.
