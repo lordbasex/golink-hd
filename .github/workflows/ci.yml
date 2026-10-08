@@ -24,6 +24,11 @@ jobs:
           # every platform must draw and sound exactly the same
           tools/hdrun ./$core --frames 460 --script tools/runs/walk.txt > walk.out
           diff tools/runs/walk.expected walk.out
+          tools/hdrun ./$core --option golink_hd_demo=showcase --option golink_hd_language=es --frames 960 --script tools/runs/showcase.txt > showcase.out
+          diff tools/runs/showcase.expected showcase.out
+      - name: Frame time
+        # every scene within a generous limit (shared runners are slower and noisier than a host)
+        run: make bench && tools/bench --limit 12
       - name: Packages
         run: |
           # the demo exported, packed and played as a package

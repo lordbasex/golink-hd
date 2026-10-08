@@ -8,21 +8,18 @@
 #include <stdio.h>
 #include <string.h>
 #include "hd.h"
+#include "gfx.h"
+#include "text.h"
 
-static uint32_t *fb;
 static int32_t cam_x, cam_y;
 
-/* Precomputed once: the sky's color per row and the hills' outlines. */
-static uint32_t sky[HD_MAX_H];
+/* Precomputed once: the hills' outlines. */
 static int16_t far_h[1024], near_h[1024];
 static int32_t ready_gen = -1;
 
 static uint32_t mix(uint32_t a, uint32_t b, int32_t t) /* t in 0..256 */
 {
-   uint32_t r = (((a >> 16) & 0xff) * (uint32_t)(256 - t) + ((b >> 16) & 0xff) * (uint32_t)t) >> 8;
-   uint32_t g = (((a >> 8) & 0xff) * (uint32_t)(256 - t) + ((b >> 8) & 0xff) * (uint32_t)t) >> 8;
-   uint32_t bl = ((a & 0xff) * (uint32_t)(256 - t) + (b & 0xff) * (uint32_t)t) >> 8;
-   return r << 16 | g << 8 | bl;
+   return gfx_mix(a, b, t);
 }
 
 static uint32_t add(uint32_t a, uint32_t b, int32_t t)
@@ -53,20 +50,22 @@ static void outline(int16_t *h, uint32_t seed, int32_t base, int32_t range)
 
 static void prepare(void)
 {
-   int32_t y;
-   for (y = 0; y < HD_H; y++)
-      sky[y] = mix(hd_sky_top, hd_sky_bottom, y * 256 / HD_H);
    outline(far_h, 7, 250, 120);
    outline(near_h, 99, 310, 70);
    ready_gen = hd_content_gen;
 }
 
+static hd_surface surf;
+
+/* The sky's color on a row of the surface drawn into. */
+static uint32_t sky_at(int32_t y)
+{
+   return mix(hd_sky_top, hd_sky_bottom, y * 256 / surf.h);
+}
+
 static void rect(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t c)
 {
-   int32_t i, j;
-   for (j = hd_max(y, 0); j < hd_min(y + h, HD_H); j++)
-      for (i = hd_max(x, 0); i < hd_min(x + w, HD_W); i++)
-         fb[j * HD_W + i] = c;
+   gfx_fill(&surf, x, y, w, h, c);
 }
 
 enum { BLIT_FLIP = 1, BLIT_WHITE = 2 };
@@ -74,85 +73,21 @@ enum { BLIT_FLIP = 1, BLIT_WHITE = 2 };
 /* Draws a picture at screen (x, y); alpha 255 copies, lower alpha blends. */
 static void blit(const hd_image *im, int32_t x, int32_t y, int32_t flags)
 {
-   int32_t i, j;
-   int32_t x0 = hd_max(0, -x), x1 = hd_min(im->w, HD_W - x);
-   int32_t y0 = hd_max(0, -y), y1 = hd_min(im->h, HD_H - y);
-   for (j = y0; j < y1; j++)
-   {
-      uint32_t *row = fb + (y + j) * HD_W + x;
-      const uint32_t *src = im->px + j * im->w;
-      for (i = x0; i < x1; i++)
-      {
-         uint32_t c = src[(flags & BLIT_FLIP) ? im->w - 1 - i : i];
-         uint32_t a = c >> 24;
-         if (!a)
-            continue;
-         if (flags & BLIT_WHITE)
-            c = 0xffffffffu;
-         row[i] = a == 255 ? (c & 0xffffffu) : mix(row[i], c & 0xffffffu, (int32_t)a);
-      }
-   }
-}
-
-/* 5 x 7 letters, one byte per row, bit 4 is the left column. */
-static const char font_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!-:/.x";
-static const uint8_t font[][7] = {
-   { 0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E }, { 0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E },
-   { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F }, { 0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E },
-   { 0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02 }, { 0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E },
-   { 0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E }, { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08 },
-   { 0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E }, { 0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C },
-   { 0x0E, 0x11, 0x11, 0x11, 0x1F, 0x11, 0x11 }, { 0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E },
-   { 0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E }, { 0x1C, 0x12, 0x11, 0x11, 0x11, 0x12, 0x1C },
-   { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F }, { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10 },
-   { 0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0F }, { 0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 },
-   { 0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E }, { 0x07, 0x02, 0x02, 0x02, 0x02, 0x12, 0x0C },
-   { 0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11 }, { 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F },
-   { 0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11 }, { 0x11, 0x11, 0x19, 0x15, 0x13, 0x11, 0x11 },
-   { 0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E }, { 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10 },
-   { 0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D }, { 0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11 },
-   { 0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E }, { 0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04 },
-   { 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E }, { 0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04 },
-   { 0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A }, { 0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11 },
-   { 0x11, 0x11, 0x11, 0x0A, 0x04, 0x04, 0x04 }, { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F },
-   { 0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04 }, { 0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00 },
-   { 0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00 }, { 0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x00 },
-   { 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C }, { 0x00, 0x00, 0x11, 0x0A, 0x04, 0x0A, 0x11 },
-};
-
-static void letter(char ch, int32_t x, int32_t y, int32_t scale, uint32_t c)
-{
-   const char *at;
-   int32_t row, col;
-   if (ch >= 'a' && ch <= 'z' && ch != 'x')
-      ch = (char)(ch - 'a' + 'A');
-   at = strchr(font_chars, ch);
-   if (!at || ch == '\0')
-      return;
-   for (row = 0; row < 7; row++)
-      for (col = 0; col < 5; col++)
-         if (font[at - font_chars][row] & (0x10 >> col))
-            rect(x + col * scale, y + row * scale, scale, scale, c);
-}
-
-static int32_t text_width(const char *s, int32_t scale)
-{
-   return (int32_t)strlen(s) * 6 * scale - scale;
+   hd_style st;
+   memset(&st, 0, sizeof st);
+   st.flags = ((flags & BLIT_FLIP) ? DRAW_FLIP_X : 0) | ((flags & BLIT_WHITE) ? DRAW_WHITE : 0);
+   gfx_blit(&surf, im, x, y, &st);
 }
 
 /* Text with a dark shadow one step down and right. */
 static void text(const char *s, int32_t x, int32_t y, int32_t scale, uint32_t c)
 {
-   int32_t i;
-   for (i = 0; s[i]; i++)
-      letter(s[i], x + i * 6 * scale + scale, y + scale, scale, 0x1a1020u);
-   for (i = 0; s[i]; i++)
-      letter(s[i], x + i * 6 * scale, y, scale, c);
+   text_draw(&surf, s, x, y, scale, c, 1, -1);
 }
 
-static void text_center(const char *s, int32_t y, int32_t scale, uint32_t c)
+static void center(const char *s, int32_t y, int32_t scale, uint32_t c)
 {
-   text(s, (HD_W - text_width(s, scale)) / 2, y, scale, c);
+   text_center(&surf, s, y, scale, c);
 }
 
 static void number(char *out, int32_t v)
@@ -173,12 +108,15 @@ static void number(char *out, int32_t v)
 
 static void backdrop(void)
 {
+   static uint32_t sky[ZOOM_MAX_H];
    int32_t x, y, i;
+   for (y = 0; y < surf.h; y++)
+      sky[y] = sky_at(y); /* once a row, not once a pixel */
    /* sky */
-   for (y = 0; y < HD_H; y++)
+   for (y = 0; y < surf.h; y++)
    {
-      uint32_t *row = fb + y * HD_W;
-      for (x = 0; x < HD_W; x++)
+      uint32_t *row = surf.px + y * surf.w;
+      for (x = 0; x < surf.w; x++)
          row[x] = sky[y];
    }
    /* clouds at a fifth of the speed, see-through */
@@ -189,29 +127,29 @@ static void backdrop(void)
       int32_t w = 50 + (i * 29) % 50, h = 14 + (i * 13) % 10, dx, dy;
       for (dy = -h; dy <= h; dy++)
          for (dx = -w; dx <= w; dx++)
-            if (dx * dx * h * h + dy * dy * w * w <= w * w * h * h && (uint32_t)(cx + dx) < (uint32_t)HD_W && (uint32_t)(cy + dy) < (uint32_t)HD_H)
+            if (dx * dx * h * h + dy * dy * w * w <= w * w * h * h && (uint32_t)(cx + dx) < (uint32_t)surf.w && (uint32_t)(cy + dy) < (uint32_t)surf.h)
             {
-               uint32_t *px = fb + (cy + dy) * HD_W + cx + dx;
+               uint32_t *px = surf.px + (cy + dy) * surf.w + cx + dx;
                *px = mix(*px, dy > h / 3 ? 0xd8e8f8u : 0xffffffu, 190);
             }
    }
    /* far mountains at a quarter of the speed, near hills at half */
-   for (x = 0; x < HD_W; x++)
+   for (x = 0; x < surf.w; x++)
    {
-      int32_t fh = far_h[((x + cam_x / 4) % 1024 + 1024) % 1024] - (cam_y - (MAP_H * TILE - HD_H)) / 4;
-      int32_t nh = near_h[((x + cam_x / 2) % 1024 + 1024) % 1024] - (cam_y - (MAP_H * TILE - HD_H)) / 2;
-      for (y = hd_max(fh, 0); y < HD_H; y++)
-         fb[y * HD_W + x] = mix(0x7a8ec8u, sky[y], 90 + (y - fh) / 2 > 200 ? 200 : 90 + (y - fh) / 2);
-      for (y = hd_max(nh, 0); y < HD_H; y++)
-         fb[y * HD_W + x] = y < nh + 3 ? 0x3e8a48u : mix(0x5aa860u, 0x2e6e3cu, hd_min((y - nh) * 2, 256));
+      int32_t fh = far_h[((x + cam_x / 4) % 1024 + 1024) % 1024] - (cam_y - (MAP_H * TILE - surf.h)) / 4;
+      int32_t nh = near_h[((x + cam_x / 2) % 1024 + 1024) % 1024] - (cam_y - (MAP_H * TILE - surf.h)) / 2;
+      for (y = hd_max(fh, 0); y < surf.h; y++)
+         surf.px[y * surf.w + x] = mix(0x7a8ec8u, sky[y], 90 + (y - fh) / 2 > 200 ? 200 : 90 + (y - fh) / 2);
+      for (y = hd_max(nh, 0); y < surf.h; y++)
+         surf.px[y * surf.w + x] = y < nh + 3 ? 0x3e8a48u : mix(0x5aa860u, 0x2e6e3cu, hd_min((y - nh) * 2, 256));
    }
 }
 
 static void level(const hd_state *s)
 {
    int32_t tx0 = cam_x >> 4, ty0 = cam_y >> 4, tx, ty;
-   for (ty = ty0; ty <= ty0 + HD_H / TILE + 1; ty++)
-      for (tx = tx0; tx <= tx0 + HD_W / TILE + 1; tx++)
+   for (ty = ty0; ty <= ty0 + surf.h / TILE + 1; ty++)
+      for (tx = tx0; tx <= tx0 + surf.w / TILE + 1; tx++)
       {
          int32_t t = hd_cell(tx, ty), sx = tx * TILE - cam_x, sy = ty * TILE - cam_y;
          int32_t i = ty * MAP_W + tx;
@@ -241,6 +179,18 @@ static void level(const hd_state *s)
       }
 }
 
+/* A character: with the level's outline, and its shadow on the ground when the level has shadows. */
+static void actor(const hd_image *im, int32_t x, int32_t y, int32_t flags, int32_t feet_x, int32_t feet_y, int32_t shadow_w)
+{
+   hd_style st;
+   if (hd_fx.shadows && shadow_w > 0)
+      gfx_shadow(&surf, feet_x, feet_y, shadow_w, 2, 120);
+   memset(&st, 0, sizeof st);
+   st.flags = ((flags & BLIT_FLIP) ? DRAW_FLIP_X : 0) | ((flags & BLIT_WHITE) ? DRAW_WHITE : 0);
+   st.outline = hd_fx.outline;
+   gfx_blit(&surf, im, x, y, &st);
+}
+
 static void actors(const hd_state *s)
 {
    int32_t i;
@@ -251,7 +201,8 @@ static void actors(const hd_state *s)
       if (!e->alive)
          continue;
       frame = e->alive == 2 ? ENEMY_SQUASHED : ((e->anim >> 3) & 1);
-      blit(&hd_enemy_img[frame], FX_INT(e->x) - 1 - cam_x, FX_INT(e->y) - 4 - cam_y, e->vx > 0 ? BLIT_FLIP : 0);
+      actor(&hd_enemy_img[frame], FX_INT(e->x) - 1 - cam_x, FX_INT(e->y) - 4 - cam_y, e->vx > 0 ? BLIT_FLIP : 0,
+            FX_INT(e->x) + EW / 2 - cam_x, FX_INT(e->y) + EH - cam_y, e->alive == 1 ? 7 : 0);
    }
    for (i = MAX_PLAYERS - 1; i >= 0; i--)
    {
@@ -267,8 +218,9 @@ static void actors(const hd_state *s)
          frame = HERO_IDLE;
       else
          frame = ((p->anim >> 5) & 1) ? HERO_WALK1 : HERO_WALK2;
-      blit(&hd_hero[i][frame], FX_INT(p->x) - 3 - cam_x, FX_INT(p->y) - 2 - cam_y,
-           (p->facing < 0 ? BLIT_FLIP : 0) | (p->hurt > HURT_FLASH ? BLIT_WHITE : 0));
+      actor(&hd_hero[i][frame], FX_INT(p->x) - 3 - cam_x, FX_INT(p->y) - 2 - cam_y,
+            (p->facing < 0 ? BLIT_FLIP : 0) | (p->hurt > HURT_FLASH ? BLIT_WHITE : 0),
+            FX_INT(p->x) + PW / 2 - cam_x, FX_INT(p->y) + PH - cam_y, p->ground ? 6 : 4);
    }
 }
 
@@ -290,8 +242,8 @@ static void particles(const hd_state *s)
          int32_t j, k;
          for (j = 0; j < size; j++)
             for (k = 0; k < size; k++)
-               if ((uint32_t)(x + k) < (uint32_t)HD_W && (uint32_t)(y + j) < (uint32_t)HD_H)
-                  fb[(y + j) * HD_W + x + k] = add(fb[(y + j) * HD_W + x + k], q->color & 0xffffffu, t);
+               if ((uint32_t)(x + k) < (uint32_t)surf.w && (uint32_t)(y + j) < (uint32_t)surf.h)
+                  surf.px[(y + j) * surf.w + x + k] = add(surf.px[(y + j) * surf.w + x + k], q->color & 0xffffffu, t);
       }
       else
          rect(x, y, size, size, q->color & 0xffffffu);
@@ -308,21 +260,21 @@ static void hud(const hd_state *s)
    if (s->phase == PH_TITLE)
    {
       if (hd_content_id[0] | hd_content_id[1] | hd_content_id[2] | hd_content_id[3])
-         text_center(hd_title, ROW(110), 4, 0xf8c838u);
+         center(hd_title, ROW(110), 4, 0xf8c838u);
       else
       {
-         text_center("GO-LINK HD", ROW(96), 6, 0xf8c838u);
-         text_center("DEMO", ROW(150), 3, 0xffffffu);
+         center("GO-LINK HD", ROW(96), 6, 0xf8c838u);
+         center("DEMO", ROW(150), 3, 0xffffffu);
       }
       if ((s->frame >> 5) & 1)
-         text_center("PRESS START", ROW(230), 2, 0xffffffu);
+         center("PRESS START", ROW(230), 2, 0xffffffu);
       snprintf(buf, sizeof buf, "1 TO %d PLAYERS", (int)hd_players);
       if (hd_players == 1)
          strcpy(buf, "1 PLAYER");
       {
          char line[48];
          snprintf(line, sizeof line, "%s - B JUMP - Y RUN", buf);
-         text_center(line, ROW(300), 1, 0xffffffu);
+         center(line, ROW(300), 1, 0xffffffu);
       }
       return;
    }
@@ -353,32 +305,108 @@ static void hud(const hd_state *s)
    if (s->paused)
    {
       rect(0, HD_H / 2 - 30, HD_W, 60, 0x1a1020u);
-      text_center("PAUSE", HD_H / 2 - 14, 4, 0xffffffu);
+      center("PAUSE", HD_H / 2 - 14, 4, 0xffffffu);
    }
    if (s->phase == PH_CLEAR)
    {
-      text_center("STAGE CLEAR!", 110, 5, 0xf8c838u);
+      center("STAGE CLEAR!", 110, 5, 0xf8c838u);
       for (i = 0; i < hd_players; i++)
          if (s->p[i].active)
          {
             char line[24] = "P1  x";
             line[1] = (char)('1' + i);
             number(line + 5, s->p[i].coins);
-            text_center(line, 180 + i * 24, 2, hd_player_color[i] & 0xffffffu);
+            center(line, 180 + i * 24, 2, hd_player_color[i] & 0xffffffu);
          }
    }
 }
 
-void hd_draw(const hd_state *s, uint32_t *out)
+/* The world (backdrop, level, characters, particles) with its top-left at the camera, into a surface. */
+void hd_draw_world(const hd_state *s, hd_surface *target, int32_t cx, int32_t cy)
 {
-   if (ready_gen != hd_content_gen)
-      prepare();
-   fb = out;
-   cam_x = FX_INT(s->cam_x) + s->shake_x;
-   cam_y = FX_INT(s->cam_y) + s->shake_y;
+   surf = *target;
+   cam_x = cx;
+   cam_y = cy;
    backdrop();
    level(s);
    actors(s);
    particles(s);
+}
+
+/* The level's effects (package format 2), on the finished world. */
+static void effects(const hd_state *s, hd_surface *screen, int32_t zoom)
+{
+   static hd_light lights[FX_LIGHTS_MAX + MAX_PLAYERS];
+   int32_t n = 0, i;
+   if (hd_fx.waves_amp)
+   {
+      int32_t y0 = (hd_fx.waves_y - cam_y) * zoom / 256;
+      fx_waves(screen, hd_max(y0, 0), screen->h - 1, hd_fx.waves_amp, hd_max(8, hd_fx.waves_len), s->frame * 40);
+   }
+   if (hd_fx.darkness > 0 || hd_fx.lights > 0)
+   {
+      for (i = 0; i < hd_fx.lights; i++)
+      {
+         hd_light *l = &lights[n++];
+         l->x = (hd_fx.light_x[i] - cam_x) * zoom / 256;
+         l->y = (hd_fx.light_y[i] - cam_y) * zoom / 256;
+         /* a flame's flicker: the radius breathes with two sines */
+         l->radius = (hd_fx.light_r[i] + hd_fx.light_flicker[i] * (hd_sin(s->frame * 97 + i * 911) + hd_sin(s->frame * 41 + i * 333)) / (2 * TRIG_ONE)) * zoom / 256;
+         l->color = hd_fx.light_color[i];
+         l->strength = 256;
+      }
+      if (hd_fx.player_light)
+         for (i = 0; i < MAX_PLAYERS; i++)
+            if (s->p[i].active && !s->p[i].respawn)
+            {
+               hd_light *l = &lights[n++];
+               l->x = (FX_INT(s->p[i].x) + PW / 2 - cam_x) * zoom / 256;
+               l->y = (FX_INT(s->p[i].y) + PH / 2 - cam_y) * zoom / 256;
+               l->radius = hd_fx.player_light * zoom / 256;
+               l->color = hd_fx.player_light_color;
+               l->strength = 256;
+            }
+      fx_lights(screen, hd_fx.darkness, lights, n);
+   }
+   if (hd_fx.bloom)
+      fx_bloom(screen, hd_fx.bloom_threshold, hd_fx.bloom);
+   if (hd_fx.grade)
+      fx_grade(screen, hd_fx.grade_amount);
+}
+
+/* Zoomed out, the world is drawn bigger and scaled down; zoomed in, smaller and scaled up. */
+static uint32_t zoom_px[ZOOM_MAX_W * ZOOM_MAX_H];
+
+void hd_draw(const hd_state *s, uint32_t *out)
+{
+   hd_surface screen;
+   int32_t zoom = s->zoom ? hd_clamp(s->zoom, 128, 512) : 256; /* 0 (an old or zeroed state) is 1x */
+   int32_t cx = FX_INT(s->cam_x) + s->shake_x, cy = FX_INT(s->cam_y) + s->shake_y;
+   if (ready_gen != hd_content_gen)
+      prepare();
+   screen.px = out;
+   screen.w = HD_W;
+   screen.h = HD_H;
+   if (s->show.on)
+   {
+      hd_show_draw(s, &screen);
+      return;
+   }
+   if (zoom == 256)
+      hd_draw_world(s, &screen, cx, cy);
+   else
+   {
+      hd_surface big;
+      big.px = zoom_px;
+      big.w = hd_min(HD_W * 256 / zoom, ZOOM_MAX_W);
+      big.h = hd_min(HD_H * 256 / zoom, ZOOM_MAX_H);
+      hd_draw_world(s, &big, cx, cy);
+      gfx_scale(&screen, &big);
+   }
+   effects(s, &screen, zoom);
+   surf = screen;
    hud(s);
+   if (s->dlg > 0 && s->dlg <= hd_fx.dialogs)
+      text_dialog(&screen, hd_portrait.px ? &hd_portrait : NULL, hd_fx.dialog_name[s->dlg - 1],
+                  hd_fx.dialog_text[s->dlg - 1][hd_lang], s->dlg_chars, (s->frame >> 4) & 1);
 }

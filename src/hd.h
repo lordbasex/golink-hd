@@ -22,7 +22,7 @@
  * The save state's layout version. Bump it whenever hd_state changes; a
  * save state of another version is refused cleanly, never misread.
  */
-#define HD_STATE_VERSION 3
+#define HD_STATE_VERSION 4
 
 /*
  * The logical screen, chosen by the game: 640 x 360 (16:9, scaled x3 to
@@ -56,6 +56,8 @@ extern int32_t hd_players;
 #define MAX_CHANNELS 32
 /* Channels 0 and 1 belong to the music, the rest to sound effects. */
 #define MUSIC_CHANNELS 2
+/* The longest echo: 0.3 s. */
+#define ECHO_MAX (HD_RATE * 3 / 10)
 
 /* A player's buttons for one frame. */
 enum
@@ -171,6 +173,19 @@ typedef struct
    int32_t vol, decay, pan;
 } hd_channel;
 
+/* The showcase demo's own state (showcase.c). */
+#define SHOW_BATS 4
+typedef struct
+{
+   int32_t on, scene, t, trans, next;   /* trans: frames left of the change of scene */
+   int32_t grade, zoom, blur, bloom;     /* the colors scene */
+   int32_t kx, ky, ka, kv;              /* the kart (Mode 7), 16.16 */
+   int32_t rpos, rx, rv;                /* the car on the road */
+   int32_t hx, hy, hvx, hvy, hground, hface, hwalk, hjump; /* the boned hero, 16.16 */
+   int32_t bat_x[SHOW_BATS], bat_y[SHOW_BATS], bat_tx[SHOW_BATS], bat_ty[SHOW_BATS], bat_hit; /* 16.16 and target cells */
+   int32_t dlg, dlg_chars;
+} hd_show;
+
 typedef struct
 {
    int32_t frame;
@@ -185,7 +200,43 @@ typedef struct
    hd_enemy e[MAX_ENEMIES];
    hd_particle part[MAX_PARTICLES];
    hd_channel ch[MAX_CHANNELS];
+   /* the sound's effects on the whole mix (underwater, caves) */
+   int32_t lowpass;              /* 0 off; else 1..256, how much of each new sample passes */
+   int32_t echo, echo_feedback, echo_mix; /* echo: delay in samples (0 off), 0..256, 0..256 */
+   int32_t lp_l, lp_r, echo_pos;
+   int32_t echo_buf[ECHO_MAX * 2];
+   int32_t zoom;                 /* the camera's zoom, 256 = 1x (128 shows twice as much, 512 half) */
+   int32_t dlg, dlg_chars;       /* the dialog on screen (index + 1, 0 = none) and its letters shown */
+   uint32_t dlg_done;            /* dialogs already shown, a bit each */
+   hd_show show;                 /* the showcase demo (showcase.c) */
 } hd_state;
+
+/* Effects of a game's level (package format 2, "effects"; all off in the built-in demo). */
+#define FX_LIGHTS_MAX 32
+#define DIALOGS_MAX 16
+#define LANGS 3 /* English, Spanish, Portuguese */
+typedef struct
+{
+   int32_t darkness;            /* 0..256 */
+   int32_t player_light;        /* the light each player carries: radius in pixels, 0 = none */
+   uint32_t player_light_color; /* 0xRRGGBB */
+   int32_t lights;
+   int32_t light_x[FX_LIGHTS_MAX], light_y[FX_LIGHTS_MAX], light_r[FX_LIGHTS_MAX], light_flicker[FX_LIGHTS_MAX];
+   uint32_t light_color[FX_LIGHTS_MAX];
+   int32_t grade, grade_amount;  /* GRADE_* (gfx.h), 0..256 */
+   int32_t bloom, bloom_threshold;
+   int32_t waves_amp, waves_len, waves_y; /* below the level's row waves_y (pixels), 0 amplitude = off */
+   int32_t zoom_auto;           /* zoom out when players spread apart */
+   uint32_t outline;            /* 0xAARRGGBB around the characters, 0 = none */
+   int32_t shadows;
+   int32_t lowpass, echo_ms;    /* the mix: 0 = off (see hd_audio_effects) */
+   int32_t dialogs;
+   int32_t dialog_col[DIALOGS_MAX];
+   char dialog_name[DIALOGS_MAX][24];
+   char dialog_text[DIALOGS_MAX][LANGS][200];
+} hd_fx_config;
+extern hd_fx_config hd_fx;
+extern int32_t hd_lang; /* 0 English, 1 Spanish, 2 Portuguese (a core option) */
 
 /* Pictures are 0xAARRGGBB; alpha 0 is not drawn. */
 typedef struct
@@ -231,7 +282,7 @@ void hd_content_builtin(void);
  */
 int hd_content_load(const uint8_t *data, size_t size, const char **err);
 /* The package format this engine reads (manifest "format"). */
-#define HD_PACKAGE_FORMAT 1
+#define HD_PACKAGE_FORMAT 2
 
 /* game.c */
 void hd_static_init(void);
@@ -241,6 +292,18 @@ int hd_cell(int32_t tx, int32_t ty);
 
 /* draw.c */
 void hd_draw(const hd_state *s, uint32_t *fb);
+/* The zoom's buffer: the screen at 0.5x, the largest it draws. */
+#define ZOOM_MAX_W (2 * HD_MAX_W)
+#define ZOOM_MAX_H (2 * HD_MAX_H)
+/* An optional picture for dialogs (the package's "portrait"). */
+extern hd_image hd_portrait;
+
+/* showcase.c: the demo of every effect (the core option "Demo: showcase") */
+void hd_show_start(hd_state *s);
+void hd_show_step(hd_state *s, const hd_input in[MAX_PLAYERS]);
+void hd_show_draw(const hd_state *s, void *screen);
+void hd_show_build(void);
+void hd_show_sanitize(hd_show *w);
 
 /* audio.c */
 void hd_audio_build(void);
@@ -248,6 +311,8 @@ void hd_play(hd_state *s, int32_t sfx, int32_t screen_x);
 void hd_music_step(hd_state *s);
 /* Mixes one frame (HD_SAMPLES_PER_FRAME stereo samples) into out. */
 void hd_mix(hd_state *s, int16_t *out, int music_on);
+/* The mix's effects: low pass 0 (off) or 1..256, an echo of echo_ms (0 = off, up to 300) with its feedback and mix (0..256). */
+void hd_audio_effects(hd_state *s, int32_t lowpass, int32_t echo_ms, int32_t feedback, int32_t mix);
 
 /* save.c: a 48 byte header (see save.c), then the state */
 #define HD_SAVE_HEADER 48

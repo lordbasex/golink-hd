@@ -74,6 +74,19 @@ static void sanitize(hd_state *s)
    s->phase_t = hd_clamp(s->phase_t, 0, COUNT);
    s->music_tick = hd_clamp(s->music_tick, 0, COUNT);
    s->paused = s->paused ? 1 : 0;
+   s->zoom = s->zoom ? hd_clamp(s->zoom, 128, 512) : 0;
+   s->dlg = hd_clamp(s->dlg, 0, DIALOGS_MAX);
+   s->dlg_chars = hd_clamp(s->dlg_chars, 0, 1000);
+   hd_show_sanitize(&s->show);
+   s->lowpass = hd_clamp(s->lowpass, 0, 256);
+   s->echo = hd_clamp(s->echo, 0, ECHO_MAX);
+   s->echo_feedback = hd_clamp(s->echo_feedback, 0, 230);
+   s->echo_mix = hd_clamp(s->echo_mix, 0, 256);
+   s->echo_pos = s->echo ? hd_clamp(s->echo_pos, 0, s->echo - 1) : 0;
+   s->lp_l = hd_clamp(s->lp_l, -(1 << 20), 1 << 20);
+   s->lp_r = hd_clamp(s->lp_r, -(1 << 20), 1 << 20);
+   for (i = 0; i < ECHO_MAX * 2; i++)
+      s->echo_buf[i] = hd_clamp(s->echo_buf[i], -131072, 131071);
    if (!s->rng)
       s->rng = 1;
    for (i = 0; i < MAX_CHANNELS; i++)

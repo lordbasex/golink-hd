@@ -21,8 +21,13 @@
 #include <string.h>
 #include "hd.h"
 #include "pack.h"
+#include "gfx.h"
 
 char hd_title[64];
+hd_fx_config hd_fx;
+int32_t hd_lang;
+hd_image hd_portrait;
+static uint32_t portrait_px[64 * 64];
 int32_t hd_w = 640, hd_h = 360;
 int32_t hd_players = DEFAULT_PLAYERS;
 uint32_t hd_sky_top, hd_sky_bottom;
@@ -39,6 +44,9 @@ void hd_content_builtin(void)
    hd_players = DEFAULT_PLAYERS;
    hd_sky_top = 0x3a6ad0u;
    hd_sky_bottom = 0xbfe6fau;
+   memset(&hd_fx, 0, sizeof hd_fx);
+   memset(&hd_portrait, 0, sizeof hd_portrait);
+   fx_grade_build(GRADE_NONE, NULL);
    memset(hd_content_id, 0, sizeof hd_content_id);
    hd_content_gen++;
 }
@@ -210,6 +218,194 @@ static const char *load_sheet(const hd_zip *zip, const json *pictures, int32_t s
    return NULL;
 }
 
+static int32_t num(const json *obj, const char *key, int32_t lo, int32_t hi, int32_t fallback, int *bad)
+{
+   const json *j = hd_json_get(obj, key);
+   if (!j)
+      return fallback;
+   if (j->type != JSON_INT || j->num < lo || j->num > hi)
+   {
+      *bad = 1;
+      return fallback;
+   }
+   return (int32_t)j->num;
+}
+
+/*
+ * A level's "effects" (format 2): light and darkness, color grading, bloom,
+ * waves, the camera's zoom, outlines and shadows, the sound, and dialogs.
+ */
+static const char *load_effects(const json *fx)
+{
+   static char msg[160];
+   static const char *const grades[] = { "none", "night", "sepia", "underwater", "sunset", "grey", "lut" };
+   const json *j, *it;
+   int bad = 0;
+   int32_t i, k;
+   if (!fx)
+      return NULL;
+   if (fx->type != JSON_OBJECT)
+      return "the level's effects must be an object";
+   hd_fx.darkness = num(fx, "darkness", 0, 256, 0, &bad);
+   hd_fx.player_light = num(fx, "player_light", 0, 400, 0, &bad);
+   hd_fx.player_light_color = 0xffe0b0u;
+   if ((j = hd_json_get(fx, "player_light_color")) && !parse_color(j, &hd_fx.player_light_color))
+      bad = 1;
+   if ((j = hd_json_get(fx, "lights")))
+   {
+      if (j->type != JSON_ARRAY || j->count > FX_LIGHTS_MAX)
+         return "the level's lights must be a list of at most 32";
+      for (it = j->child, i = 0; it; it = it->next, i++)
+      {
+         hd_fx.light_x[i] = num(it, "x", 0, MAP_MAX_W, 0, &bad) * TILE + TILE / 2;
+         hd_fx.light_y[i] = num(it, "y", 0, MAP_MAX_H, 0, &bad) * TILE + TILE / 2;
+         hd_fx.light_r[i] = num(it, "radius", 8, 400, 80, &bad);
+         hd_fx.light_flicker[i] = num(it, "flicker", 0, 64, 0, &bad);
+         hd_fx.light_color[i] = 0xffc070u;
+         if (hd_json_get(it, "color") && !parse_color(hd_json_get(it, "color"), &hd_fx.light_color[i]))
+            bad = 1;
+      }
+      hd_fx.lights = i;
+   }
+   if ((j = hd_json_get(fx, "grade")))
+   {
+      for (k = 0; k < (int32_t)(sizeof grades / sizeof grades[0]); k++)
+         if (j->type == JSON_STRING && !strcmp(j->str, grades[k]))
+            break;
+      if (k == (int32_t)(sizeof grades / sizeof grades[0]))
+         return "the level's grade must be none, night, sepia, underwater, sunset, grey or lut";
+      hd_fx.grade = k;
+      hd_fx.grade_amount = num(fx, "grade_amount", 0, 256, 256, &bad);
+   }
+   hd_fx.bloom = num(fx, "bloom", 0, 256, 0, &bad);
+   hd_fx.bloom_threshold = num(fx, "bloom_threshold", 0, 254, 180, &bad);
+   if ((j = hd_json_get(fx, "waves")))
+   {
+      hd_fx.waves_y = num(j, "row", 0, MAP_MAX_H, 0, &bad) * TILE;
+      hd_fx.waves_amp = num(j, "amplitude", 0, 16, 3, &bad);
+      hd_fx.waves_len = num(j, "wavelength", 8, 400, 60, &bad);
+   }
+   if ((j = hd_json_get(fx, "zoom")))
+   {
+      if (j->type != JSON_STRING || strcmp(j->str, "auto"))
+         return "the level's zoom must be \"auto\"";
+      hd_fx.zoom_auto = 1;
+   }
+   if ((j = hd_json_get(fx, "outline")))
+   {
+      uint32_t c;
+      if (!parse_color(j, &c))
+         bad = 1;
+      hd_fx.outline = 0xff000000u | c;
+   }
+   if ((j = hd_json_get(fx, "shadows")))
+      hd_fx.shadows = j->type == JSON_BOOL && j->num;
+   hd_fx.lowpass = num(fx, "lowpass", 0, 256, 0, &bad);
+   hd_fx.echo_ms = num(fx, "echo", 0, 300, 0, &bad);
+   if ((j = hd_json_get(fx, "dialogs")))
+   {
+      static const char *const langs[LANGS] = { "en", "es", "pt" };
+      if (j->type != JSON_ARRAY || j->count > DIALOGS_MAX)
+         return "the level's dialogs must be a list of at most 16";
+      for (it = j->child, i = 0; it; it = it->next, i++)
+      {
+         const json *name = hd_json_get(it, "name"), *text = hd_json_get(it, "text");
+         hd_fx.dialog_col[i] = num(it, "column", 0, MAP_MAX_W, 0, &bad);
+         if (name && name->type == JSON_STRING)
+            snprintf(hd_fx.dialog_name[i], sizeof hd_fx.dialog_name[i], "%s", name->str);
+         if (!text || text->type != JSON_OBJECT)
+            return "each dialog needs a text: {\"en\": ..., \"es\": ..., \"pt\": ...}";
+         for (k = 0; k < LANGS; k++)
+         {
+            /* a language left out shows the English text */
+            const json *t = hd_json_get(text, langs[k]);
+            if (!t)
+               t = hd_json_get(text, "en");
+            if (!t || t->type != JSON_STRING)
+               return "each dialog needs at least its English text";
+            snprintf(hd_fx.dialog_text[i][k], sizeof hd_fx.dialog_text[i][k], "%s", t->str);
+         }
+      }
+      hd_fx.dialogs = i;
+   }
+   if (bad)
+   {
+      snprintf(msg, sizeof msg, "the level's effects have a value out of range or of the wrong kind");
+      return msg;
+   }
+   return NULL;
+}
+
+/* A whole picture of the package, or NULL; its size in *w, *h. */
+static uint32_t *picture(const hd_zip *zip, const json *pictures, const char *key, int32_t *w, int32_t *h, const char **err)
+{
+   static char msg[160];
+   const json *name = hd_json_get(pictures, key);
+   uint8_t *png;
+   size_t size;
+   uint32_t *px;
+   *err = NULL;
+   if (!name)
+      return NULL;
+   if (name->type != JSON_STRING)
+   {
+      snprintf(msg, sizeof msg, "the manifest's \"%s\" picture must be a file name", key);
+      *err = msg;
+      return NULL;
+   }
+   png = hd_zip_read(zip, name->str, &size, err);
+   if (!png)
+   {
+      snprintf(msg, sizeof msg, "%s: %s", name->str, *err);
+      *err = msg;
+      return NULL;
+   }
+   px = hd_png_read(png, size, w, h, err);
+   free(png);
+   if (!px)
+   {
+      snprintf(msg, sizeof msg, "%s: %s", name->str, *err);
+      *err = msg;
+   }
+   return px;
+}
+
+/* The dialogs' portrait (up to 64 x 64) and a color grading table (a 256 x 16 LUT strip). */
+static const char *load_extras(const hd_zip *zip, const json *pictures)
+{
+   const char *err;
+   int32_t w, h;
+   uint32_t *px = picture(zip, pictures, "portrait", &w, &h, &err);
+   if (err)
+      return err;
+   if (px)
+   {
+      if (w > 64 || h > 64)
+      {
+         free(px);
+         return "the portrait must be at most 64 x 64 pixels";
+      }
+      memcpy(portrait_px, px, (size_t)(w * h) * 4);
+      free(px);
+      hd_portrait.w = w;
+      hd_portrait.h = h;
+      hd_portrait.px = portrait_px;
+   }
+   px = picture(zip, pictures, "lut", &w, &h, &err);
+   if (err)
+      return err;
+   if (hd_fx.grade == GRADE_LUT && !px)
+      return "the grade \"lut\" needs a \"lut\" picture";
+   if (px && (w != 256 || h != 16))
+   {
+      free(px);
+      return "the lut must be a 256 x 16 strip (16 slices of 16 x 16)";
+   }
+   fx_grade_build(hd_fx.grade, px);
+   free(px);
+   return NULL;
+}
+
 static const char *load_package(const uint8_t *data, size_t size)
 {
    static char msg[160];
@@ -295,9 +491,13 @@ static const char *load_package(const uint8_t *data, size_t size)
       return msg;
    }
    err = load_level(lv);
+   if (!err)
+      err = load_effects(hd_json_get(lv, "effects"));
    hd_json_free(lv);
    for (s = 0; !err && s < (int32_t)(sizeof sheets / sizeof sheets[0]); s++)
       err = load_sheet(&zip, pictures, s);
+   if (!err)
+      err = load_extras(&zip, pictures);
    hd_json_free(man);
    return err;
 }

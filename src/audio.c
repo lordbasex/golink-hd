@@ -226,6 +226,44 @@ void hd_mix(hd_state *s, int16_t *out, int music_on)
          }
       }
    }
+   /* the mix's effects: a one pole low pass (muffled, underwater) and an echo (caves) */
+   if (s->lowpass > 0 && s->lowpass < 256)
+      for (n = 0; n < HD_SAMPLES_PER_FRAME; n++)
+      {
+         s->lp_l += (acc[2 * n] - s->lp_l) * s->lowpass / 256;
+         s->lp_r += (acc[2 * n + 1] - s->lp_r) * s->lowpass / 256;
+         acc[2 * n] = s->lp_l;
+         acc[2 * n + 1] = s->lp_r;
+      }
+   if (s->echo > 0)
+   {
+      int32_t delay = hd_min(s->echo, ECHO_MAX);
+      for (n = 0; n < HD_SAMPLES_PER_FRAME; n++)
+      {
+         int32_t *e = &s->echo_buf[2 * s->echo_pos], k;
+         for (k = 0; k < 2; k++)
+         {
+            int32_t dry = acc[2 * n + k], wet = e[k];
+            acc[2 * n + k] = dry + wet * s->echo_mix / 256;
+            e[k] = hd_clamp(dry + wet * s->echo_feedback / 256, -131072, 131071);
+         }
+         s->echo_pos = (s->echo_pos + 1) % delay;
+      }
+   }
    for (n = 0; n < HD_SAMPLES_PER_FRAME * 2; n++)
       out[n] = (int16_t)hd_clamp(acc[n], -32767, 32767);
+}
+
+void hd_audio_effects(hd_state *s, int32_t lowpass, int32_t echo_ms, int32_t feedback, int32_t mix)
+{
+   int32_t delay = hd_clamp(echo_ms, 0, 300) * HD_RATE / 1000;
+   s->lowpass = hd_clamp(lowpass, 0, 256);
+   if (delay != s->echo)
+   {
+      memset(s->echo_buf, 0, sizeof s->echo_buf);
+      s->echo_pos = 0;
+   }
+   s->echo = delay;
+   s->echo_feedback = hd_clamp(feedback, 0, 230);
+   s->echo_mix = hd_clamp(mix, 0, 256);
 }

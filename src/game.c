@@ -7,6 +7,8 @@
  */
 #include <string.h>
 #include "hd.h"
+#include "gfx.h"
+#include "text.h"
 
 /* Movement, in 16.16 pixels per frame (and per frame squared). */
 #define WALK_MAX FX_FRAC(5, 2)
@@ -36,6 +38,8 @@ void hd_static_init(void)
       return;
    hd_content_builtin();
    hd_audio_build();
+   hd_trig_build();
+   hd_show_build();
    initialized = 1;
 }
 
@@ -167,6 +171,8 @@ void hd_reset(hd_state *s)
    for (i = 0; i < MAX_CHANNELS; i++)
       s->ch[i].sample = -1;
    s->sfx_next = MUSIC_CHANNELS;
+   s->zoom = 256;
+   hd_audio_effects(s, hd_fx.lowpass, hd_fx.echo_ms, 150, 110);
    reset_level(s);
 }
 
@@ -492,7 +498,7 @@ static void fights(hd_state *s)
 static void camera(hd_state *s)
 {
    int32_t i, n = 0, lo = 1 << 30, hi = -(1 << 30), top = 1 << 30, bottom = -(1 << 30);
-   int32_t tx, ty, cx, cy;
+   int32_t tx, ty, cx, cy, vw, vh;
    for (i = 0; i < MAX_PLAYERS; i++)
    {
       const hd_player *p = &s->p[i];
@@ -506,10 +512,22 @@ static void camera(hd_state *s)
    }
    if (!n)
       return;
-   tx = (lo + hi) / 2 - HD_W / 2;
-   ty = (top + bottom) / 2 - HD_H * 3 / 5;
-   tx = hd_clamp(tx, 0, MAP_W * TILE - HD_W);
-   ty = hd_clamp(ty, 0, MAP_H * TILE - HD_H);
+   if (hd_fx.zoom_auto)
+   {
+      /* zoom out (down to 0.5x) when the players spread apart, back in when they gather */
+      int32_t spread = hd_max(hi - lo + 200, (bottom - top + 120) * HD_W / HD_H);
+      int32_t want = hd_clamp(HD_W * 256 / hd_max(spread, 1), 128, 256);
+      want = hd_max(want, hd_max(HD_W * 256 / (MAP_W * TILE), HD_H * 256 / (MAP_H * TILE)));
+      s->zoom += (want - s->zoom) / 8;
+   }
+   if (s->zoom < 128 || s->zoom > 512)
+      s->zoom = 256;
+   vw = HD_W * 256 / s->zoom;
+   vh = HD_H * 256 / s->zoom;
+   tx = (lo + hi) / 2 - vw / 2;
+   ty = (top + bottom) / 2 - vh * 3 / 5;
+   tx = hd_clamp(tx, 0, hd_max(0, MAP_W * TILE - vw));
+   ty = hd_clamp(ty, 0, hd_max(0, MAP_H * TILE - vh));
    s->cam_x += (FX(tx) - s->cam_x) / 6;
    s->cam_y += (FX(ty) - s->cam_y) / 8;
    /* every player stays on screen */
@@ -526,11 +544,30 @@ static void camera(hd_state *s)
          p->x = FX(cx);
          p->vx = hd_max(p->vx, 0);
       }
-      if (FX_INT(p->x) + PW > cx + HD_W)
+      if (FX_INT(p->x) + PW > cx + vw)
       {
-         p->x = FX(cx + HD_W - PW);
+         p->x = FX(cx + vw - PW);
          p->vx = hd_min(p->vx, 0);
       }
+   }
+}
+
+/* A dialog opens when a player reaches its column. */
+static void dialogs(hd_state *s)
+{
+   int32_t d, i;
+   for (d = 0; d < hd_fx.dialogs && !s->dlg; d++)
+   {
+      if (s->dlg_done & (1u << d))
+         continue;
+      for (i = 0; i < MAX_PLAYERS; i++)
+         if (s->p[i].active && !s->p[i].respawn && ((FX_INT(s->p[i].x) + PW / 2) >> 4) >= hd_fx.dialog_col[d])
+         {
+            s->dlg = d + 1;
+            s->dlg_chars = 0;
+            hd_play(s, SFX_PAUSE, HD_W / 2);
+            break;
+         }
    }
 }
 
@@ -557,6 +594,12 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
    int32_t i;
    uint32_t any = 0;
    s->frame++;
+   if (s->show.on)
+   {
+      hd_music_step(s);
+      hd_show_step(s, in);
+      return;
+   }
    for (i = 0; i < MAX_PLAYERS; i++)
    {
       uint32_t b = i < hd_players ? in[i].buttons : 0; /* only the game's players count */
@@ -584,6 +627,26 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
          for (i = 0; i < MAX_PLAYERS; i++)
             if ((s->p[i].pad & ~s->p[i].prev) & (PAD_START | PAD_JUMP))
                join(s, i);
+      }
+      particles_step(s);
+      return;
+   }
+
+   /* a dialog stops the game: letters appear one by one; jump or start shows them all, then closes it */
+   if (s->dlg > 0 && s->dlg <= hd_fx.dialogs)
+   {
+      int32_t total = text_glyphs(hd_fx.dialog_text[s->dlg - 1][hd_lang]);
+      if (s->dlg_chars < total)
+         s->dlg_chars++;
+      if (any & (PAD_JUMP | PAD_START))
+      {
+         if (s->dlg_chars < total)
+            s->dlg_chars = total;
+         else
+         {
+            s->dlg_done |= 1u << (s->dlg - 1);
+            s->dlg = 0;
+         }
       }
       particles_step(s);
       return;
@@ -649,7 +712,10 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       if (s->e[i].alive)
          enemy_step(s, &s->e[i]);
    if (s->phase == PH_PLAY)
+   {
       fights(s);
+      dialogs(s);
+   }
    camera(s);
    particles_step(s);
 }

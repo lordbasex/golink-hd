@@ -8,15 +8,22 @@ INCFLAGS := -I$(CORE_DIR)/libretro -I$(CORE_DIR)/src
 ENGINE_C := \
 	$(CORE_DIR)/src/art.c \
 	$(CORE_DIR)/src/audio.c \
+	$(CORE_DIR)/src/bones.c \
 	$(CORE_DIR)/src/content.c \
 	$(CORE_DIR)/src/draw.c \
+	$(CORE_DIR)/src/fx.c \
+	$(CORE_DIR)/src/gfx.c \
 	$(CORE_DIR)/src/game.c \
 	$(CORE_DIR)/src/inflate.c \
 	$(CORE_DIR)/src/json.c \
 	$(CORE_DIR)/src/level.c \
+	$(CORE_DIR)/src/mode7.c \
+	$(CORE_DIR)/src/path.c \
 	$(CORE_DIR)/src/png.c \
 	$(CORE_DIR)/src/save.c \
 	$(CORE_DIR)/src/sha256.c \
+	$(CORE_DIR)/src/showcase.c \
+	$(CORE_DIR)/src/text.c \
 	$(CORE_DIR)/src/zip.c
 
 SOURCES_C := $(ENGINE_C) $(CORE_DIR)/src/libretro.c

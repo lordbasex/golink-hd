@@ -44,6 +44,9 @@ static size_t last_pitch;
 static uint32_t video_hash = 2166136261u, audio_hash = 2166136261u;
 static long audio_frames;
 static int pixel_format = RETRO_PIXEL_FORMAT_0RGB1555;
+/* --option key=value answers the core's GET_VARIABLE */
+static char opt_key[8][64], opt_value[8][64];
+static int opts;
 
 static uint32_t fnv(const void *data, size_t n, uint32_t h)
 {
@@ -79,6 +82,18 @@ static bool env(unsigned cmd, void *data)
    case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
       *(bool *)data = false;
       return true;
+   case RETRO_ENVIRONMENT_GET_VARIABLE:
+   {
+      struct retro_variable *v = (struct retro_variable *)data;
+      int i;
+      for (i = 0; i < opts; i++)
+         if (!strcmp(v->key, opt_key[i]))
+         {
+            v->value = opt_value[i];
+            return true;
+         }
+      return false;
+   }
    case RETRO_ENVIRONMENT_GET_INPUT_BITMASKS:
       return true;
    case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME:
@@ -354,6 +369,16 @@ int main(int argc, char **argv)
          out = argv[++i];
       else if (!strcmp(argv[i], "--content") && i + 1 < argc)
          content = argv[++i];
+      else if (!strcmp(argv[i], "--option") && i + 1 < argc && opts < 8)
+      {
+         const char *eq = strchr(argv[++i], '=');
+         if (eq)
+         {
+            snprintf(opt_key[opts], sizeof opt_key[0], "%.*s", (int)(eq - argv[i]), argv[i]);
+            snprintf(opt_value[opts], sizeof opt_value[0], "%s", eq + 1);
+            opts++;
+         }
+      }
    }
    for (n = 0; n < 256; n++)
    {

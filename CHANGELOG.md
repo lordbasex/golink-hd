@@ -3,6 +3,16 @@
 ## [Unreleased]
 
 ### Added
+- Up to 8 players (a package says how many, 4 by default) on 8 ports; both analog sticks; L, R, L2, R2, L3, R3 and each face button.
+- The screen per game: 16:9 (640 × 360), 4:3 (480 × 360) or 9:16 (360 × 640).
+- Graphics: blend modes (add, multiply, screen), opacity, tint, flash, outlines, sprites turned and scaled, shadows; Mode 7 floors and pseudo 3D roads; skeletal animation (bones, parts, keys, blends, mirrored).
+- Whole-screen effects: fades, color grading (presets and LUT strips), bloom, blur, waves, pixelate, 2D lights with darkness; the camera's zoom (0.5x to 2x, automatic when players spread apart).
+- Text in UTF-8 with Spanish and Portuguese accents; dialog boxes with a portrait and typing; the core option Language.
+- Sound: a low pass filter and an echo on the mix, kept in save states.
+- A* pathfinding.
+- Package format 2: a level's effects (light, darkness, grading, bloom, waves, zoom, outlines, shadows, sound, dialogs in three languages), a portrait and a LUT picture; format 1 packages still play.
+- The showcase demo (core option Demo): Mode 7, road, cave, sea and colors scenes; its hash is checked on every platform like the platformer's.
+- `make bench` (milliseconds per frame of each scene) and tests for every effect, the showcase (the same twice, save states in the middle) and format 2.
 - Game packages (`.glhd`, format 1): a zip with a manifest, a level and PNG pictures; read with the core's own zip, DEFLATE, PNG, JSON and SHA-256 code (no outside libraries, every read bounds checked). The core takes the package in memory or from its path. Packages of a newer format are refused with a clear message; unknown keys are ignored; every picture is optional (a missing one keeps the built-in art).
 - `tools/glhd`: `export-demo`, `pack` and `check`; `tools/hdrun --content`.
 - Tests: the demo as a deflate package plays the very same game as the built-in one; every cut or damaged copy of it fails cleanly or loads the same game; JSON and SHA-256 checks.

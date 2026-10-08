@@ -11,6 +11,10 @@
 #include "libretro.h"
 #include "hd.h"
 #include "pack.h"
+#include "gfx.h"
+#include "bones.h"
+#include "path.h"
+#include "text.h"
 
 static int failures;
 
@@ -418,6 +422,263 @@ static void test_players_screens_sticks(void)
    hd_content_builtin();
 }
 
+static void test_trig(void)
+{
+   CHECK(hd_sin(0) == 0 && hd_sin(1024) == TRIG_ONE && hd_sin(3072) == -TRIG_ONE && hd_cos(0) == TRIG_ONE);
+   CHECK(hd_abs(hd_sin(512) - 11585) <= 1); /* sin 45 degrees */
+   CHECK(hd_abs(hd_sin(341) - 8186) <= 2);  /* sin(341 of 4096 turns) = 0.4996 */
+}
+
+static const char *maze[10] = {
+   "..........",
+   "....#.....",
+   "....#.....",
+   "....#.....",
+   "....#.....",
+   "....#.....",
+   "....#.....",
+   "....#.....",
+   "....#.....",
+   "....#.....",
+};
+
+static int maze_walk(void *ctx, int32_t x, int32_t y)
+{
+   (void)ctx;
+   return x >= 0 && y >= 0 && x < 10 && y < 10 && maze[y][x] == '.';
+}
+
+/* A* goes around the wall, over its top, and never steps into it. */
+static void test_path(void)
+{
+   int32_t x = 1, y = 8, steps = 0, nx, ny;
+   while ((x != 8 || y != 8) && steps < 40 && hd_path_next(x, y, 8, 8, maze_walk, NULL, 500, &nx, &ny))
+   {
+      CHECK(maze_walk(NULL, nx, ny));
+      CHECK(hd_abs(nx - x) <= 1 && hd_abs(ny - y) <= 1);
+      x = nx;
+      y = ny;
+      steps++;
+   }
+   CHECK(x == 8 && y == 8);
+   CHECK(steps >= 14 && steps <= 18); /* up to the top row and down again */
+   CHECK(!hd_path_next(3, 3, 3, 3, maze_walk, NULL, 500, &nx, &ny));
+}
+
+static void test_bones(void)
+{
+   hd_anim a;
+   hd_pose p;
+   memset(&a, 0, sizeof a);
+   a.length = 20;
+   a.loop = 1;
+   a.count = 2;
+   a.key[0].frame = 0;
+   a.key[0].angle[0] = 0;
+   a.key[1].frame = 10;
+   a.key[1].angle[0] = 400;
+   a.key[1].angle[1] = 4000; /* the short way from 0 to 4000 is backwards */
+   bones_pose(&a, 5, &p);
+   CHECK(p.angle[0] == 200);
+   CHECK(p.angle[1] == -48);
+   bones_pose(&a, 15, &p); /* looping back from the last key to the first */
+   CHECK(p.angle[0] == 200);
+   bones_pose(&a, 25, &p);
+   CHECK(p.angle[0] == 200);
+}
+
+static uint32_t small_px[64 * 36], other_px[64 * 36];
+
+static void test_fx(void)
+{
+   hd_surface s = { small_px, 64, 36 }, t = { other_px, 64, 36 };
+   uint32_t sprite_px[4 * 3];
+   hd_image im = { 4, 3, sprite_px };
+   hd_style st;
+   int32_t i, x, y, same = 1;
+   for (i = 0; i < 64 * 36; i++)
+      small_px[i] = (uint32_t)(i * 2654435761u) & 0xffffffu;
+   fx_fade(&s, 0xff0000u, 256);
+   for (i = 0; i < 64 * 36; i++)
+      same &= small_px[i] == 0xff0000u;
+   CHECK(same);
+   for (i = 0; i < 64 * 36; i++)
+      small_px[i] = (uint32_t)(i * 2654435761u) & 0xffffffu;
+   fx_grade_build(GRADE_GREY, NULL);
+   fx_grade(&s, 256);
+   for (i = 0, same = 1; i < 64 * 36; i++)
+      same &= ((small_px[i] >> 16) & 0xff) == (small_px[i] & 0xff) && ((small_px[i] >> 8) & 0xff) == (small_px[i] & 0xff);
+   CHECK(same);
+   fx_grade_build(GRADE_NONE, NULL);
+   fx_pixelate(&s, 4);
+   for (y = 0, same = 1; y < 36; y++)
+      for (x = 0; x < 64; x++)
+         same &= small_px[y * 64 + x] == small_px[(y / 4 * 4) * 64 + x / 4 * 4];
+   CHECK(same);
+   fx_lights(&s, 256, NULL, 0); /* all dark, no lights */
+   for (i = 0, same = 1; i < 64 * 36; i++)
+      same &= small_px[i] == 0;
+   CHECK(same);
+   /* a sprite turned by 0 at scale 1 lands exactly where a plain one does */
+   for (i = 0; i < 12; i++)
+      sprite_px[i] = 0xff000000u | (uint32_t)(i * 0x151515u);
+   memset(small_px, 0, sizeof small_px);
+   memset(other_px, 0, sizeof other_px);
+   gfx_blit(&s, &im, 10, 7, NULL);
+   gfx_blit_rot(&t, &im, 10, 7, 0, 0, 0, FX_ONE, FX_ONE, NULL);
+   CHECK(memcmp(small_px, other_px, sizeof small_px) == 0);
+   /* a quarter turn: the picture's first row becomes its last column, drawn downward */
+   memset(other_px, 0, sizeof other_px);
+   gfx_blit_rot(&t, &im, 20, 10, 0, 0, 1024, FX_ONE, FX_ONE, NULL);
+   CHECK(other_px[10 * 64 + 19] == (sprite_px[0] & 0xffffffu) && other_px[13 * 64 + 19] == (sprite_px[3] & 0xffffffu));
+   /* blend modes */
+   memset(&st, 0, sizeof st);
+   small_px[0] = 0x808080u;
+   sprite_px[0] = 0xff404040u;
+   st.blend = BLEND_ADD;
+   gfx_blit(&s, &im, 0, 0, &st);
+   CHECK(small_px[0] == 0xc0c0c0u);
+   small_px[0] = 0x808080u;
+   st.blend = BLEND_MULTIPLY;
+   gfx_blit(&s, &im, 0, 0, &st);
+   CHECK(small_px[0] == 0x202020u);
+   /* the outline: a ring around a one pixel sprite */
+   {
+      uint32_t dot_px[1] = { 0xffffffffu };
+      hd_image dot = { 1, 1, dot_px };
+      memset(small_px, 0, sizeof small_px);
+      memset(&st, 0, sizeof st);
+      st.outline = 0xff00ff00u;
+      gfx_blit(&s, &dot, 5, 5, &st);
+      CHECK(small_px[5 * 64 + 5] == 0xffffffu && small_px[4 * 64 + 5] == 0x00ff00u && small_px[5 * 64 + 6] == 0x00ff00u && small_px[4 * 64 + 4] == 0);
+   }
+   /* text: accents are drawn above the capital, a dialog counts letters, not bytes */
+   CHECK(text_glyphs("\xc2\xa1" "Hola, ni\xc3\xb1o!") == 12);
+   CHECK(text_width("ABC", 2) == 34);
+}
+
+static uint32_t show_hash(hd_state *s, int32_t from, int32_t to)
+{
+   uint32_t h = 2166136261u;
+   hd_input in[MAX_PLAYERS];
+   int32_t f;
+   for (f = from; f < to; f++)
+   {
+      memset(in, 0, sizeof in);
+      /* every 300 frames the next scene; in between drive, walk, jump, swim and try the colors */
+      if (f % 300 == 0)
+         in[0].buttons = PAD_R;
+      else if (f % 300 < 200)
+         in[0].buttons = PAD_B | ((f / 60) % 2 ? PAD_RIGHT : PAD_LEFT) | ((f % 40) < 3 ? PAD_Y : 0) | ((f % 50) == 7 ? PAD_UP : 0);
+      hd_step(s, in);
+      hd_draw(s, fb);
+      hd_mix(s, audio, 1);
+      h = fnv(fb, sizeof(uint32_t) * HD_W * HD_H, h);
+      h = fnv(audio, sizeof(int16_t) * HD_SAMPLES_PER_FRAME * 2, h);
+   }
+   return h;
+}
+
+/* The showcase: every scene, the same twice, and a save state in the middle continues exactly. */
+static void test_showcase(void)
+{
+   static hd_state a, b;
+   static uint8_t save[HD_SAVE_SIZE];
+   uint32_t ha, hb;
+   int32_t lang;
+   for (lang = 0; lang < LANGS; lang++)
+   {
+      hd_lang = lang;
+      hd_reset(&a);
+      hd_show_start(&a);
+      hd_reset(&b);
+      hd_show_start(&b);
+      ha = show_hash(&a, 0, 1600);
+      hb = show_hash(&b, 0, 1600);
+      CHECK(ha == hb);
+   }
+   hd_lang = 0;
+   CHECK(a.show.on && a.show.scene >= 0 && a.show.scene < 5);
+   hd_reset(&a);
+   hd_show_start(&a);
+   show_hash(&a, 0, 750);
+   hd_save(&a, save);
+   ha = show_hash(&a, 750, 1500);
+   CHECK(hd_load(&b, save, HD_SAVE_SIZE) == 1);
+   hb = show_hash(&b, 750, 1500);
+   CHECK(ha == hb);
+   CHECK(memcmp(&a, &b, sizeof a) == 0);
+}
+
+/* A package of format 2: a dark level with lights, colors, waves, zoom, outlines, sound and a dialog. */
+static void test_effects_package(void)
+{
+   static uint8_t zip[200000];
+   static char level[100000], with_fx[110000];
+   static hd_state s;
+   hd_input in[MAX_PLAYERS];
+   const char *err;
+   size_t n;
+   int32_t f, i, opened = 0, closed = 0, zoomed = 0;
+   zfile files[2];
+   flat_level(level, sizeof level, 120, 48); /* tall enough to zoom out: the view never shows past the level */
+   level[strlen(level) - 1] = 0; /* drop the closing brace to add the effects */
+   snprintf(with_fx, sizeof with_fx, "%s, \"effects\": {\"darkness\": 200, \"player_light\": 90, \"lights\": [{\"x\": 10, \"y\": 18, \"radius\": 80, \"color\": \"#ff9040\", \"flicker\": 8}],"
+            " \"grade\": \"night\", \"grade_amount\": 200, \"bloom\": 180, \"waves\": {\"row\": 20, \"amplitude\": 2}, \"zoom\": \"auto\","
+            " \"outline\": \"#1a1020\", \"shadows\": true, \"lowpass\": 80, \"echo\": 150,"
+            " \"dialogs\": [{\"column\": 6, \"name\": \"Ana\", \"text\": {\"en\": \"Hello there\", \"es\": \"\xc2\xa1Hola!\"}}]}}", level);
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 2, \"title\": \"Dark\", \"players\": 2, \"level\": \"level.json\"}";
+   files[1].name = "level.json";
+   files[1].text = with_fx;
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  effects package: %s\n", err);
+   CHECK(hd_fx.darkness == 200 && hd_fx.lights == 1 && hd_fx.grade == GRADE_NIGHT && hd_fx.zoom_auto && hd_fx.dialogs == 1);
+   CHECK(strcmp(hd_fx.dialog_text[0][2], "Hello there") == 0); /* Portuguese left out: English */
+   hd_reset(&s);
+   CHECK(s.lowpass == 80 && s.echo == 150 * HD_RATE / 1000);
+   for (f = 0; f < 900; f++)
+   {
+      memset(in, 0, sizeof in);
+      if (f == 10)
+         in[0].buttons = PAD_START;
+      if (f == 12)
+         in[1].buttons = PAD_START;
+      if (f > 20)
+         in[0].buttons = PAD_RIGHT | PAD_RUN; /* player 1 runs off, player 2 stays: the camera zooms out */
+      if (s.dlg)
+      {
+         opened = 1;
+         if (f % 20 == 0)
+            in[0].buttons |= PAD_JUMP;
+      }
+      else if (opened)
+         closed = 1;
+      hd_step(&s, in);
+      hd_draw(&s, fb);
+      hd_mix(&s, audio, 1);
+      if (s.zoom < 240)
+         zoomed = 1;
+   }
+   CHECK(opened && closed && (s.dlg_done & 1));
+   CHECK(zoomed);
+   for (i = 0; i < 2; i++)
+      CHECK(s.p[i].active);
+   /* effects that make no sense are refused */
+   snprintf(with_fx, sizeof with_fx, "%s, \"effects\": {\"grade\": \"purple\"}}", level);
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0);
+   snprintf(with_fx, sizeof with_fx, "%s, \"effects\": {\"darkness\": 999}}", level);
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0);
+   files[0].text = "{\"format\": 3, \"title\": \"Later\", \"level\": \"level.json\"}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "newer") != NULL);
+   hd_content_builtin();
+}
+
 /* A fake frontend for the libretro API. */
 static uint32_t fake_buttons[MAX_PLAYERS];
 static unsigned frames_seen, samples_seen;
@@ -547,6 +808,12 @@ int main(void)
    test_sha256();
    test_package();
    test_players_screens_sticks();
+   test_trig();
+   test_path();
+   test_bones();
+   test_fx();
+   test_showcase();
+   test_effects_package();
    test_libretro();
    if (failures)
    {

@@ -29,6 +29,8 @@ static hd_state state;
 static uint32_t frame_buf[HD_MAX_W * HD_MAX_H];
 static int16_t audio_buf[HD_SAMPLES_PER_FRAME * 2];
 static int music_on = 1;
+static int showcase;   /* the "Demo" option: 0 platformer, 1 showcase */
+static int has_content;
 static int use_bitmasks;
 
 static void fallback_log(enum retro_log_level level, const char *fmt, ...)
@@ -54,6 +56,26 @@ static struct retro_core_option_v2_definition option_defs[] = {
       { { "enabled", NULL }, { "disabled", NULL }, { NULL, NULL } },
       "enabled",
    },
+   {
+      "golink_hd_demo",
+      "Demo",
+      NULL,
+      "With no game loaded: the platformer for 1 to 4 players, or the showcase of every effect (Mode 7, the road, lights, bones, waves, colors; L and R change scenes).",
+      NULL,
+      NULL,
+      { { "platformer", "Platformer" }, { "showcase", "Showcase" }, { NULL, NULL } },
+      "platformer",
+   },
+   {
+      "golink_hd_language",
+      "Language",
+      NULL,
+      "The language of the game's texts and dialogs.",
+      NULL,
+      NULL,
+      { { "auto", "Frontend's" }, { "en", "English" }, { "es", "Espa\xc3\xb1ol" }, { "pt", "Portugu\xc3\xaas" }, { NULL, NULL } },
+      "auto",
+   },
    { NULL, NULL, NULL, NULL, NULL, NULL, { { NULL, NULL } }, NULL },
 };
 
@@ -68,17 +90,44 @@ static void set_options(void)
    {
       static const struct retro_variable vars[] = {
          { "golink_hd_music", "Music; enabled|disabled" },
+         { "golink_hd_demo", "Demo; platformer|showcase" },
+         { "golink_hd_language", "Language; auto|en|es|pt" },
          { NULL, NULL },
       };
       environ_cb(RETRO_ENVIRONMENT_SET_VARIABLES, (void *)vars);
    }
 }
 
-static void read_options(void)
+/* Reads the options; returns 1 when the demo changed (the game starts again). */
+static int read_options(void)
 {
    struct retro_variable var = { "golink_hd_music", NULL };
+   int was = showcase;
+   unsigned lang = RETRO_LANGUAGE_ENGLISH;
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
       music_on = strcmp(var.value, "disabled") != 0;
+   var.key = "golink_hd_demo";
+   var.value = NULL;
+   showcase = environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value && !strcmp(var.value, "showcase");
+   var.key = "golink_hd_language";
+   var.value = NULL;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value && strcmp(var.value, "auto"))
+      hd_lang = !strcmp(var.value, "es") ? 1 : (!strcmp(var.value, "pt") ? 2 : 0);
+   else
+   {
+      if (!environ_cb(RETRO_ENVIRONMENT_GET_LANGUAGE, &lang))
+         lang = RETRO_LANGUAGE_ENGLISH;
+      hd_lang = lang == RETRO_LANGUAGE_SPANISH ? 1 : (lang == RETRO_LANGUAGE_PORTUGUESE_BRAZIL || lang == RETRO_LANGUAGE_PORTUGUESE_PORTUGAL ? 2 : 0);
+   }
+   return was != showcase;
+}
+
+/* A new game: the package's, or the demo the option picks. */
+static void start(void)
+{
+   hd_reset(&state);
+   if (!has_content && showcase)
+      hd_show_start(&state);
 }
 
 void retro_set_environment(retro_environment_t cb)
@@ -144,7 +193,7 @@ void retro_set_controller_port_device(unsigned port, unsigned device)
    (void)device;
 }
 
-void retro_reset(void) { hd_reset(&state); }
+void retro_reset(void) { start(); }
 
 /*
  * RetroPad buttons to the engine's: B or A jump, Y or X run (each face
@@ -192,8 +241,8 @@ void retro_run(void)
    hd_input pads[MAX_PLAYERS];
    bool updated = false;
    unsigned i;
-   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated)
-      read_options();
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated && read_options() && !has_content)
+      start();
    input_poll_cb();
    for (i = 0; i < MAX_PLAYERS; i++)
       pads[i] = read_pad(i);
@@ -281,12 +330,16 @@ bool retro_load_game(const struct retro_game_info *game)
          return false;
       }
       log_cb(RETRO_LOG_INFO, "[go-link HD] playing %s\n", hd_title);
+      has_content = 1;
    }
    else
+   {
       hd_content_builtin();
+      has_content = 0;
+   }
    describe_input();
    read_options();
-   hd_reset(&state);
+   start();
    return true;
 }
 

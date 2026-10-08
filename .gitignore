@@ -13,3 +13,5 @@ tools/glhd
 demo/
 walk.out
 *.sha256
+tools/bench
+showcase.out
