@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- **Its own API instead of libretro's:** the engine is a library (`libgolinkhd`, shared or static) with a small, versioned API in `include/golink_hd.h` (`golinkhd_create`, `golinkhd_load`, `golinkhd_frame`, save states, settings); only `golinkhd_*` leaves the library. The libretro adapter, its header and its info file are gone; libretro's API, which the engine followed at first, is credited as the idea behind it. Opposite directions held together now cancel in the engine, for every host. `tools/hdrun` hosts the built library through the API (`--demo`, `--language`); the platform hashes are unchanged.
+
 ### Added
 - Up to 8 players (a package says how many, 4 by default) on 8 ports; both analog sticks; L, R, L2, R2, L3, R3 and each face button.
 - The screen per game: 16:9 (640 × 360), 4:3 (480 × 360) or 9:16 (360 × 640).

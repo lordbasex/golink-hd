@@ -1,8 +1,8 @@
 /* Copyright (c) 2026 Federico Pereira <lord.basex@gmail.com> */
 /*
  * go-link HD: the screen, the whole game state and the calls between the
- * engine's parts (art, level, game, draw, audio). The libretro API lives in
- * libretro.c and only talks to the engine through these calls.
+ * engine's parts (art, level, game, draw, audio). Hosts never see these:
+ * they use the API in include/golink_hd.h (api.c).
  *
  * The state rule: every field of hd_state (and of the structs inside it) is
  * a 32-bit integer (int32_t or uint32_t), so the struct has no padding and a
@@ -16,6 +16,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "fixed.h"
+#include "golink_hd.h"
 
 #define HD_VERSION "0.2.0"
 /*
@@ -48,7 +49,7 @@ extern int32_t hd_w, hd_h;
 #define MAP_H hd_map_h
 
 /* Up to 8 players; the game says how many it takes (hd_players). */
-#define MAX_PLAYERS 8
+#define MAX_PLAYERS GOLINKHD_MAX_PLAYERS
 #define DEFAULT_PLAYERS 4
 extern int32_t hd_players;
 #define MAX_ENEMIES 48
@@ -59,36 +60,31 @@ extern int32_t hd_players;
 /* The longest echo: 0.3 s. */
 #define ECHO_MAX (HD_RATE * 3 / 10)
 
-/* A player's buttons for one frame. */
+/* A player's buttons for one frame: the API's (golink_hd.h), by shorter names. */
 enum
 {
-   PAD_UP = 1 << 0,
-   PAD_DOWN = 1 << 1,
-   PAD_LEFT = 1 << 2,
-   PAD_RIGHT = 1 << 3,
-   PAD_JUMP = 1 << 4,
-   PAD_RUN = 1 << 5,
-   PAD_START = 1 << 6,
-   PAD_SELECT = 1 << 7,
-   PAD_L = 1 << 8,
-   PAD_R = 1 << 9,
-   PAD_L2 = 1 << 10,
-   PAD_R2 = 1 << 11,
-   PAD_L3 = 1 << 12,
-   PAD_R3 = 1 << 13,
-   /* the face buttons themselves, for games that tell them apart */
-   PAD_A = 1 << 14,
-   PAD_B = 1 << 15,
-   PAD_X = 1 << 16,
-   PAD_Y = 1 << 17
+   PAD_UP = GOLINKHD_UP,
+   PAD_DOWN = GOLINKHD_DOWN,
+   PAD_LEFT = GOLINKHD_LEFT,
+   PAD_RIGHT = GOLINKHD_RIGHT,
+   PAD_JUMP = GOLINKHD_JUMP,
+   PAD_RUN = GOLINKHD_RUN,
+   PAD_START = GOLINKHD_START,
+   PAD_SELECT = GOLINKHD_SELECT,
+   PAD_L = GOLINKHD_L,
+   PAD_R = GOLINKHD_R,
+   PAD_L2 = GOLINKHD_L2,
+   PAD_R2 = GOLINKHD_R2,
+   PAD_L3 = GOLINKHD_L3,
+   PAD_R3 = GOLINKHD_R3,
+   PAD_A = GOLINKHD_A,
+   PAD_B = GOLINKHD_B,
+   PAD_X = GOLINKHD_X,
+   PAD_Y = GOLINKHD_Y
 };
 
-/* One player's controller for one frame: buttons and the two sticks (-32768..32767, libretro's range). */
-typedef struct
-{
-   uint32_t buttons;
-   int32_t lx, ly, rx, ry;
-} hd_input;
+/* One player's controller for one frame: the API's pad (golink_hd.h). */
+typedef golinkhd_pad hd_input;
 
 /* How far a stick must lean to count as a direction. */
 #define STICK_DEAD 16384
@@ -236,7 +232,7 @@ typedef struct
    char dialog_text[DIALOGS_MAX][LANGS][200];
 } hd_fx_config;
 extern hd_fx_config hd_fx;
-extern int32_t hd_lang; /* 0 English, 1 Spanish, 2 Portuguese (a core option) */
+extern int32_t hd_lang; /* 0 English, 1 Spanish, 2 Portuguese (golinkhd_set_language) */
 
 /* Pictures are 0xAARRGGBB; alpha 0 is not drawn. */
 typedef struct
@@ -298,7 +294,7 @@ void hd_draw(const hd_state *s, uint32_t *fb);
 /* An optional picture for dialogs (the package's "portrait"). */
 extern hd_image hd_portrait;
 
-/* showcase.c: the demo of every effect (the core option "Demo: showcase") */
+/* showcase.c: the demo of every effect (golinkhd_load_demo(e, 1)) */
 void hd_show_start(hd_state *s);
 void hd_show_step(hd_state *s, const hd_input in[MAX_PLAYERS]);
 void hd_show_draw(const hd_state *s, void *screen);

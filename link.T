@@ -1,4 +1,4 @@
 {
-   global: retro_*;
+   global: golinkhd_*;
    local: *;
 };

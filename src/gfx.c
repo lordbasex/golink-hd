@@ -200,7 +200,7 @@ void gfx_blit_rot(hd_surface *s, const hd_image *im, int32_t x, int32_t y, int32
          int64_t dx = (int64_t)(i - x) * 2 + 1;
          /* back into the picture: turn the other way, undo the scale (halves * 2^14 * 2^16 >> 31 = pixels << 16) */
          int64_t u = ((dx * c + dy * sn) * isx) >> 15, v = ((dy * c - dx * sn) * isy) >> 15;
-         /* >> on a negative number rounds down on every compiler libretro uses (see fixed.h) */
+         /* >> on a negative number rounds down on every compiler the engine is built with (see fixed.h) */
          int32_t pu = px + (int32_t)(u >> 16), pv = py + (int32_t)(v >> 16);
          uint32_t col = pick(im, pu, pv, flags);
          int32_t w;

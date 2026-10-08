@@ -1,6 +1,6 @@
 /* Copyright (c) 2026 Federico Pereira <lord.basex@gmail.com> */
 /*
- * The showcase demo (core option "Demo: showcase"): one scene for each of
+ * The showcase demo (golinkhd_load_demo(e, 1)): one scene for each of
  * the engine's effects, changed with L and R (or Select), each a small
  * playable thing:
  *   0 Mode 7     a kart on a track seen in perspective, trees around it

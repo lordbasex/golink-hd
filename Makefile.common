@@ -1,9 +1,9 @@
 # Copyright (c) 2026 Federico Pereira <lord.basex@gmail.com>
-# The core's sources, shared by the Makefile and Android's jni/ build.
+# The engine's sources.
 
 CORE_DIR ?= .
 
-INCFLAGS := -I$(CORE_DIR)/libretro -I$(CORE_DIR)/src
+INCFLAGS := -I$(CORE_DIR)/include -I$(CORE_DIR)/src
 
 ENGINE_C := \
 	$(CORE_DIR)/src/art.c \
@@ -26,4 +26,4 @@ ENGINE_C := \
 	$(CORE_DIR)/src/text.c \
 	$(CORE_DIR)/src/zip.c
 
-SOURCES_C := $(ENGINE_C) $(CORE_DIR)/src/libretro.c
+SOURCES_C := $(ENGINE_C) $(CORE_DIR)/src/api.c

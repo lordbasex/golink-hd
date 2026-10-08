@@ -3,11 +3,11 @@
  * Fixed point numbers and the random generator. Game logic never uses float:
  * compilers may fuse or reorder float operations differently on each CPU,
  * and the same inputs must give the same frames everywhere (the device, the
- * browser's WebAssembly build and every libretro platform).
+ * browser's WebAssembly build and every platform it is built for).
  *
  * Positions and speeds are 16.16: the upper 16 bits are pixels, the lower 16
  * bits the fraction. Right shifts of negative numbers are arithmetic on every
- * compiler libretro builds with (GCC, Clang, MSVC), so >> is a floor.
+ * compiler it is built with (GCC, Clang, MSVC), so >> is a floor.
  */
 #ifndef HD_FIXED_H
 #define HD_FIXED_H

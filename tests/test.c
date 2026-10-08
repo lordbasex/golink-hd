@@ -2,13 +2,12 @@
 /*
  * The engine's tests: the art is well formed, the same inputs give the same
  * frames and sound, a save state continues exactly where it was taken, bad
- * save states are refused or made safe, and the libretro API works through
- * a fake frontend. Built with the address and undefined behaviour sanitizers.
+ * save states are refused or made safe, and the API (golink_hd.h) works as
+ * a host uses it. Built with the address and undefined behaviour sanitizers.
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "libretro.h"
 #include "hd.h"
 #include "pack.h"
 #include "gfx.h"
@@ -679,120 +678,91 @@ static void test_effects_package(void)
    hd_content_builtin();
 }
 
-/* A fake frontend for the libretro API. */
-static uint32_t fake_buttons[MAX_PLAYERS];
-static unsigned frames_seen, samples_seen;
-static uint32_t last_frame_hash;
-static int saw_options;
+static int32_t logged;
 
-static bool fake_env(unsigned cmd, void *data)
+static void count_log(void *user, int32_t level, const char *msg)
 {
-   switch (cmd)
-   {
-   case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT:
-      return *(enum retro_pixel_format *)data == RETRO_PIXEL_FORMAT_XRGB8888;
-   case RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION:
-      *(unsigned *)data = 2;
-      return true;
-   case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2:
-      saw_options = 1;
-      return true;
-   case RETRO_ENVIRONMENT_GET_VARIABLE:
-      ((struct retro_variable *)data)->value = "enabled";
-      return true;
-   case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
-      *(bool *)data = false;
-      return true;
-   case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME:
-   case RETRO_ENVIRONMENT_SET_CONTROLLER_INFO:
-   case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS:
-      return true;
-   default:
-      return false;
-   }
+   (void)user;
+   (void)level;
+   (void)msg;
+   logged++;
 }
 
-static void fake_video(const void *data, unsigned w, unsigned h, size_t pitch)
+/* The API (include/golink_hd.h), as a host uses it. */
+static void test_api(void)
 {
-   frames_seen++;
-   last_frame_hash = fnv(data, pitch * h, 2166136261u);
-   (void)w;
-}
-
-static size_t fake_audio(const int16_t *data, size_t frames)
-{
-   samples_seen += (unsigned)frames;
-   (void)data;
-   return frames;
-}
-
-static void fake_poll(void) {}
-
-static int16_t fake_input(unsigned port, unsigned device, unsigned index, unsigned id)
-{
-   (void)index;
-   if (device != RETRO_DEVICE_JOYPAD || port >= MAX_PLAYERS)
-      return 0;
-   if (id == RETRO_DEVICE_ID_JOYPAD_START)
-      return (fake_buttons[port] & PAD_START) != 0;
-   if (id == RETRO_DEVICE_ID_JOYPAD_RIGHT)
-      return (fake_buttons[port] & PAD_RIGHT) != 0;
-   if (id == RETRO_DEVICE_ID_JOYPAD_B)
-      return (fake_buttons[port] & PAD_JUMP) != 0;
-   return 0;
-}
-
-static void test_libretro(void)
-{
-   struct retro_system_info info;
-   struct retro_system_av_info av;
-   struct retro_game_info content = { "game.glhd", NULL, 0, NULL };
+   golinkhd_config cfg;
+   golinkhd_engine *e, *other;
+   golinkhd_info info;
+   golinkhd_frame_out out;
+   golinkhd_pad pads[GOLINKHD_MAX_PLAYERS];
+   const char *err;
    static uint8_t save[HD_SAVE_SIZE + 64];
-   uint32_t hash_after;
-   unsigned i;
+   uint8_t *pkg;
+   size_t n;
+   uint32_t h1 = 0, h2 = 0;
+   int32_t f;
 
-   retro_set_environment(fake_env);
-   retro_set_video_refresh(fake_video);
-   retro_set_audio_sample_batch(fake_audio);
-   retro_set_input_poll(fake_poll);
-   retro_set_input_state(fake_input);
-   retro_init();
-   CHECK(saw_options);
-   CHECK(retro_api_version() == RETRO_API_VERSION);
-   retro_get_system_info(&info);
-   CHECK(strcmp(info.library_name, "go-link HD") == 0);
-   CHECK(strcmp(info.valid_extensions, "glhd") == 0);
-   retro_get_system_av_info(&av);
-   CHECK(av.geometry.base_width == (unsigned)HD_W && av.geometry.base_height == (unsigned)HD_H);
-   CHECK(av.timing.sample_rate == HD_RATE);
+   memset(&cfg, 0, sizeof cfg);
+   cfg.api_version = GOLINKHD_API_VERSION + 1; /* a host from the future */
+   CHECK(golinkhd_create(&cfg, &err) == NULL && err != NULL);
+   cfg.api_version = GOLINKHD_API_VERSION;
+   cfg.log = count_log;
+   e = golinkhd_create(&cfg, &err);
+   CHECK(e != NULL);
+   if (!e)
+      return;
+   CHECK(golinkhd_create(&cfg, &err) == NULL); /* one at a time in this version */
+   CHECK(golinkhd_api_version() == GOLINKHD_API_VERSION && strcmp(golinkhd_version(), HD_VERSION) == 0);
+   golinkhd_get_info(e, &info);
+   CHECK(info.width == 640 && info.height == 360 && info.fps == 60 && info.sample_rate == 48000 && info.players == 4);
 
-   CHECK(!retro_load_game(&content)); /* a path that does not exist */
-   content.path = "tests/data/demo-deflate.glhd";
-   CHECK(retro_load_game(&content)); /* read from its path, as go-link's device passes it */
-   retro_unload_game();
-   CHECK(retro_load_game(NULL));
-   for (i = 0; i < 120; i++)
+   memset(pads, 0, sizeof pads);
+   for (f = 0; f < 200; f++)
    {
-      fake_buttons[0] = (i >= 10 && i < 14) ? PAD_START : (i >= 14 ? PAD_RIGHT : 0);
-      retro_run();
+      pads[0].buttons = f >= 10 && f < 14 ? GOLINKHD_START : (f >= 14 ? GOLINKHD_RIGHT | GOLINKHD_LEFT | GOLINKHD_JUMP : 0);
+      golinkhd_frame(e, pads, 1, &out);
    }
-   CHECK(frames_seen == 120);
-   CHECK(samples_seen == 120 * HD_SAMPLES_PER_FRAME);
-   CHECK(retro_serialize_size() == HD_SAVE_SIZE);
-   CHECK(!retro_serialize(save, HD_SAVE_SIZE - 1));
-   CHECK(retro_serialize(save, sizeof save));
-   for (i = 0; i < 60; i++)
-      retro_run();
-   hash_after = last_frame_hash;
-   CHECK(retro_unserialize(save, sizeof save));
-   for (i = 0; i < 60; i++)
-      retro_run();
-   CHECK(last_frame_hash == hash_after);
+   CHECK(out.width == 640 && out.height == 360 && out.pitch == 640 && out.audio_frames == HD_SAMPLES_PER_FRAME);
+   CHECK(golinkhd_state_size(e) == HD_SAVE_SIZE);
+   CHECK(!golinkhd_state_save(e, save, HD_SAVE_SIZE - 1));
+   CHECK(golinkhd_state_save(e, save, sizeof save));
+   for (f = 0; f < 60; f++)
+   {
+      golinkhd_frame(e, pads, 1, &out);
+      h1 = fnv(out.pixels, sizeof(uint32_t) * 640 * 360, h1);
+   }
+   CHECK(golinkhd_state_load(e, save, sizeof save, &err));
+   for (f = 0; f < 60; f++)
+   {
+      golinkhd_frame(e, pads, 1, &out);
+      h2 = fnv(out.pixels, sizeof(uint32_t) * 640 * 360, h2);
+   }
+   CHECK(h1 == h2);
    save[0] = 'X';
-   CHECK(!retro_unserialize(save, sizeof save));
-   retro_reset();
-   retro_unload_game();
-   retro_deinit();
+   CHECK(!golinkhd_state_load(e, save, sizeof save, &err) && err != NULL);
+
+   /* a package, then a damaged one: the engine says why and keeps its demo */
+   pkg = slurp("tests/data/demo-deflate.glhd", &n);
+   CHECK(pkg && golinkhd_load(e, pkg, n, &err));
+   golinkhd_get_info(e, &info);
+   CHECK(strcmp(info.title, "go-link HD demo") == 0 && (info.sha256[0] | info.sha256[1]) != 0);
+   CHECK(logged > 0);
+   CHECK(!golinkhd_load(e, pkg, n / 2, &err) && err != NULL);
+   golinkhd_get_info(e, &info);
+   CHECK(info.sha256[0] == 0 && info.sha256[1] == 0);
+   free(pkg);
+   golinkhd_load_demo(e, 1);
+   golinkhd_set_language(e, "pt");
+   golinkhd_set_music(e, 0);
+   golinkhd_frame(e, NULL, 0, &out);
+   CHECK(out.pixels != NULL);
+   golinkhd_restart(e);
+   golinkhd_destroy(e);
+   other = golinkhd_create(&cfg, &err); /* free again once destroyed */
+   CHECK(other != NULL);
+   golinkhd_destroy(other);
+   hd_lang = 0;
 }
 
 int main(void)
@@ -814,7 +784,7 @@ int main(void)
    test_fx();
    test_showcase();
    test_effects_package();
-   test_libretro();
+   test_api();
    if (failures)
    {
       printf("FAIL: %d checks failed\n", failures);

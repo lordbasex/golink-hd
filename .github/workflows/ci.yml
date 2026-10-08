@@ -13,18 +13,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Core
-        run: make
+      - name: Library
+        run: make && make static
       - name: Tests
         run: make test
       - name: Headless run
         run: |
           make tools
-          core=$(ls golink_hd_libretro.*)
+          lib=$(ls libgolinkhd.so libgolinkhd.dylib 2>/dev/null)
           # every platform must draw and sound exactly the same
-          tools/hdrun ./$core --frames 460 --script tools/runs/walk.txt > walk.out
+          tools/hdrun ./$lib --frames 460 --script tools/runs/walk.txt > walk.out
           diff tools/runs/walk.expected walk.out
-          tools/hdrun ./$core --option golink_hd_demo=showcase --option golink_hd_language=es --frames 960 --script tools/runs/showcase.txt > showcase.out
+          tools/hdrun ./$lib --demo showcase --language es --frames 960 --script tools/runs/showcase.txt > showcase.out
           diff tools/runs/showcase.expected showcase.out
       - name: Frame time
         # every scene within a generous limit (shared runners are slower and noisier than a host)
@@ -33,8 +33,8 @@ jobs:
         run: |
           # the demo exported, packed and played as a package
           tools/glhd export-demo demo && tools/glhd pack demo demo.glhd && tools/glhd check demo.glhd
-          core=$(ls golink_hd_libretro.*)
-          tools/hdrun ./$core --content demo.glhd --frames 460 --script tools/runs/walk.txt
+          lib=$(ls libgolinkhd.so libgolinkhd.dylib 2>/dev/null)
+          tools/hdrun ./$lib --content demo.glhd --frames 460 --script tools/runs/walk.txt
 
   windows:
     runs-on: windows-latest
@@ -47,5 +47,5 @@ jobs:
         with:
           msystem: MINGW64
           install: make mingw-w64-x86_64-gcc
-      - name: Core
+      - name: Library
         run: make platform=win CC=gcc

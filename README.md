@@ -1,8 +1,30 @@
 # go-link HD
 
-go-link HD is a 2D game engine packaged as a [libretro](https://www.libretro.com/) core: a "virtual board" with modern console-class pictures (a 640 × 360 pixel art screen, or 4:3 and vertical ones, 32-bit color, alpha, blend modes, rotation and scale, lights, color grading, Mode 7 and pseudo 3D roads, skeletal animation) for games made with [Willy Maker](https://maker.go-link.org), for 1 to 8 players. It is written in portable C99 with no dependencies, so it runs in any libretro frontend (RetroArch, [go-link](https://github.com/lordbasex/go-link)'s device, and others) on every platform the libretro buildbot builds for.
+go-link HD is a 2D game engine, a library with its own small API (`include/golink_hd.h`): a "virtual board" with modern console-class pictures (a 640 × 360 pixel art screen, or 4:3 and vertical ones, 32-bit color, alpha, blend modes, rotation and scale, lights, color grading, Mode 7 and pseudo 3D roads, skeletal animation) for games made with [Willy Maker](https://maker.go-link.org), for 1 to 8 players. It is written in portable C99 with no dependencies. [go-link](https://github.com/lordbasex/go-link)'s device runs it from Go to play its games in rooms (next to MAME, which go-link runs through libretro), and Willy Maker's play mode will run it in WebAssembly.
 
-Started with no content it plays a **built-in demo**: a platformer for 1 to 4 players, or (core option **Demo: Showcase**) a scene for each of the engine's effects. Given a **game package** (`.glhd`) it plays that game.
+Created, it plays a **built-in demo**: a platformer for 1 to 4 players, or (`golinkhd_load_demo(e, 1)`) the **showcase**, a scene for each of the engine's effects. Given a **game package** (`.glhd`) it plays that game.
+
+## The API
+
+```c
+#include "golink_hd.h"
+
+golinkhd_config cfg = { GOLINKHD_API_VERSION, my_log, NULL };
+golinkhd_engine *e = golinkhd_create(&cfg, &error);
+golinkhd_load(e, package, size, &error);    /* or golinkhd_load_demo(e, 0 or 1) */
+for (;;)                                    /* 60 times a second */
+{
+   golinkhd_pad pads[8];                    /* buttons (GOLINKHD_*) and sticks of each player */
+   golinkhd_frame_out out;
+   golinkhd_frame(e, pads, 8, &out);        /* out.pixels: XRGB8888; out.audio: 800 stereo samples at 48 kHz */
+}
+golinkhd_state_save(e, buf, golinkhd_state_size(e));
+golinkhd_destroy(e);
+```
+
+Build it as a shared library (`make`: `libgolinkhd.so`, `.dylib` or `golinkhd.dll`, exporting only `golinkhd_*`) or a static one (`make static`). Compatibility: a host asks for the API version it was written for and the engine serves it and every older one; functions are only ever added. This version runs one engine per program.
+
+The idea of a small contract between an engine and its host (load a game, run one frame, hand over a picture and its sound, serialize the state) comes from [libretro](https://www.libretro.com/), whose API this engine followed at first and which go-link still uses to run MAME. go-link HD now has its own, so it can grow with what go-link needs: events for the room, views per player, several engines in one program.
 
 ## The showcase
 
@@ -54,7 +76,7 @@ PNGs may be RGBA, RGB, grey or palette (with transparency), 8 bits per channel, 
 
 `tools/glhd export-demo DIR` writes the built-in demo as a package folder, `tools/glhd pack DIR OUT.glhd` zips it and `tools/glhd check FILE.glhd` loads a package like the core does (its title and SHA-256, or why it cannot play). The tests play `tests/data/demo-deflate.glhd` (the demo zipped with deflate, its PNGs saved by an image library) and check it is the very same game as the built-in one, and that every cut or damaged copy fails cleanly.
 
-## Controls (RetroPad)
+## Controls
 
 | Button | Action |
 |---|---|
@@ -66,27 +88,24 @@ PNGs may be RGBA, RGB, grey or palette (with transparency), 8 bits per channel, 
 | Left stick | Move, like the D-pad |
 | L, R | Change scenes in the showcase |
 
-The core reads every RetroPad button (L2, R2, L3 and R3 too), each face button on its own, and both analog sticks, on 8 ports.
+A pad (`golinkhd_pad`) carries every button of a modern controller (L2, R2, L3 and R3 too, and each face button on its own) and both analog sticks, for 8 players.
 
-## Core options
+## Settings
 
-| Key | Values | Default |
-|---|---|---|
-| `golink_hd_music` | `enabled`, `disabled` | `enabled` |
-| `golink_hd_demo` | `platformer`, `showcase` | `platformer` |
-| `golink_hd_language` | `auto` (the frontend's), `en`, `es`, `pt` | `auto` |
+`golinkhd_set_music(e, on)` and `golinkhd_set_language(e, "en" | "es" | "pt")` (texts and dialogs).
 
 ## Building
 
 ```bash
-make                 # this computer: golink_hd_libretro.so / .dylib / .dll
-make platform=win    # another platform (unix, osx, win, emscripten)
+make                 # the shared library for this computer: libgolinkhd.so / .dylib / golinkhd.dll
+make static          # libgolinkhd.a
+make platform=win    # another platform (unix, osx, win)
 make test            # the engine's tests, with the address and undefined behaviour sanitizers
-make tools           # tools/hdrun (a headless frontend) and tools/glhd (package tools)
+make tools           # tools/hdrun (a headless host of the library) and tools/glhd (package tools)
 make bench           # milliseconds per frame of each scene
 ```
 
-`tools/hdrun CORE [--content FILE.glhd] [--option key=value] --frames N --script tools/runs/walk.txt --shot 60,300 --out DIR` plays a button script on a built core, saves the chosen frames as PNG and prints a hash of all frames and sound, so two builds can be compared. `tools/runs/walk.expected` and `tools/runs/showcase.expected` hold the hashes every platform must give (checked in CI; macOS Clang, Linux GCC on x86_64 and arm64 give the same). A change that alters the picture or the sound on purpose updates it.
+`tools/hdrun LIBRARY [--content FILE.glhd] [--demo showcase] [--language es] --frames N --script tools/runs/walk.txt --shot 60,300 --out DIR` plays a button script on the built library, saves the chosen frames as PNG and prints a hash of all frames and sound, so two builds can be compared. `tools/runs/walk.expected` and `tools/runs/showcase.expected` hold the hashes every platform must give (checked in CI; macOS Clang, Linux GCC on x86_64 and arm64 give the same). A change that alters the picture or the sound on purpose updates it.
 
 ## Design rules
 
@@ -101,7 +120,7 @@ make bench           # milliseconds per frame of each scene
 
 | Path | What |
 |---|---|
-| `src/libretro.c` | The libretro API: input in, one 60 Hz step, a frame and its sound out |
+| `include/golink_hd.h`, `src/api.c` | The API: create, load, one frame (controllers in, picture and sound out), save states |
 | `src/game.c` | The rules: movement, jumps, enemies, coins, checkpoints, camera, players joining |
 | `src/draw.c` | The platformer's picture: parallax backdrop, tiles, characters, particles, HUD, zoom and the level's effects |
 | `src/gfx.c`, `src/fx.c` | Sprites (blend modes, opacity, tint, flash, outline, rotation and scale, shadows) and whole-screen effects (fade, color grading, bloom, blur, waves, pixelate, lights) |
@@ -115,9 +134,7 @@ make bench           # milliseconds per frame of each scene
 | `src/save.c` | Save states |
 | `src/content.c` | The loaded game: the built-in demo or a package |
 | `src/zip.c`, `src/inflate.c`, `src/png.c`, `src/json.c`, `src/sha256.c` | Reading packages, with no outside libraries; every read is bounds checked |
-| `libretro/libretro.h` | The libretro API header (MIT, the RetroArch team) |
-| `dist/info/golink_hd_libretro.info` | The core's info file for libretro's core-info repository |
 
 ## License
 
-MIT, see [LICENSE](LICENSE). `libretro/libretro.h` keeps its own MIT notice.
+MIT, see [LICENSE](LICENSE).

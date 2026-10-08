@@ -1,23 +1,23 @@
 /* Copyright (c) 2026 Federico Pereira <lord.basex@gmail.com> */
 /*
- * hdrun: a headless libretro frontend for tests and screenshots. It loads a
- * built core, plays a button script and writes chosen frames as PNG files.
+ * hdrun: a headless host of go-link HD's library, for tests and screenshots.
+ * It loads the built library (as go-link's device does), plays a button
+ * script and writes chosen frames as PNG files.
  *
- *   tools/hdrun CORE [--content FILE] [--frames N] [--script FILE] [--shot F1,F2,...] [--out DIR]
- *
- * With --content the core gets that file's path (like go-link's device);
- * without it the core starts with no content.
+ *   tools/hdrun LIBRARY [--content FILE.glhd] [--demo showcase] [--language en|es|pt]
+ *                       [--frames N] [--script FILE] [--shot F1,F2,...] [--out DIR]
  *
  * A script line is "FRAME PORT BUTTONS": from that frame on, the port (0-7)
  * holds those buttons (comma separated: up down left right a b x y start
- * select l r l2 r2 l3 r3, sticks as lx:N ly:N rx:N ry:N, or "none"). Lines starting with # are comments. It prints a hash of every
- * frame and of the sound, so two runs (or two builds) can be compared.
+ * select l r l2 r2 l3 r3, sticks as lx:N ly:N rx:N ry:N, or "none"). Lines
+ * starting with # are comments. It prints a hash of every frame and of the
+ * sound, so two runs (or two builds) can be compared.
  */
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "libretro.h"
+#include "golink_hd.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -30,23 +30,12 @@
 #endif
 
 #define MAX_LINES 4096
+#define PORTS GOLINKHD_MAX_PLAYERS
 
-typedef struct { long frame; unsigned port; unsigned buttons; int16_t axes[4]; } line_t;
+typedef struct { long frame; unsigned port; golinkhd_pad pad; } line_t;
 
 static line_t script[MAX_LINES];
 static int lines;
-#define PORTS 8
-static unsigned held[PORTS];
-static int16_t axes[PORTS][4]; /* left x, left y, right x, right y */
-static const void *last_frame;
-static unsigned last_w, last_h;
-static size_t last_pitch;
-static uint32_t video_hash = 2166136261u, audio_hash = 2166136261u;
-static long audio_frames;
-static int pixel_format = RETRO_PIXEL_FORMAT_0RGB1555;
-/* --option key=value answers the core's GET_VARIABLE */
-static char opt_key[8][64], opt_value[8][64];
-static int opts;
 
 static uint32_t fnv(const void *data, size_t n, uint32_t h)
 {
@@ -57,127 +46,44 @@ static uint32_t fnv(const void *data, size_t n, uint32_t h)
    return h;
 }
 
-static void core_log(enum retro_log_level level, const char *fmt, ...)
+static void say(void *user, int32_t level, const char *msg)
 {
-   va_list ap;
+   (void)user;
    (void)level;
-   va_start(ap, fmt);
-   vfprintf(stderr, fmt, ap);
-   va_end(ap);
+   fprintf(stderr, "[go-link HD] %s\n", msg);
 }
 
-static bool env(unsigned cmd, void *data)
+/* Buttons by a pad's names (b and a jump, y and x run), and sticks as lx:N ly:N rx:N ry:N. */
+static golinkhd_pad parse_pad(const char *s)
 {
-   switch (cmd)
-   {
-   case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT:
-      pixel_format = *(enum retro_pixel_format *)data;
-      return true;
-   case RETRO_ENVIRONMENT_GET_LOG_INTERFACE:
-      ((struct retro_log_callback *)data)->log = core_log;
-      return true;
-   case RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION:
-      *(unsigned *)data = 2;
-      return true;
-   case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
-      *(bool *)data = false;
-      return true;
-   case RETRO_ENVIRONMENT_GET_VARIABLE:
-   {
-      struct retro_variable *v = (struct retro_variable *)data;
-      int i;
-      for (i = 0; i < opts; i++)
-         if (!strcmp(v->key, opt_key[i]))
-         {
-            v->value = opt_value[i];
-            return true;
-         }
-      return false;
-   }
-   case RETRO_ENVIRONMENT_GET_INPUT_BITMASKS:
-      return true;
-   case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME:
-   case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2:
-   case RETRO_ENVIRONMENT_SET_CONTROLLER_INFO:
-   case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS:
-      return true;
-   default:
-      return false;
-   }
-}
-
-static void video(const void *data, unsigned w, unsigned h, size_t pitch)
-{
-   if (!data)
-      return;
-   last_frame = data;
-   last_w = w;
-   last_h = h;
-   last_pitch = pitch;
-   video_hash = fnv(data, pitch * h, video_hash);
-}
-
-static size_t audio_batch(const int16_t *data, size_t frames)
-{
-   audio_hash = fnv(data, frames * 4, audio_hash);
-   audio_frames += (long)frames;
-   return frames;
-}
-
-static void audio_one(int16_t l, int16_t r)
-{
-   int16_t s[2];
-   s[0] = l;
-   s[1] = r;
-   audio_batch(s, 1);
-}
-
-static void poll(void) {}
-
-static int16_t input(unsigned port, unsigned device, unsigned index, unsigned id)
-{
-   (void)index;
-   if (port >= PORTS)
-      return 0;
-   if (device == RETRO_DEVICE_ANALOG)
-      return index <= 1 && id <= 1 ? axes[port][index * 2 + id] : 0;
-   if (device != RETRO_DEVICE_JOYPAD)
-      return 0;
-   if (id == RETRO_DEVICE_ID_JOYPAD_MASK)
-      return (int16_t)held[port];
-   return (int16_t)((held[port] >> id) & 1);
-}
-
-/* Buttons, and sticks as lx:N ly:N rx:N ry:N (-32768..32767). */
-static unsigned parse_buttons(const char *s, int16_t ax[4])
-{
-   static const struct { const char *name; unsigned id; } names[] = {
-      { "b", RETRO_DEVICE_ID_JOYPAD_B }, { "y", RETRO_DEVICE_ID_JOYPAD_Y },
-      { "select", RETRO_DEVICE_ID_JOYPAD_SELECT }, { "start", RETRO_DEVICE_ID_JOYPAD_START },
-      { "up", RETRO_DEVICE_ID_JOYPAD_UP }, { "down", RETRO_DEVICE_ID_JOYPAD_DOWN },
-      { "left", RETRO_DEVICE_ID_JOYPAD_LEFT }, { "right", RETRO_DEVICE_ID_JOYPAD_RIGHT },
-      { "a", RETRO_DEVICE_ID_JOYPAD_A }, { "x", RETRO_DEVICE_ID_JOYPAD_X },
-      { "l", RETRO_DEVICE_ID_JOYPAD_L }, { "r", RETRO_DEVICE_ID_JOYPAD_R },
-      { "l2", RETRO_DEVICE_ID_JOYPAD_L2 }, { "r2", RETRO_DEVICE_ID_JOYPAD_R2 },
-      { "l3", RETRO_DEVICE_ID_JOYPAD_L3 }, { "r3", RETRO_DEVICE_ID_JOYPAD_R3 },
+   static const struct { const char *name; uint32_t bits; } names[] = {
+      { "up", GOLINKHD_UP }, { "down", GOLINKHD_DOWN }, { "left", GOLINKHD_LEFT }, { "right", GOLINKHD_RIGHT },
+      { "b", GOLINKHD_JUMP | GOLINKHD_B }, { "a", GOLINKHD_JUMP | GOLINKHD_A },
+      { "y", GOLINKHD_RUN | GOLINKHD_Y }, { "x", GOLINKHD_RUN | GOLINKHD_X },
+      { "start", GOLINKHD_START }, { "select", GOLINKHD_SELECT }, { "l", GOLINKHD_L }, { "r", GOLINKHD_R },
+      { "l2", GOLINKHD_L2 }, { "r2", GOLINKHD_R2 }, { "l3", GOLINKHD_L3 }, { "r3", GOLINKHD_R3 },
    };
-   unsigned out = 0, i;
+   golinkhd_pad pad;
    char buf[256], *tok;
+   unsigned i;
+   memset(&pad, 0, sizeof pad);
    strncpy(buf, s, sizeof buf - 1);
    buf[sizeof buf - 1] = 0;
-   memset(ax, 0, 4 * sizeof ax[0]);
    for (tok = strtok(buf, ","); tok; tok = strtok(NULL, ","))
    {
-      static const char *const sticks[4] = { "lx:", "ly:", "rx:", "ry:" };
-      int k;
-      for (k = 0; k < 4; k++)
-         if (!strncmp(tok, sticks[k], 3))
-            ax[k] = (int16_t)atoi(tok + 3);
+      if (!strncmp(tok, "lx:", 3))
+         pad.lx = atoi(tok + 3);
+      else if (!strncmp(tok, "ly:", 3))
+         pad.ly = atoi(tok + 3);
+      else if (!strncmp(tok, "rx:", 3))
+         pad.rx = atoi(tok + 3);
+      else if (!strncmp(tok, "ry:", 3))
+         pad.ry = atoi(tok + 3);
       for (i = 0; i < sizeof names / sizeof names[0]; i++)
          if (strcmp(tok, names[i].name) == 0)
-            out |= 1u << names[i].id;
+            pad.buttons |= names[i].bits;
    }
-   return out;
+   return pad;
 }
 
 static int load_script(const char *path)
@@ -195,11 +101,32 @@ static int load_script(const char *path)
          continue;
       script[lines].frame = frame;
       script[lines].port = port;
-      script[lines].buttons = parse_buttons(buttons, script[lines].axes);
+      script[lines].pad = parse_pad(buttons);
       lines++;
    }
    fclose(f);
    return 1;
+}
+
+static uint8_t *slurp(const char *path, size_t *n)
+{
+   FILE *f = fopen(path, "rb");
+   uint8_t *buf;
+   long len;
+   if (!f)
+      return NULL;
+   fseek(f, 0, SEEK_END);
+   len = ftell(f);
+   fseek(f, 0, SEEK_SET);
+   buf = (uint8_t *)malloc(len > 0 ? (size_t)len : 1);
+   if (buf && fread(buf, 1, (size_t)len, f) != (size_t)len)
+   {
+      free(buf);
+      buf = NULL;
+   }
+   fclose(f);
+   *n = (size_t)len;
+   return buf;
 }
 
 /* PNG with stored (uncompressed) deflate blocks: no zlib needed. */
@@ -236,54 +163,26 @@ static void chunk(FILE *f, const char *type, const uint8_t *data, uint32_t n)
    fwrite(tail, 1, 4, f);
 }
 
-static void rgb_at(unsigned x, unsigned y, uint8_t *out)
+static int write_png(const char *path, const golinkhd_frame_out *fr)
 {
-   const uint8_t *row = (const uint8_t *)last_frame + y * last_pitch;
-   if (pixel_format == RETRO_PIXEL_FORMAT_XRGB8888)
-   {
-      uint32_t v;
-      memcpy(&v, row + x * 4, 4);
-      out[0] = (uint8_t)(v >> 16);
-      out[1] = (uint8_t)(v >> 8);
-      out[2] = (uint8_t)v;
-   }
-   else
-   {
-      uint16_t v;
-      memcpy(&v, row + x * 2, 2);
-      if (pixel_format == RETRO_PIXEL_FORMAT_RGB565)
-      {
-         out[0] = (uint8_t)((v >> 11) << 3);
-         out[1] = (uint8_t)(((v >> 5) & 63) << 2);
-      }
-      else
-      {
-         out[0] = (uint8_t)(((v >> 10) & 31) << 3);
-         out[1] = (uint8_t)(((v >> 5) & 31) << 3);
-      }
-      out[2] = (uint8_t)((v & 31) << 3);
-   }
-}
-
-static int write_png(const char *path)
-{
-   uint32_t raw_len = (last_w * 3 + 1) * last_h, a = 1, b = 0, i, at = 0;
+   uint32_t w = (uint32_t)fr->width, h = (uint32_t)fr->height;
+   uint32_t raw_len = (w * 3 + 1) * h, a = 1, b = 0, i, at = 0, x, y;
    uint32_t blocks = (raw_len + 65534) / 65535;
-   uint8_t *raw, *z, hdr[13];
-   size_t zlen = 2 + blocks * 5 + raw_len + 4, zi = 0;
-   unsigned x, y;
+   uint8_t *raw = (uint8_t *)malloc(raw_len), *z = (uint8_t *)malloc(2 + blocks * 5 + raw_len + 4), hdr[13];
+   size_t zi = 0;
    FILE *f;
-   if (!last_frame)
-      return 0;
-   raw = (uint8_t *)malloc(raw_len);
-   z = (uint8_t *)malloc(zlen);
    if (!raw || !z)
       return 0;
-   for (y = 0; y < last_h; y++)
+   for (y = 0; y < h; y++)
    {
       raw[at++] = 0;
-      for (x = 0; x < last_w; x++, at += 3)
-         rgb_at(x, y, raw + at);
+      for (x = 0; x < w; x++, at += 3)
+      {
+         uint32_t v = fr->pixels[y * (uint32_t)fr->pitch + x];
+         raw[at] = (uint8_t)(v >> 16);
+         raw[at + 1] = (uint8_t)(v >> 8);
+         raw[at + 2] = (uint8_t)v;
+      }
    }
    z[zi++] = 0x78;
    z[zi++] = 0x01;
@@ -309,8 +208,8 @@ static int write_png(const char *path)
    if (!f)
       return 0;
    fwrite("\x89PNG\r\n\x1a\n", 1, 8, f);
-   be32(hdr, last_w);
-   be32(hdr + 4, last_h);
+   be32(hdr, w);
+   be32(hdr + 4, h);
    hdr[8] = 8;
    hdr[9] = 2;
    hdr[10] = hdr[11] = hdr[12] = 0;
@@ -325,26 +224,27 @@ static int write_png(const char *path)
 
 int main(int argc, char **argv)
 {
-   void *core;
+   void *lib;
    long frames = 600, f, shots[64];
    int nshots = 0, i, next = 0;
-   const char *out = ".", *content = NULL;
-   struct retro_game_info game;
-   void (*set_environment)(retro_environment_t);
-   void (*set_video)(retro_video_refresh_t);
-   void (*set_audio)(retro_audio_sample_t);
-   void (*set_audio_batch)(retro_audio_sample_batch_t);
-   void (*set_poll)(retro_input_poll_t);
-   void (*set_input)(retro_input_state_t);
-   void (*init)(void);
-   bool (*load_game)(const struct retro_game_info *);
-   void (*run)(void);
-   void (*deinit)(void);
+   const char *out = ".", *content = NULL, *language = NULL, *err = NULL;
+   int showcase = 0;
+   uint32_t video_hash = 2166136261u, audio_hash = 2166136261u;
+   long audio_frames = 0;
+   golinkhd_pad held[PORTS];
+   golinkhd_config cfg;
+   golinkhd_engine *e;
    unsigned n;
+   golinkhd_engine *(*create)(const golinkhd_config *, const char **);
+   void (*destroy)(golinkhd_engine *);
+   int (*load)(golinkhd_engine *, const uint8_t *, size_t, const char **);
+   void (*load_demo)(golinkhd_engine *, int32_t);
+   void (*set_language)(golinkhd_engine *, const char *);
+   void (*frame)(golinkhd_engine *, const golinkhd_pad *, int32_t, golinkhd_frame_out *);
 
    if (argc < 2)
    {
-      fprintf(stderr, "usage: %s CORE [--content FILE] [--frames N] [--script FILE] [--shot F1,F2] [--out DIR]\n", argv[0]);
+      fprintf(stderr, "usage: %s LIBRARY [--content FILE] [--demo showcase] [--language en|es|pt] [--frames N] [--script FILE] [--shot F1,F2] [--out DIR]\n", argv[0]);
       return 2;
    }
    for (i = 2; i < argc; i++)
@@ -369,16 +269,10 @@ int main(int argc, char **argv)
          out = argv[++i];
       else if (!strcmp(argv[i], "--content") && i + 1 < argc)
          content = argv[++i];
-      else if (!strcmp(argv[i], "--option") && i + 1 < argc && opts < 8)
-      {
-         const char *eq = strchr(argv[++i], '=');
-         if (eq)
-         {
-            snprintf(opt_key[opts], sizeof opt_key[0], "%.*s", (int)(eq - argv[i]), argv[i]);
-            snprintf(opt_value[opts], sizeof opt_value[0], "%s", eq + 1);
-            opts++;
-         }
-      }
+      else if (!strcmp(argv[i], "--language") && i + 1 < argc)
+         language = argv[++i];
+      else if (!strcmp(argv[i], "--demo") && i + 1 < argc)
+         showcase = !strcmp(argv[++i], "showcase");
    }
    for (n = 0; n < 256; n++)
    {
@@ -388,65 +282,75 @@ int main(int argc, char **argv)
          c = c & 1 ? 0xedb88320u ^ (c >> 1) : c >> 1;
       crc_table[n] = c;
    }
-
-   core = LOAD(argv[1]);
-   if (!core)
+   lib = LOAD(argv[1]);
+   if (!lib)
    {
       fprintf(stderr, "cannot load %s\n", argv[1]);
       return 1;
    }
-#define GET(var, name)                                     \
-   *(void **)(&var) = SYM(core, name);                    \
+#define GET(var, name)                                    \
+   *(void **)(&var) = SYM(lib, name);                     \
    if (!var)                                              \
    {                                                      \
-      fprintf(stderr, "the core has no %s\n", name);      \
+      fprintf(stderr, "the library has no %s\n", name);   \
       return 1;                                           \
    }
-   GET(set_environment, "retro_set_environment");
-   GET(set_video, "retro_set_video_refresh");
-   GET(set_audio, "retro_set_audio_sample");
-   GET(set_audio_batch, "retro_set_audio_sample_batch");
-   GET(set_poll, "retro_set_input_poll");
-   GET(set_input, "retro_set_input_state");
-   GET(init, "retro_init");
-   GET(load_game, "retro_load_game");
-   GET(run, "retro_run");
-   GET(deinit, "retro_deinit");
+   GET(create, "golinkhd_create");
+   GET(destroy, "golinkhd_destroy");
+   GET(load, "golinkhd_load");
+   GET(load_demo, "golinkhd_load_demo");
+   GET(set_language, "golinkhd_set_language");
+   GET(frame, "golinkhd_frame");
 #undef GET
 
-   set_environment(env);
-   set_video(video);
-   set_audio(audio_one);
-   set_audio_batch(audio_batch);
-   set_poll(poll);
-   set_input(input);
-   init();
-   memset(&game, 0, sizeof game);
-   game.path = content;
-   if (!load_game(content ? &game : NULL))
+   memset(&cfg, 0, sizeof cfg);
+   cfg.api_version = GOLINKHD_API_VERSION;
+   cfg.log = say;
+   e = create(&cfg, &err);
+   if (!e)
    {
-      fprintf(stderr, content ? "the core refused %s\n" : "the core refused to start with no content\n", content);
+      fprintf(stderr, "the engine did not start: %s\n", err);
       return 1;
    }
+   if (language)
+      set_language(e, language);
+   if (content)
+   {
+      size_t size;
+      uint8_t *data = slurp(content, &size);
+      if (!data || !load(e, data, size, &err))
+      {
+         fprintf(stderr, "cannot play %s: %s\n", content, data ? err : "cannot read it");
+         return 1;
+      }
+      free(data);
+   }
+   else if (showcase)
+      load_demo(e, 1);
+   memset(held, 0, sizeof held);
    for (f = 0; f < frames; f++)
    {
+      golinkhd_frame_out fr;
       while (next < lines && script[next].frame <= f)
       {
-         held[script[next].port] = script[next].buttons;
-         memcpy(axes[script[next].port], script[next].axes, sizeof axes[0]);
+         held[script[next].port] = script[next].pad;
          next++;
       }
-      run();
+      frame(e, held, PORTS, &fr);
+      for (i = 0; i < fr.height; i++)
+         video_hash = fnv(fr.pixels + i * fr.pitch, (size_t)fr.width * 4, video_hash);
+      audio_hash = fnv(fr.audio, (size_t)fr.audio_frames * 4, audio_hash);
+      audio_frames += fr.audio_frames;
       for (i = 0; i < nshots; i++)
          if (shots[i] == f)
          {
             char path[1024];
             snprintf(path, sizeof path, "%s/frame-%05ld.png", out, f);
-            if (!write_png(path))
+            if (!write_png(path, &fr))
                fprintf(stderr, "cannot write %s\n", path);
          }
    }
    printf("frames %ld video %08x audio %08x samples %ld\n", frames, video_hash, audio_hash, audio_frames);
-   deinit();
+   destroy(e);
    return 0;
 }

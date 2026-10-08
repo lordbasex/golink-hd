@@ -1,6 +1,6 @@
 /* Copyright (c) 2026 Federico Pereira <lord.basex@gmail.com> */
 /*
- * Draws the state into a 640 x 360 frame buffer (0x00RRGGBB, libretro's
+ * Draws the state into a 640 x 360 frame buffer (0x00RRGGBB, the API's
  * XRGB8888), in software and with integer math only, so every build draws
  * the same pixels. Back to front: sky, clouds, mountains and hills (each
  * scrolling at its own speed), the level, the actors, particles, the HUD.
