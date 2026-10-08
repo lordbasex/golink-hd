@@ -303,6 +303,9 @@ static void player_step(hd_state *s, int32_t i)
    hd_player *p = &s->p[i];
    uint32_t pad = p->pad, pressed = pad & ~p->prev;
    int32_t dir = ((pad & PAD_RIGHT) ? 1 : 0) - ((pad & PAD_LEFT) ? 1 : 0);
+   /* the left stick moves too, when the D-pad does not */
+   if (!dir && hd_abs(p->lx) > STICK_DEAD)
+      dir = p->lx > 0 ? 1 : -1;
    int32_t max = (pad & PAD_RUN) ? RUN_MAX : WALK_MAX;
    int32_t was_vy;
 
@@ -549,16 +552,22 @@ static void particles_step(hd_state *s)
    }
 }
 
-void hd_step(hd_state *s, const uint32_t pads[MAX_PLAYERS])
+void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
 {
    int32_t i;
    uint32_t any = 0;
    s->frame++;
    for (i = 0; i < MAX_PLAYERS; i++)
    {
+      uint32_t b = i < hd_players ? in[i].buttons : 0; /* only the game's players count */
+      /* a stick held down is the D-pad's down (drop through a platform) */
+      if (i < hd_players && in[i].ly > STICK_DEAD)
+         b |= PAD_DOWN;
       s->p[i].prev = s->p[i].pad;
-      s->p[i].pad = pads[i];
-      any |= pads[i] & ~s->p[i].prev;
+      s->p[i].pad = b;
+      s->p[i].lx = i < hd_players ? hd_clamp(in[i].lx, -32768, 32767) : 0;
+      s->p[i].ly = i < hd_players ? hd_clamp(in[i].ly, -32768, 32767) : 0;
+      any |= b & ~s->p[i].prev;
    }
    hd_music_step(s);
 
@@ -615,7 +624,7 @@ void hd_step(hd_state *s, const uint32_t pads[MAX_PLAYERS])
       s->phase_t++;
       if (s->phase_t % 20 == 0 && s->phase_t < 200)
          burst(s, FX_INT(s->cam_x) + 80 + rng_range(&s->rng, HD_W - 160), 60 + rng_range(&s->rng, 120), 16,
-               hd_player_color[rng_range(&s->rng, MAX_PLAYERS)], FX(3), 3);
+               hd_player_color[rng_range(&s->rng, hd_players)], FX(3), 3);
       if (s->phase_t >= CLEAR_FRAMES)
       {
          uint32_t rng = s->rng;

@@ -10,7 +10,8 @@
 
 #define OUTLINE 0xff1a1020u
 
-const uint32_t hd_player_color[MAX_PLAYERS] = { 0xffd83a3au, 0xff3a78e0u, 0xff3ab84au, 0xffe8b820u };
+const uint32_t hd_player_color[MAX_PLAYERS] = { 0xffd83a3au, 0xff3a78e0u, 0xff3ab84au, 0xffe8b820u,
+                                                 0xff9a4ad8u, 0xffe8782au, 0xff2ac8d8u, 0xffe85aa8u };
 
 hd_image hd_hero[MAX_PLAYERS][HERO_FRAMES];
 hd_image hd_enemy_img[ENEMY_FRAMES];

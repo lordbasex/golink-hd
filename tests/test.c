@@ -47,16 +47,18 @@ static uint32_t bot(int32_t frame, int32_t port)
    return pad;
 }
 
-static void pads_at(int32_t frame, int32_t players, uint32_t pads[MAX_PLAYERS])
+static void pads_at(int32_t frame, int32_t players, hd_input pads[MAX_PLAYERS])
 {
    int32_t i;
+   memset(pads, 0, sizeof(hd_input) * MAX_PLAYERS);
    for (i = 0; i < MAX_PLAYERS; i++)
-      pads[i] = i < players ? bot(frame, i) : 0;
+      pads[i].buttons = i < players ? bot(frame, i) : 0;
 }
 
 static uint32_t run(hd_state *s, int32_t from, int32_t to, int32_t players, uint32_t *fb, int16_t *audio)
 {
-   uint32_t h = 2166136261u, pads[MAX_PLAYERS];
+   uint32_t h = 2166136261u;
+   hd_input pads[MAX_PLAYERS];
    int32_t f;
    for (f = from; f < to; f++)
    {
@@ -70,7 +72,7 @@ static uint32_t run(hd_state *s, int32_t from, int32_t to, int32_t players, uint
    return h;
 }
 
-static uint32_t fb[HD_W * HD_H];
+static uint32_t fb[HD_MAX_W * HD_MAX_H];
 static int16_t audio[HD_SAMPLES_PER_FRAME * 2];
 
 static void test_art(void)
@@ -183,7 +185,8 @@ static uint8_t *slurp(const char *path, size_t *n)
 /* Runs frames and hashes only those after `from` (the title screen shows the game's own title). */
 static uint32_t run_from(hd_state *s, int32_t to, int32_t from)
 {
-   uint32_t h = 2166136261u, pads[MAX_PLAYERS];
+   uint32_t h = 2166136261u;
+   hd_input pads[MAX_PLAYERS];
    int32_t f;
    for (f = 0; f < to; f++)
    {
@@ -292,6 +295,129 @@ static void test_sha256(void)
    CHECK(memcmp(out, abc, 32) == 0);
 }
 
+/* A zip of stored files, for packages made by the tests. */
+typedef struct { const char *name; const char *text; } zfile;
+
+static void le16(uint8_t **p, uint32_t v) { *(*p)++ = (uint8_t)v; *(*p)++ = (uint8_t)(v >> 8); }
+static void le32(uint8_t **p, uint32_t v) { le16(p, v & 0xffff); le16(p, v >> 16); }
+
+static size_t make_zip(uint8_t *out, const zfile *files, int n)
+{
+   uint8_t *p = out;
+   uint32_t offs[8], at, cd;
+   int i;
+   for (i = 0; i < n; i++)
+   {
+      uint32_t len = (uint32_t)strlen(files[i].text), nl = (uint32_t)strlen(files[i].name);
+      offs[i] = (uint32_t)(p - out);
+      le32(&p, 0x04034b50u); le16(&p, 20); le16(&p, 0); le16(&p, 0); le16(&p, 0); le16(&p, 0);
+      le32(&p, hd_crc32((const uint8_t *)files[i].text, len)); le32(&p, len); le32(&p, len);
+      le16(&p, nl); le16(&p, 0);
+      memcpy(p, files[i].name, nl); p += nl;
+      memcpy(p, files[i].text, len); p += len;
+   }
+   cd = (uint32_t)(p - out);
+   for (i = 0; i < n; i++)
+   {
+      uint32_t len = (uint32_t)strlen(files[i].text), nl = (uint32_t)strlen(files[i].name);
+      le32(&p, 0x02014b50u); le16(&p, 20); le16(&p, 20); le16(&p, 0); le16(&p, 0); le16(&p, 0); le16(&p, 0);
+      le32(&p, hd_crc32((const uint8_t *)files[i].text, len)); le32(&p, len); le32(&p, len);
+      le16(&p, nl); le16(&p, 0); le16(&p, 0); le16(&p, 0); le16(&p, 0); le32(&p, 0); le32(&p, offs[i]);
+      memcpy(p, files[i].name, nl); p += nl;
+   }
+   at = (uint32_t)(p - out);
+   le32(&p, 0x06054b50u); le16(&p, 0); le16(&p, 0); le16(&p, (uint32_t)n); le16(&p, (uint32_t)n);
+   le32(&p, at - cd); le32(&p, cd); le16(&p, 0);
+   return (size_t)(p - out);
+}
+
+/* A level of w x h cells with ground in its last three rows, as JSON. */
+static void flat_level(char *out, size_t cap, int w, int h)
+{
+   int x, y;
+   size_t n = (size_t)snprintf(out, cap, "{\"width\": %d, \"height\": %d, \"start\": [2, %d], \"rows\": [", w, h, h - 4);
+   for (y = 0; y < h; y++)
+   {
+      out[n++] = '"';
+      for (x = 0; x < w; x++)
+         out[n++] = y >= h - 3 ? '#' : '.';
+      out[n++] = '"';
+      if (y + 1 < h)
+         out[n++] = ',';
+   }
+   snprintf(out + n, cap - n, "]}");
+}
+
+/* Up to 8 players, a vertical screen, the left stick. */
+static void test_players_screens_sticks(void)
+{
+   static uint8_t zip[200000];
+   static char level[100000];
+   static hd_state s;
+   hd_input in[MAX_PLAYERS];
+   const char *err;
+   size_t n;
+   int32_t f, i, x0;
+   zfile files[2];
+
+   flat_level(level, sizeof level, 60, 24);
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 1, \"title\": \"Eight\", \"players\": 8, \"level\": \"level.json\"}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   CHECK(hd_players == 8 && HD_W == 640 && HD_H == 360);
+   hd_reset(&s);
+   for (f = 0; f < 120; f++)
+   {
+      memset(in, 0, sizeof in);
+      for (i = 0; i < MAX_PLAYERS; i++)
+         if (f >= 10 + i * 8 && f < 13 + i * 8)
+            in[i].buttons = PAD_START;
+      hd_step(&s, in);
+      hd_draw(&s, fb);
+   }
+   for (i = 0; i < MAX_PLAYERS; i++)
+      CHECK(s.p[i].active);
+
+   /* the stick walks right, with no D-pad */
+   x0 = FX_INT(s.p[0].x);
+   for (f = 0; f < 60; f++)
+   {
+      memset(in, 0, sizeof in);
+      in[0].lx = 30000;
+      hd_step(&s, in);
+   }
+   CHECK(FX_INT(s.p[0].x) > x0 + 40);
+
+   /* a vertical game: 360 x 640, a level as narrow as the screen */
+   flat_level(level, sizeof level, 23, 40);
+   files[0].text = "{\"format\": 1, \"title\": \"Tall\", \"screen\": \"9:16\", \"players\": 2, \"level\": \"level.json\"}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   CHECK(HD_W == 360 && HD_H == 640 && hd_players == 2);
+   hd_reset(&s);
+   for (f = 0; f < 200; f++)
+   {
+      memset(in, 0, sizeof in);
+      for (i = 0; i < MAX_PLAYERS; i++)
+         in[i].buttons = f == 10 ? PAD_START : (f > 20 ? PAD_RIGHT | ((f / 30) % 2 ? PAD_JUMP : 0) : 0);
+      hd_step(&s, in);
+      hd_draw(&s, fb);
+   }
+   CHECK(s.p[0].active && s.p[1].active && !s.p[2].active); /* a game of 2 takes 2 */
+
+   /* a screen the engine does not know, or more players than 8, are refused */
+   files[0].text = "{\"format\": 1, \"title\": \"X\", \"screen\": \"21:9\", \"level\": \"level.json\"}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0);
+   files[0].text = "{\"format\": 1, \"title\": \"X\", \"players\": 9, \"level\": \"level.json\"}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0);
+   hd_content_builtin();
+}
+
 /* A fake frontend for the libretro API. */
 static uint32_t fake_buttons[MAX_PLAYERS];
 static unsigned frames_seen, samples_seen;
@@ -376,7 +502,7 @@ static void test_libretro(void)
    CHECK(strcmp(info.library_name, "go-link HD") == 0);
    CHECK(strcmp(info.valid_extensions, "glhd") == 0);
    retro_get_system_av_info(&av);
-   CHECK(av.geometry.base_width == HD_W && av.geometry.base_height == HD_H);
+   CHECK(av.geometry.base_width == (unsigned)HD_W && av.geometry.base_height == (unsigned)HD_H);
    CHECK(av.timing.sample_rate == HD_RATE);
 
    CHECK(!retro_load_game(&content)); /* a path that does not exist */
@@ -420,6 +546,7 @@ int main(void)
    test_json();
    test_sha256();
    test_package();
+   test_players_screens_sticks();
    test_libretro();
    if (failures)
    {

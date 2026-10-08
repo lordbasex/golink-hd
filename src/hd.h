@@ -17,16 +17,23 @@
 #include <stdint.h>
 #include "fixed.h"
 
-#define HD_VERSION "0.1.0"
+#define HD_VERSION "0.2.0"
 /*
  * The save state's layout version. Bump it whenever hd_state changes; a
  * save state of another version is refused cleanly, never misread.
  */
-#define HD_STATE_VERSION 2
+#define HD_STATE_VERSION 3
 
-/* The logical screen: 16:9, scaled x3 to 1080p and x6 to 4K. */
-#define HD_W 640
-#define HD_H 360
+/*
+ * The logical screen, chosen by the game: 640 x 360 (16:9, scaled x3 to
+ * 1080p and x6 to 4K, the default), 480 x 360 (4:3) or 360 x 640 (9:16,
+ * vertical). Buffers are sized for the largest.
+ */
+#define HD_MAX_W 640
+#define HD_MAX_H 640
+#define HD_W hd_w
+#define HD_H hd_h
+extern int32_t hd_w, hd_h;
 #define HD_FPS 60
 #define HD_RATE 48000
 #define HD_SAMPLES_PER_FRAME (HD_RATE / HD_FPS)
@@ -40,7 +47,10 @@
 #define MAP_W hd_map_w
 #define MAP_H hd_map_h
 
-#define MAX_PLAYERS 4
+/* Up to 8 players; the game says how many it takes (hd_players). */
+#define MAX_PLAYERS 8
+#define DEFAULT_PLAYERS 4
+extern int32_t hd_players;
 #define MAX_ENEMIES 48
 #define MAX_PARTICLES 256
 #define MAX_CHANNELS 32
@@ -57,8 +67,29 @@ enum
    PAD_JUMP = 1 << 4,
    PAD_RUN = 1 << 5,
    PAD_START = 1 << 6,
-   PAD_SELECT = 1 << 7
+   PAD_SELECT = 1 << 7,
+   PAD_L = 1 << 8,
+   PAD_R = 1 << 9,
+   PAD_L2 = 1 << 10,
+   PAD_R2 = 1 << 11,
+   PAD_L3 = 1 << 12,
+   PAD_R3 = 1 << 13,
+   /* the face buttons themselves, for games that tell them apart */
+   PAD_A = 1 << 14,
+   PAD_B = 1 << 15,
+   PAD_X = 1 << 16,
+   PAD_Y = 1 << 17
 };
+
+/* One player's controller for one frame: buttons and the two sticks (-32768..32767, libretro's range). */
+typedef struct
+{
+   uint32_t buttons;
+   int32_t lx, ly, rx, ry;
+} hd_input;
+
+/* How far a stick must lean to count as a direction. */
+#define STICK_DEAD 16384
 
 /* The level's cells. */
 enum
@@ -110,6 +141,7 @@ typedef struct
    int32_t coyote, buffer, jumping, drop;
    int32_t coins, hurt, respawn;
    uint32_t pad, prev;
+   int32_t lx, ly;           /* the left stick this frame */
    int32_t check_x, check_y; /* where it comes back, in pixels */
    int32_t landed;           /* frames since it touched the ground */
 } hd_player;
@@ -204,7 +236,7 @@ int hd_content_load(const uint8_t *data, size_t size, const char **err);
 /* game.c */
 void hd_static_init(void);
 void hd_reset(hd_state *s);
-void hd_step(hd_state *s, const uint32_t pads[MAX_PLAYERS]);
+void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS]);
 int hd_cell(int32_t tx, int32_t ty);
 
 /* draw.c */

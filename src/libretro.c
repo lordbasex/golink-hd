@@ -26,7 +26,7 @@ static retro_input_state_t input_state_cb;
 static retro_log_printf_t log_cb;
 
 static hd_state state;
-static uint32_t frame_buf[HD_W * HD_H];
+static uint32_t frame_buf[HD_MAX_W * HD_MAX_H];
 static int16_t audio_buf[HD_SAMPLES_PER_FRAME * 2];
 static int music_on = 1;
 static int use_bitmasks;
@@ -86,8 +86,8 @@ void retro_set_environment(retro_environment_t cb)
    static const struct retro_controller_description pads[] = {
       { "RetroPad", RETRO_DEVICE_JOYPAD },
    };
-   static const struct retro_controller_info ports[] = {
-      { pads, 1 }, { pads, 1 }, { pads, 1 }, { pads, 1 }, { NULL, 0 },
+   static const struct retro_controller_info ports[MAX_PLAYERS + 1] = {
+      { pads, 1 }, { pads, 1 }, { pads, 1 }, { pads, 1 }, { pads, 1 }, { pads, 1 }, { pads, 1 }, { pads, 1 }, { NULL, 0 },
    };
    bool no_game = true;
    environ_cb = cb;
@@ -131,11 +131,11 @@ void retro_get_system_av_info(struct retro_system_av_info *info)
    memset(info, 0, sizeof *info);
    info->timing.fps = HD_FPS;
    info->timing.sample_rate = HD_RATE;
-   info->geometry.base_width = HD_W;
-   info->geometry.base_height = HD_H;
-   info->geometry.max_width = HD_W;
-   info->geometry.max_height = HD_H;
-   info->geometry.aspect_ratio = 16.0f / 9.0f;
+   info->geometry.base_width = (unsigned)HD_W; /* the loaded game's screen */
+   info->geometry.base_height = (unsigned)HD_H;
+   info->geometry.max_width = HD_MAX_W;
+   info->geometry.max_height = HD_MAX_H;
+   info->geometry.aspect_ratio = (float)HD_W / (float)HD_H;
 }
 
 void retro_set_controller_port_device(unsigned port, unsigned device)
@@ -146,16 +146,24 @@ void retro_set_controller_port_device(unsigned port, unsigned device)
 
 void retro_reset(void) { hd_reset(&state); }
 
-/* RetroPad buttons to the engine's: B or A jump, Y or X run. */
-static uint32_t read_pad(unsigned port)
+/*
+ * RetroPad buttons to the engine's: B or A jump, Y or X run (each face
+ * button also has its own bit), the shoulders and the stick clicks, and both
+ * analog sticks.
+ */
+static hd_input read_pad(unsigned port)
 {
    static const struct { unsigned id; uint32_t bit; } map[] = {
       { RETRO_DEVICE_ID_JOYPAD_UP, PAD_UP }, { RETRO_DEVICE_ID_JOYPAD_DOWN, PAD_DOWN },
       { RETRO_DEVICE_ID_JOYPAD_LEFT, PAD_LEFT }, { RETRO_DEVICE_ID_JOYPAD_RIGHT, PAD_RIGHT },
-      { RETRO_DEVICE_ID_JOYPAD_B, PAD_JUMP }, { RETRO_DEVICE_ID_JOYPAD_A, PAD_JUMP },
-      { RETRO_DEVICE_ID_JOYPAD_Y, PAD_RUN }, { RETRO_DEVICE_ID_JOYPAD_X, PAD_RUN },
+      { RETRO_DEVICE_ID_JOYPAD_B, PAD_JUMP | PAD_B }, { RETRO_DEVICE_ID_JOYPAD_A, PAD_JUMP | PAD_A },
+      { RETRO_DEVICE_ID_JOYPAD_Y, PAD_RUN | PAD_Y }, { RETRO_DEVICE_ID_JOYPAD_X, PAD_RUN | PAD_X },
       { RETRO_DEVICE_ID_JOYPAD_START, PAD_START }, { RETRO_DEVICE_ID_JOYPAD_SELECT, PAD_SELECT },
+      { RETRO_DEVICE_ID_JOYPAD_L, PAD_L }, { RETRO_DEVICE_ID_JOYPAD_R, PAD_R },
+      { RETRO_DEVICE_ID_JOYPAD_L2, PAD_L2 }, { RETRO_DEVICE_ID_JOYPAD_R2, PAD_R2 },
+      { RETRO_DEVICE_ID_JOYPAD_L3, PAD_L3 }, { RETRO_DEVICE_ID_JOYPAD_R3, PAD_R3 },
    };
+   hd_input in;
    uint32_t pad = 0, held = 0;
    unsigned i;
    if (use_bitmasks)
@@ -171,12 +179,17 @@ static uint32_t read_pad(unsigned port)
       pad &= ~(uint32_t)(PAD_LEFT | PAD_RIGHT);
    if ((pad & (PAD_UP | PAD_DOWN)) == (PAD_UP | PAD_DOWN))
       pad &= ~(uint32_t)(PAD_UP | PAD_DOWN);
-   return pad;
+   in.buttons = pad;
+   in.lx = input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
+   in.ly = input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y);
+   in.rx = input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X);
+   in.ry = input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y);
+   return in;
 }
 
 void retro_run(void)
 {
-   uint32_t pads[MAX_PLAYERS];
+   hd_input pads[MAX_PLAYERS];
    bool updated = false;
    unsigned i;
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated)
@@ -187,7 +200,7 @@ void retro_run(void)
    hd_step(&state, pads);
    hd_draw(&state, frame_buf);
    hd_mix(&state, audio_buf, music_on);
-   video_cb(frame_buf, HD_W, HD_H, HD_W * sizeof(uint32_t));
+   video_cb(frame_buf, (unsigned)HD_W, (unsigned)HD_H, (size_t)HD_W * sizeof(uint32_t));
    audio_batch_cb(audio_buf, HD_SAMPLES_PER_FRAME);
 }
 
@@ -233,9 +246,10 @@ static void describe_input(void)
    { port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Jump" },                  \
    { port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Run" },                   \
    { port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Run" },                   \
-   { port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START, "Join / Pause" }
+   { port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START, "Join / Pause" },             \
+   { port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Move" }
    static struct retro_input_descriptor desc[] = {
-      PAD_DESC(0), PAD_DESC(1), PAD_DESC(2), PAD_DESC(3), { 0, 0, 0, 0, NULL },
+      PAD_DESC(0), PAD_DESC(1), PAD_DESC(2), PAD_DESC(3), PAD_DESC(4), PAD_DESC(5), PAD_DESC(6), PAD_DESC(7), { 0, 0, 0, 0, NULL },
    };
 #undef PAD_DESC
    environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, desc);

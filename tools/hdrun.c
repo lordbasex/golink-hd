@@ -8,9 +8,9 @@
  * With --content the core gets that file's path (like go-link's device);
  * without it the core starts with no content.
  *
- * A script line is "FRAME PORT BUTTONS": from that frame on, the port holds
- * those buttons (comma separated: up down left right a b x y start select,
- * or "none"). Lines starting with # are comments. It prints a hash of every
+ * A script line is "FRAME PORT BUTTONS": from that frame on, the port (0-7)
+ * holds those buttons (comma separated: up down left right a b x y start
+ * select l r l2 r2 l3 r3, sticks as lx:N ly:N rx:N ry:N, or "none"). Lines starting with # are comments. It prints a hash of every
  * frame and of the sound, so two runs (or two builds) can be compared.
  */
 #include <stdarg.h>
@@ -31,11 +31,13 @@
 
 #define MAX_LINES 4096
 
-typedef struct { long frame; unsigned port; unsigned buttons; } line_t;
+typedef struct { long frame; unsigned port; unsigned buttons; int16_t axes[4]; } line_t;
 
 static line_t script[MAX_LINES];
 static int lines;
-static unsigned held[4];
+#define PORTS 8
+static unsigned held[PORTS];
+static int16_t axes[PORTS][4]; /* left x, left y, right x, right y */
 static const void *last_frame;
 static unsigned last_w, last_h;
 static size_t last_pitch;
@@ -120,14 +122,19 @@ static void poll(void) {}
 static int16_t input(unsigned port, unsigned device, unsigned index, unsigned id)
 {
    (void)index;
-   if (device != RETRO_DEVICE_JOYPAD || port >= 4)
+   if (port >= PORTS)
+      return 0;
+   if (device == RETRO_DEVICE_ANALOG)
+      return index <= 1 && id <= 1 ? axes[port][index * 2 + id] : 0;
+   if (device != RETRO_DEVICE_JOYPAD)
       return 0;
    if (id == RETRO_DEVICE_ID_JOYPAD_MASK)
       return (int16_t)held[port];
    return (int16_t)((held[port] >> id) & 1);
 }
 
-static unsigned parse_buttons(const char *s)
+/* Buttons, and sticks as lx:N ly:N rx:N ry:N (-32768..32767). */
+static unsigned parse_buttons(const char *s, int16_t ax[4])
 {
    static const struct { const char *name; unsigned id; } names[] = {
       { "b", RETRO_DEVICE_ID_JOYPAD_B }, { "y", RETRO_DEVICE_ID_JOYPAD_Y },
@@ -135,15 +142,26 @@ static unsigned parse_buttons(const char *s)
       { "up", RETRO_DEVICE_ID_JOYPAD_UP }, { "down", RETRO_DEVICE_ID_JOYPAD_DOWN },
       { "left", RETRO_DEVICE_ID_JOYPAD_LEFT }, { "right", RETRO_DEVICE_ID_JOYPAD_RIGHT },
       { "a", RETRO_DEVICE_ID_JOYPAD_A }, { "x", RETRO_DEVICE_ID_JOYPAD_X },
+      { "l", RETRO_DEVICE_ID_JOYPAD_L }, { "r", RETRO_DEVICE_ID_JOYPAD_R },
+      { "l2", RETRO_DEVICE_ID_JOYPAD_L2 }, { "r2", RETRO_DEVICE_ID_JOYPAD_R2 },
+      { "l3", RETRO_DEVICE_ID_JOYPAD_L3 }, { "r3", RETRO_DEVICE_ID_JOYPAD_R3 },
    };
    unsigned out = 0, i;
    char buf[256], *tok;
    strncpy(buf, s, sizeof buf - 1);
    buf[sizeof buf - 1] = 0;
+   memset(ax, 0, 4 * sizeof ax[0]);
    for (tok = strtok(buf, ","); tok; tok = strtok(NULL, ","))
+   {
+      static const char *const sticks[4] = { "lx:", "ly:", "rx:", "ry:" };
+      int k;
+      for (k = 0; k < 4; k++)
+         if (!strncmp(tok, sticks[k], 3))
+            ax[k] = (int16_t)atoi(tok + 3);
       for (i = 0; i < sizeof names / sizeof names[0]; i++)
          if (strcmp(tok, names[i].name) == 0)
             out |= 1u << names[i].id;
+   }
    return out;
 }
 
@@ -158,11 +176,11 @@ static int load_script(const char *path)
       long frame;
       unsigned port;
       char buttons[256];
-      if (row[0] == '#' || sscanf(row, "%ld %u %255s", &frame, &port, buttons) != 3 || port >= 4)
+      if (row[0] == '#' || sscanf(row, "%ld %u %255s", &frame, &port, buttons) != 3 || port >= PORTS)
          continue;
       script[lines].frame = frame;
       script[lines].port = port;
-      script[lines].buttons = parse_buttons(buttons);
+      script[lines].buttons = parse_buttons(buttons, script[lines].axes);
       lines++;
    }
    fclose(f);
@@ -390,6 +408,7 @@ int main(int argc, char **argv)
       while (next < lines && script[next].frame <= f)
       {
          held[script[next].port] = script[next].buttons;
+         memcpy(axes[script[next].port], script[next].axes, sizeof axes[0]);
          next++;
       }
       run();

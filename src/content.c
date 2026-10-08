@@ -4,7 +4,8 @@
  *
  * A package (format 1) is a zip with:
  *   manifest.json  {"format": 1, "title": "...", "version": "...", "genre": "platformer",
- *                   "players": 4, "level": "level.json", "sky": ["#3a6ad0", "#bfe6fa"],
+ *                   "players": 1-8 (4), "screen": "16:9" | "4:3" | "9:16" ("16:9"),
+ *                   "level": "level.json", "sky": ["#3a6ad0", "#bfe6fa"],
  *                   "pictures": {"hero": ..., "enemy": ..., "tiles": ..., "coin": ...,
  *                                "checkpoint": ..., "goal": ...}}
  *   level.json     {"width": W, "height": H, "start": [col, row], "rows": ["....", ...]}
@@ -22,6 +23,8 @@
 #include "pack.h"
 
 char hd_title[64];
+int32_t hd_w = 640, hd_h = 360;
+int32_t hd_players = DEFAULT_PLAYERS;
 uint32_t hd_sky_top, hd_sky_bottom;
 uint8_t hd_content_id[32];
 int32_t hd_content_gen;
@@ -31,6 +34,9 @@ void hd_content_builtin(void)
    hd_art_build();
    hd_level_build();
    strcpy(hd_title, "GO-LINK HD DEMO");
+   hd_w = 640;
+   hd_h = 360;
+   hd_players = DEFAULT_PLAYERS;
    hd_sky_top = 0x3a6ad0u;
    hd_sky_bottom = 0xbfe6fau;
    memset(hd_content_id, 0, sizeof hd_content_id);
@@ -45,7 +51,7 @@ typedef struct
 } sheet;
 
 static const sheet sheets[] = {
-   { "hero", 16, 24, HERO_FRAMES, MAX_PLAYERS }, /* a row per player: idle, walk, walk, jump */
+   { "hero", 16, 24, HERO_FRAMES, MAX_PLAYERS }, /* a row per player (1 to 8 rows): idle, walk, walk, jump */
    { "enemy", 16, 16, ENEMY_FRAMES, 1 },         /* walk, walk, squashed */
    { "tiles", 16, 16, TL_COUNT, 1 },             /* ground top, ground, brick, one-way platform */
    { "coin", 16, 16, COIN_FRAMES, 1 },           /* the spin */
@@ -98,7 +104,11 @@ static const char *load_level(const json *lv)
    const json *row;
    int32_t x, y;
    if (!w || w->type != JSON_INT || !h || h->type != JSON_INT || w->num < MAP_MIN_W || w->num > MAP_MAX_W || h->num < MAP_MIN_H || h->num > MAP_MAX_H)
-      return "the level's width must be 40 to 1024 cells and its height 23 to 64";
+   {
+      static char msg[120];
+      snprintf(msg, sizeof msg, "the level's width must be %d to %d cells and its height %d to %d (for this screen)", (int)MAP_MIN_W, MAP_MAX_W, (int)MAP_MIN_H, MAP_MAX_H);
+      return msg;
+   }
    if (!rows || rows->type != JSON_ARRAY || rows->count != h->num)
       return "the level must have one row of text per cell of its height";
    if (!start || start->type != JSON_ARRAY || start->count != 2 || hd_json_at(start, 0)->type != JSON_INT || hd_json_at(start, 1)->type != JSON_INT)
@@ -168,6 +178,20 @@ static const char *load_sheet(const hd_zip *zip, const json *pictures, int32_t s
       snprintf(msg, sizeof msg, "%s: %s", name->str, err);
       return msg;
    }
+   /* the hero's sheet may have 1 to 8 rows: a player without a row of its own wears row (player mod rows) */
+   if (s == 0 && w == sh->fw * sh->cols && h % sh->fh == 0 && h / sh->fh >= 1 && h / sh->fh <= MAX_PLAYERS)
+   {
+      int32_t rows = h / sh->fh;
+      for (r = 0; r < MAX_PLAYERS; r++)
+         for (c = 0; c < sh->cols; c++)
+         {
+            hd_image *im = frame_of(s, c, r);
+            for (y = 0; y < sh->fh; y++)
+               memcpy(im->px + y * sh->fw, px + ((r % rows) * sh->fh + y) * w + c * sh->fw, (size_t)sh->fw * 4);
+         }
+      free(px);
+      return NULL;
+   }
    if (w != sh->fw * sh->cols || h != sh->fh * sh->rows)
    {
       free(px);
@@ -194,7 +218,7 @@ static const char *load_package(const uint8_t *data, size_t size)
    uint8_t *text;
    size_t len;
    json *man, *lv = NULL;
-   const json *format, *title, *level, *pictures, *sky;
+   const json *format, *title, *level, *pictures, *sky, *players, *screen;
    int32_t s;
 
    zip.data = data;
@@ -217,6 +241,8 @@ static const char *load_package(const uint8_t *data, size_t size)
    level = hd_json_get(man, "level");
    pictures = hd_json_get(man, "pictures");
    sky = hd_json_get(man, "sky");
+   players = hd_json_get(man, "players");
+   screen = hd_json_get(man, "screen");
    if (!format || format->type != JSON_INT)
       err = "manifest.json has no format number";
    else if (format->num > HD_PACKAGE_FORMAT)
@@ -229,6 +255,10 @@ static const char *load_package(const uint8_t *data, size_t size)
       err = "manifest.json names no level";
    else if (pictures && pictures->type != JSON_OBJECT)
       err = "manifest.json's pictures must be an object";
+   else if (players && (players->type != JSON_INT || players->num < 1 || players->num > MAX_PLAYERS))
+      err = "manifest.json's players must be 1 to 8";
+   else if (screen && (screen->type != JSON_STRING || (strcmp(screen->str, "16:9") && strcmp(screen->str, "4:3") && strcmp(screen->str, "9:16"))))
+      err = "manifest.json's screen must be \"16:9\", \"4:3\" or \"9:16\"";
    else if (sky && (sky->type != JSON_ARRAY || sky->count != 2 || !parse_color(hd_json_at(sky, 0), &hd_sky_top) || !parse_color(hd_json_at(sky, 1), &hd_sky_bottom)))
       err = "manifest.json's sky must be two colors like \"#3a6ad0\"";
    else
@@ -239,6 +269,18 @@ static const char *load_package(const uint8_t *data, size_t size)
       return err;
    }
    snprintf(hd_title, sizeof hd_title, "%s", title->str);
+   if (players)
+      hd_players = (int32_t)players->num;
+   if (screen && !strcmp(screen->str, "4:3"))
+   {
+      hd_w = 480;
+      hd_h = 360;
+   }
+   else if (screen && !strcmp(screen->str, "9:16"))
+   {
+      hd_w = 360;
+      hd_h = 640;
+   }
 
    text = hd_zip_read(&zip, level->str, &len, &err);
    if (text)

@@ -5,6 +5,7 @@
  * the same pixels. Back to front: sky, clouds, mountains and hills (each
  * scrolling at its own speed), the level, the actors, particles, the HUD.
  */
+#include <stdio.h>
 #include <string.h>
 #include "hd.h"
 
@@ -12,7 +13,7 @@ static uint32_t *fb;
 static int32_t cam_x, cam_y;
 
 /* Precomputed once: the sky's color per row and the hills' outlines. */
-static uint32_t sky[HD_H];
+static uint32_t sky[HD_MAX_H];
 static int16_t far_h[1024], near_h[1024];
 static int32_t ready_gen = -1;
 
@@ -188,7 +189,7 @@ static void backdrop(void)
       int32_t w = 50 + (i * 29) % 50, h = 14 + (i * 13) % 10, dx, dy;
       for (dy = -h; dy <= h; dy++)
          for (dx = -w; dx <= w; dx++)
-            if (dx * dx * h * h + dy * dy * w * w <= w * w * h * h && (uint32_t)(cx + dx) < HD_W && (uint32_t)(cy + dy) < HD_H)
+            if (dx * dx * h * h + dy * dy * w * w <= w * w * h * h && (uint32_t)(cx + dx) < (uint32_t)HD_W && (uint32_t)(cy + dy) < (uint32_t)HD_H)
             {
                uint32_t *px = fb + (cy + dy) * HD_W + cx + dx;
                *px = mix(*px, dy > h / 3 ? 0xd8e8f8u : 0xffffffu, 190);
@@ -289,13 +290,16 @@ static void particles(const hd_state *s)
          int32_t j, k;
          for (j = 0; j < size; j++)
             for (k = 0; k < size; k++)
-               if ((uint32_t)(x + k) < HD_W && (uint32_t)(y + j) < HD_H)
+               if ((uint32_t)(x + k) < (uint32_t)HD_W && (uint32_t)(y + j) < (uint32_t)HD_H)
                   fb[(y + j) * HD_W + x + k] = add(fb[(y + j) * HD_W + x + k], q->color & 0xffffffu, t);
       }
       else
          rect(x, y, size, size, q->color & 0xffffffu);
    }
 }
+
+/* A row of the 360 row screen, moved to the same place on a taller one. */
+#define ROW(y) ((y) * HD_H / 360)
 
 static void hud(const hd_state *s)
 {
@@ -304,21 +308,30 @@ static void hud(const hd_state *s)
    if (s->phase == PH_TITLE)
    {
       if (hd_content_id[0] | hd_content_id[1] | hd_content_id[2] | hd_content_id[3])
-         text_center(hd_title, 110, 4, 0xf8c838u);
+         text_center(hd_title, ROW(110), 4, 0xf8c838u);
       else
       {
-         text_center("GO-LINK HD", 96, 6, 0xf8c838u);
-         text_center("DEMO", 150, 3, 0xffffffu);
+         text_center("GO-LINK HD", ROW(96), 6, 0xf8c838u);
+         text_center("DEMO", ROW(150), 3, 0xffffffu);
       }
       if ((s->frame >> 5) & 1)
-         text_center("PRESS START", 230, 2, 0xffffffu);
-      text_center("1 TO 4 PLAYERS - B JUMP - Y RUN", 300, 1, 0xffffffu);
+         text_center("PRESS START", ROW(230), 2, 0xffffffu);
+      snprintf(buf, sizeof buf, "1 TO %d PLAYERS", (int)hd_players);
+      if (hd_players == 1)
+         strcpy(buf, "1 PLAYER");
+      {
+         char line[48];
+         snprintf(line, sizeof line, "%s - B JUMP - Y RUN", buf);
+         text_center(line, ROW(300), 1, 0xffffffu);
+      }
       return;
    }
-   for (i = 0; i < MAX_PLAYERS; i++)
+   for (i = 0; i < hd_players; i++)
    {
       const hd_player *p = &s->p[i];
-      int32_t x = 12 + i * 156;
+      /* as many players a row as the screen's width takes: 4 on 16:9 */
+      int32_t per = hd_max(1, HD_W / 156);
+      int32_t x = 12 + (i % per) * 156, y = 12 + (i / per) * 22;
       buf[0] = 'P';
       buf[1] = (char)('1' + i);
       buf[2] = 0;
@@ -326,16 +339,16 @@ static void hud(const hd_state *s)
       {
          if ((s->frame >> 5) & 1)
          {
-            text(buf, x, 12, 2, 0xc0c8d8u);
-            text("START", x + 30, 12, 2, 0xc0c8d8u);
+            text(buf, x, y, 2, 0xc0c8d8u);
+            text("START", x + 30, y, 2, 0xc0c8d8u);
          }
          continue;
       }
-      text(buf, x, 12, 2, hd_player_color[i] & 0xffffffu);
-      blit(&hd_coin[0], x + 28, 10, 0);
+      text(buf, x, y, 2, hd_player_color[i] & 0xffffffu);
+      blit(&hd_coin[0], x + 28, y - 2, 0);
       buf[0] = 'x';
       number(buf + 1, p->coins);
-      text(buf, x + 46, 12, 2, 0xffffffu);
+      text(buf, x + 46, y, 2, 0xffffffu);
    }
    if (s->paused)
    {
@@ -345,7 +358,7 @@ static void hud(const hd_state *s)
    if (s->phase == PH_CLEAR)
    {
       text_center("STAGE CLEAR!", 110, 5, 0xf8c838u);
-      for (i = 0; i < MAX_PLAYERS; i++)
+      for (i = 0; i < hd_players; i++)
          if (s->p[i].active)
          {
             char line[24] = "P1  x";
