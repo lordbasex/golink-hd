@@ -24,8 +24,9 @@ ANIMS = {
     "win": ("win", 6, 8),
 }
 SKINS = ["red", "blue"]
-# pixels walked in one whole walk cycle (12 frames, two steps): the steps follow the ground
-STRIDE = 150
+# pixels walked in one whole walk cycle (12 frames, two steps): the steps follow the ground; at the
+# walking speed (1.8 px a frame) a cycle lasts about a second, 12 drawings a second like an animated cartoon
+STRIDE = 110
 
 
 def png_size(path):
@@ -171,7 +172,7 @@ def main():
         "level": "level.json",
         "sky": ["#3a1420", "#7a3a3a"],
         # a hero about 80 px tall: hitbox, and a jump of about 12 cells
-        "physics": {"hitbox": [28, 66], "enemy_hitbox": [34, 30], "walk": 240, "run": 380, "jump": 1050, "gravity": 50, "gravity_hold": 30, "fall_max": 1200},
+        "physics": {"hitbox": [28, 66], "enemy_hitbox": [34, 30], "walk": 180, "run": 280, "jump": 1050, "gravity": 50, "gravity_hold": 30, "fall_max": 1200},
         "sprites": {k: v for k, v in {
             "hero": {"players": SKINS, "skins": skins},
             "enemy": {k: v for k, v in {"walk": dict(thing("enemy_germ_walk", 8, 10) or {}, stride=70) or None,

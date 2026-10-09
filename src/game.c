@@ -245,7 +245,10 @@ static int move_y(hd_player *p)
    p->ground = 0;
    if (p->vy >= 0)
    {
-      ty = (py + PH - 1) >> 4;
+      /* the row of the feet's lowest pixel, with the fraction: half a pixel
+       * into the floor touches it (rounded down, a standing player was in
+       * the air every other frame, sinking half a pixel and then one) */
+      ty = FX_INT(p->y + FX(PH) - 1) >> 4;
       for (tx = px >> 4; tx <= (px + PW - 1) >> 4; tx++)
          if (solid(tx, ty) || (!p->drop && shelf(tx, ty) && old_bottom <= ty * TILE))
          {
@@ -363,11 +366,13 @@ static void player_step(hd_state *s, int32_t i)
    /* walking and running */
    if (dir)
    {
-      p->vx += dir * (p->ground ? ACCEL_GROUND : ACCEL_AIR);
-      if (p->vx > max)
-         p->vx = hd_max(max, p->vx - FRICTION_GROUND);
-      if (p->vx < -max)
-         p->vx = hd_min(-max, p->vx + FRICTION_GROUND);
+      /* up to the top speed, never past it; faster than it (after running), slowing down to it */
+      int32_t along = dir * p->vx;
+      if (along < max)
+         along = hd_min(max, along + (p->ground ? ACCEL_GROUND : ACCEL_AIR));
+      else
+         along = hd_max(max, along - FRICTION_GROUND);
+      p->vx = dir * along;
       if (p->ground && dir * p->vx < 0 && (s->frame & 3) == 0)
          particle(s, FX_INT(p->x) + PW / 2, FX_INT(p->y) + PH, 0, FX_FRAC(-1, 2), 14, 0xffe0d0b0u, 0);
       p->facing = dir;

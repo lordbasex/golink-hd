@@ -762,6 +762,18 @@ static void test_physics(void)
          CHECK(FX_INT(s.p[0].y) + PH == floor_y); /* standing on the floor */
       top = hd_min(top, FX_INT(s.p[0].y));
    }
+   /* walking on flat ground: on the ground every frame, never past the top speed (a standing player used to be in the air every other frame) */
+   for (f = 0; f < 120; f++)
+   {
+      memset(in, 0, sizeof in);
+      in[0].buttons = PAD_RIGHT;
+      hd_step(&s, in);
+      if (f > 20)
+      {
+         CHECK(s.p[0].ground == 1);
+         CHECK(s.p[0].vx <= hd_phys.walk_max);
+      }
+   }
    /* v^2 / 2g with v = 10 px and g = 0.28 while held (the default hold gravity): about 178 px */
    CHECK(floor_y - PH - top > 150);
    CHECK(FX_INT(s.p[0].y) + PH == floor_y); /* and back on the floor */

@@ -40,6 +40,16 @@ void hd_sprites_free(void)
 {
    int32_t s, a;
    for (s = 0; s < MAX_SKINS; s++)
+   {
+      hd_anim *parts[3] = { &hd_skins[s].rig.body, &hd_skins[s].rig.hand, &hd_skins[s].rig.foot };
+      for (a = 0; a < 3; a++)
+         if (parts[a]->frames)
+         {
+            free(parts[a]->frames[0].px);
+            free(parts[a]->frames);
+         }
+   }
+   for (s = 0; s < MAX_SKINS; s++)
       for (a = 0; a < ANIM_COUNT; a++)
       {
          hd_anim *an = &hd_skins[s].anim[a];
@@ -181,6 +191,42 @@ static const char *load_anim(const hd_zip *zip, const json *def, hd_anim *an, co
    return NULL;
 }
 
+static const char *load_rig(const hd_zip *zip, const json *rig, hd_rig *r, const char *skin)
+{
+   static char msg[200];
+   static const char *const parts[3] = { "body", "hand", "foot" };
+   hd_anim *an[3];
+   int32_t k;
+   int bad = 0;
+   an[0] = &r->body;
+   an[1] = &r->hand;
+   an[2] = &r->foot;
+   if (rig->type != JSON_OBJECT)
+      return "a skin's rig must be an object";
+   for (k = 0; k < 3; k++)
+   {
+      const json *def = hd_json_get(rig, parts[k]);
+      const char *err;
+      if (!def)
+      {
+         snprintf(msg, sizeof msg, "the rig of %s needs a \"%s\"", skin, parts[k]);
+         return msg;
+      }
+      err = load_anim(zip, def, an[k], skin, parts[k]);
+      if (err)
+         return err;
+   }
+   r->limb = get_int(rig, "limb", 1, 32, 5, &bad);
+   r->leg = get_int(rig, "leg", 4, 200, 24, &bad);
+   r->arm = get_int(rig, "arm", 4, 200, 22, &bad);
+   r->stride = get_int(rig, "stride", 0, 4096, 110, &bad);
+   r->lift = get_int(rig, "lift", 0, 100, 9, &bad);
+   r->bob = get_int(rig, "bob", 0, 50, 3, &bad);
+   if (bad)
+      return "a rig's sizes are out of range (limb 1-32, leg and arm 4-200, stride 0-4096, lift 0-100, bob 0-50)";
+   return NULL;
+}
+
 const char *hd_sprites_load(const hd_zip *zip, const json *sprites)
 {
    static char msg[200];
@@ -242,6 +288,20 @@ const char *hd_sprites_load(const hd_zip *zip, const json *sprites)
          {
             hd_sprites_free();
             return err;
+         }
+      }
+      {
+         const json *rig = hd_json_get(sk, "rig");
+         if (rig)
+         {
+            const char *err = load_rig(zip, rig, &hd_skins[i].rig, p->str);
+            if (err)
+            {
+               hd_sprites_free();
+               return err;
+            }
+            hd_skins[i].has_rig = 1;
+            continue; /* a puppet needs no animations */
          }
       }
       if (!hd_skins[i].anim[ANIM_IDLE].frames)

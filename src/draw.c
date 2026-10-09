@@ -259,6 +259,15 @@ static void actor(const hd_image *im, int32_t x, int32_t y, int32_t flags, int32
 static void hero_sprite(const hd_state *s, const hd_player *p, int32_t i)
 {
    const hd_skin *sk = &hd_skins[hd_skin_of[i]];
+   if (sk->has_rig)
+   {
+      if (p->hurt && p->hurt <= HURT_FRAMES - 30 && ((p->hurt >> 2) & 1))
+         return; /* blinking */
+      if (hd_fx.shadows)
+         gfx_shadow(&surf, FX_INT(p->x) + PW / 2 - cam_x, FX_INT(p->y) + PH - cam_y, PW * 3 / 5, 2, 120);
+      hd_rig_draw(&surf, &sk->rig, s, p, i, FX_INT(p->x) + PW / 2 - cam_x, FX_INT(p->y) + PH - cam_y, p->hurt > HURT_FLASH);
+      return;
+   }
    const hd_anim *an;
    const hd_image *im;
    int32_t t = s->frame, loop = 1, state;

@@ -320,6 +320,8 @@ Next image, same rules, character in place: ROJO the red pill hero, a proper ani
 
 and the same for the germ (`a smooth ROLLING and HOPPING cycle of 8 frames … the body at the SAME horizontal position in every frame (moving in place) … squash when landing and stretch when hopping`). The lesson for any game: ask for a cycle by its animation poses and "in place", and judge it on a cut sheet before putting it in the game. The hero walks a cycle every 150 pixels, the germ every 70 (its frames follow where it is).
 
+- "None of the three videos looks smooth; can't you see it yourself?" (the user). Measuring the video frame by frame did: the capsule moved about 3 pixels in one frame and half a pixel in the next, and its top went up and down every frame. A probe printing the player's state each frame showed `ground` going 1, 0, 1, 0: with the game's gravity (half a pixel a frame) a standing player sank half a pixel, the engine looked for the floor at the whole pixel and missed it, so every other frame was drawn as a jump. Fixed in the engine for every game (and a second bug it hid: the speed crept past the top speed). The lesson: measure the picture, then print the state, before tuning by eye.
+
 ## Cleaning up
 
 When the game's audio is done, the generated files are copied off the M1 and `~/ai` (the models, the virtual environment and the outputs) is removed there, as the user asked.

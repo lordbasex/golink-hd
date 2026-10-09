@@ -9,6 +9,7 @@
 
 #include "hd.h"
 #include "pack.h"
+#include "gfx.h"
 
 /* The states a hero is drawn in. */
 enum
@@ -31,10 +32,23 @@ typedef struct
    int32_t stride;   /* pixels walked in one whole cycle (run): the frames follow the distance, not the time; 0 by time */
 } hd_anim;
 
+/* A rubber-hose puppet (rig.c): parts pictures and the hoses' sizes, in pixels. */
+typedef struct
+{
+   hd_anim body, hand, foot; /* faces, gloves and shoes, each a row of pictures */
+   int32_t limb, leg, arm, stride, lift, bob;
+} hd_rig;
+
 typedef struct
 {
    hd_anim anim[ANIM_COUNT];
+   int32_t has_rig; /* drawn as a puppet instead of the animations */
+   hd_rig rig;
 } hd_skin;
+
+/* Draws a player as its skin's puppet, its feet at (feet_x, feet_y) on the surface. */
+void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_player *p, int32_t i,
+                 int32_t feet_x, int32_t feet_y, int32_t white);
 
 #define MAX_SKINS 8
 

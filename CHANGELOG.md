@@ -14,6 +14,7 @@
 - `tools/hdrun --check` (the game's info, a state saved halfway and played again, a restart played again) and `--music off`.
 
 ### Fixed
+- A player walking on flat ground was in the air every other frame (the floor was looked for at the feet's whole pixel, so sinking half a pixel missed it), which drew a jump frame every other frame; and on the ground the speed crept past the top speed by 0.05 pixels a frame (the two bugs hid each other). The floor is looked for with the fraction, and the speed stops at the top speed. Found by measuring a video of ANTÍDOTO frame by frame; the demo's and the API test's hashes changed (identical on macOS and Linux).
 - The goal and checkpoints count when a player passes their column near their height (from 2 rows below to 8 above, so jumping over still counts): a level that climbs on a 9:16 screen no longer clears when the player runs under its goal. Found by the 9:16 API test in a go-link room.
 - Centered texts (the title, STAGE CLEAR!, PAUSE) get smaller when they would not fit a 4:3 or 9:16 screen; a long title was cut.
 - `tools/glhd pack` packs the files the manifest names (its level and pictures, the portrait and the LUT too), not a fixed list that needed every demo picture.
