@@ -1,0 +1,20 @@
+{
+  "format": 2,
+  "title": "go-link HD: API test 9:16",
+  "version": "1.0.0",
+  "genre": "platformer",
+  "players": 1,
+  "screen": "9:16",
+  "level": "level.json",
+  "sky": [
+    "#062040",
+    "#1080a0"
+  ],
+  "pictures": {
+    "hero": "hero.png",
+    "tiles": "tiles.png",
+    "coin": "coin.png",
+    "goal": "goal.png",
+    "portrait": "portrait.png"
+  }
+}

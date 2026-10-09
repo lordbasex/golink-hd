@@ -5,13 +5,20 @@
  * script and writes chosen frames as PNG files.
  *
  *   tools/hdrun LIBRARY [--content FILE.glhd] [--demo showcase] [--language en|es|pt]
- *                       [--frames N] [--script FILE] [--shot F1,F2,...] [--out DIR]
+ *                       [--music off] [--frames N] [--script FILE] [--shot F1,F2,...]
+ *                       [--out DIR] [--check]
  *
  * A script line is "FRAME PORT BUTTONS": from that frame on, the port (0-7)
  * holds those buttons (comma separated: up down left right a b x y start
  * select l r l2 r2 l3 r3, sticks as lx:N ly:N rx:N ry:N, or "none"). Lines
  * starting with # are comments. It prints a hash of every frame and of the
  * sound, so two runs (or two builds) can be compared.
+ *
+ * --check also tries the rest of the API on the same run: it prints the
+ * game's info, saves the state halfway, then loads that state and plays the
+ * second half again (it must give the very same frames and sound as the
+ * first time), and restarts the game and plays it all again (the same
+ * again). It exits with 1 when anything differs.
  */
 #include <stdarg.h>
 #include <stdio.h>
@@ -222,18 +229,86 @@ static int write_png(const char *path, const golinkhd_frame_out *fr)
    return 1;
 }
 
+typedef struct { uint32_t video, audio; long samples; } hash_t;
+
+typedef struct
+{
+   void (*frame)(golinkhd_engine *, const golinkhd_pad *, int32_t, golinkhd_frame_out *);
+   golinkhd_engine *e;
+   long shots[64];
+   int nshots;
+   const char *out;
+} host_t;
+
+static hash_t fresh(void)
+{
+   hash_t h = { 2166136261u, 2166136261u, 0 };
+   return h;
+}
+
+static int same(hash_t a, hash_t b)
+{
+   return a.video == b.video && a.audio == b.audio && a.samples == b.samples;
+}
+
+/* Plays frames [from, to) with the script into the hashes a (and b when
+ * given); writes the asked frames as PNG when shoot is set. */
+static void play(const host_t *h, long from, long to, hash_t *a, hash_t *b, int shoot)
+{
+   golinkhd_pad held[PORTS];
+   long f;
+   int i, next = 0;
+   memset(held, 0, sizeof held);
+   /* the buttons held when the run reaches `from` */
+   while (next < lines && script[next].frame < from)
+   {
+      held[script[next].port] = script[next].pad;
+      next++;
+   }
+   for (f = from; f < to; f++)
+   {
+      golinkhd_frame_out fr;
+      hash_t *hs[2];
+      int k;
+      hs[0] = a;
+      hs[1] = b;
+      while (next < lines && script[next].frame <= f)
+      {
+         held[script[next].port] = script[next].pad;
+         next++;
+      }
+      h->frame(h->e, held, PORTS, &fr);
+      for (k = 0; k < 2; k++)
+      {
+         if (!hs[k])
+            continue;
+         for (i = 0; i < fr.height; i++)
+            hs[k]->video = fnv(fr.pixels + i * fr.pitch, (size_t)fr.width * 4, hs[k]->video);
+         hs[k]->audio = fnv(fr.audio, (size_t)fr.audio_frames * 4, hs[k]->audio);
+         hs[k]->samples += fr.audio_frames;
+      }
+      for (i = 0; shoot && i < h->nshots; i++)
+         if (h->shots[i] == f)
+         {
+            char path[1024];
+            snprintf(path, sizeof path, "%s/frame-%05ld.png", h->out, f);
+            if (!write_png(path, &fr))
+               fprintf(stderr, "cannot write %s\n", path);
+         }
+   }
+}
+
 int main(int argc, char **argv)
 {
    void *lib;
-   long frames = 600, f, shots[64];
-   int nshots = 0, i, next = 0;
-   const char *out = ".", *content = NULL, *language = NULL, *err = NULL;
+   long frames = 600, half;
+   int i, check = 0, music = 1, failed = 0;
+   const char *content = NULL, *language = NULL, *err = NULL;
    int showcase = 0;
-   uint32_t video_hash = 2166136261u, audio_hash = 2166136261u;
-   long audio_frames = 0;
-   golinkhd_pad held[PORTS];
+   hash_t run = fresh();
    golinkhd_config cfg;
    golinkhd_engine *e;
+   host_t host;
    unsigned n;
    golinkhd_engine *(*create)(const golinkhd_config *, const char **);
    void (*destroy)(golinkhd_engine *);
@@ -241,12 +316,22 @@ int main(int argc, char **argv)
    void (*load_demo)(golinkhd_engine *, int32_t);
    void (*set_language)(golinkhd_engine *, const char *);
    void (*frame)(golinkhd_engine *, const golinkhd_pad *, int32_t, golinkhd_frame_out *);
+   void (*set_music)(golinkhd_engine *, int);
+   void (*get_info)(golinkhd_engine *, golinkhd_info *);
+   void (*restart)(golinkhd_engine *);
+   size_t (*state_size)(golinkhd_engine *);
+   int (*state_save)(golinkhd_engine *, uint8_t *, size_t);
+   int (*state_load)(golinkhd_engine *, const uint8_t *, size_t, const char **);
+   const char *(*version)(void);
+   int32_t (*api_version)(void);
 
    if (argc < 2)
    {
-      fprintf(stderr, "usage: %s LIBRARY [--content FILE] [--demo showcase] [--language en|es|pt] [--frames N] [--script FILE] [--shot F1,F2] [--out DIR]\n", argv[0]);
+      fprintf(stderr, "usage: %s LIBRARY [--content FILE] [--demo showcase] [--language en|es|pt] [--music off] [--frames N] [--script FILE] [--shot F1,F2] [--out DIR] [--check]\n", argv[0]);
       return 2;
    }
+   memset(&host, 0, sizeof host);
+   host.out = ".";
    for (i = 2; i < argc; i++)
    {
       if (!strcmp(argv[i], "--frames") && i + 1 < argc)
@@ -262,11 +347,15 @@ int main(int argc, char **argv)
       else if (!strcmp(argv[i], "--shot") && i + 1 < argc)
       {
          char *tok;
-         for (tok = strtok(argv[++i], ","); tok && nshots < 64; tok = strtok(NULL, ","))
-            shots[nshots++] = atol(tok);
+         for (tok = strtok(argv[++i], ","); tok && host.nshots < 64; tok = strtok(NULL, ","))
+            host.shots[host.nshots++] = atol(tok);
       }
       else if (!strcmp(argv[i], "--out") && i + 1 < argc)
-         out = argv[++i];
+         host.out = argv[++i];
+      else if (!strcmp(argv[i], "--music") && i + 1 < argc)
+         music = strcmp(argv[++i], "off") != 0;
+      else if (!strcmp(argv[i], "--check"))
+         check = 1;
       else if (!strcmp(argv[i], "--content") && i + 1 < argc)
          content = argv[++i];
       else if (!strcmp(argv[i], "--language") && i + 1 < argc)
@@ -301,6 +390,14 @@ int main(int argc, char **argv)
    GET(load_demo, "golinkhd_load_demo");
    GET(set_language, "golinkhd_set_language");
    GET(frame, "golinkhd_frame");
+   GET(set_music, "golinkhd_set_music");
+   GET(get_info, "golinkhd_get_info");
+   GET(restart, "golinkhd_restart");
+   GET(state_size, "golinkhd_state_size");
+   GET(state_save, "golinkhd_state_save");
+   GET(state_load, "golinkhd_state_load");
+   GET(version, "golinkhd_version");
+   GET(api_version, "golinkhd_api_version");
 #undef GET
 
    memset(&cfg, 0, sizeof cfg);
@@ -327,30 +424,49 @@ int main(int argc, char **argv)
    }
    else if (showcase)
       load_demo(e, 1);
-   memset(held, 0, sizeof held);
-   for (f = 0; f < frames; f++)
+   if (!music)
+      set_music(e, 0);
+   host.frame = frame;
+   host.e = e;
+   half = frames / 2;
+   if (!check)
+      play(&host, 0, frames, &run, NULL, 1);
+   else
    {
-      golinkhd_frame_out fr;
-      while (next < lines && script[next].frame <= f)
+      golinkhd_info info;
+      hash_t second = fresh(), again = fresh(), restarted = fresh();
+      size_t size = state_size(e);
+      uint8_t *state = (uint8_t *)malloc(size ? size : 1);
+      get_info(e, &info);
+      printf("engine %s, api %d: \"%s\" %dx%d, %d fps, %d Hz, %d players, sha256 ", version(), (int)api_version(),
+             info.title, (int)info.width, (int)info.height, (int)info.fps, (int)info.sample_rate, (int)info.players);
+      for (i = 0; i < 32; i++)
+         printf("%02x", info.sha256[i]);
+      printf("\n");
+      /* the run, with its state saved halfway and its second half measured on its own */
+      play(&host, 0, half, &run, NULL, 1);
+      if (!state || !size || !state_save(e, state, size))
       {
-         held[script[next].port] = script[next].pad;
-         next++;
+         fprintf(stderr, "check: the state could not be saved\n");
+         return 1;
       }
-      frame(e, held, PORTS, &fr);
-      for (i = 0; i < fr.height; i++)
-         video_hash = fnv(fr.pixels + i * fr.pitch, (size_t)fr.width * 4, video_hash);
-      audio_hash = fnv(fr.audio, (size_t)fr.audio_frames * 4, audio_hash);
-      audio_frames += fr.audio_frames;
-      for (i = 0; i < nshots; i++)
-         if (shots[i] == f)
-         {
-            char path[1024];
-            snprintf(path, sizeof path, "%s/frame-%05ld.png", out, f);
-            if (!write_png(path, &fr))
-               fprintf(stderr, "cannot write %s\n", path);
-         }
+      play(&host, half, frames, &run, &second, 1);
+      /* the second half again, from the saved state */
+      if (!state_load(e, state, size, &err))
+      {
+         fprintf(stderr, "check: the saved state did not load: %s\n", err);
+         return 1;
+      }
+      play(&host, half, frames, &again, NULL, 0);
+      /* the whole run again, after a restart */
+      restart(e);
+      play(&host, 0, frames, &restarted, NULL, 0);
+      printf("state: %ld bytes saved at frame %ld, the rest played again from it: %s\n", (long)size, half, same(second, again) ? "same" : "DIFFERENT");
+      printf("restart: the whole run again: %s\n", same(run, restarted) ? "same" : "DIFFERENT");
+      failed = !same(second, again) || !same(run, restarted);
+      free(state);
    }
-   printf("frames %ld video %08x audio %08x samples %ld\n", frames, video_hash, audio_hash, audio_frames);
+   printf("frames %ld video %08x audio %08x samples %ld\n", frames, run.video, run.audio, run.samples);
    destroy(e);
-   return 0;
+   return failed;
 }

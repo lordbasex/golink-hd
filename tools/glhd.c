@@ -4,7 +4,8 @@
  *
  *   tools/glhd export-demo DIR    writes the built-in demo as a package folder
  *                                 (manifest.json, level.json, PNG pictures)
- *   tools/glhd pack DIR OUT.glhd  zips a package folder (stored, no compression)
+ *   tools/glhd pack DIR OUT.glhd  zips a package folder (stored, no compression): the
+ *                                 manifest, its level and the pictures it names
  *   tools/glhd check FILE.glhd    loads a package like the core does and prints
  *                                 its title and SHA-256, or why it cannot play
  *
@@ -228,14 +229,84 @@ static void le32(FILE *f, uint32_t v)
    le16(f, v >> 16);
 }
 
-/* A zip of the package folder's files, stored, in a fixed order (same bytes every time). */
+/* The files a package folder's manifest names, in a fixed order: the
+ * manifest, the level, then its pictures in the format's order. Names stay
+ * inside the folder (no absolute paths, no ".."). */
+#define PACK_MAX 16
+static int pack_names(const char *dir, char names[PACK_MAX][256], int *count)
+{
+   static const char *const pictures[] = { "hero", "enemy", "tiles", "coin", "checkpoint", "goal", "portrait", "lut" };
+   char path[1024];
+   size_t n;
+   uint8_t *text;
+   const char *err = NULL;
+   json *man;
+   const json *j, *pics;
+   unsigned k;
+   int i, ok = 1;
+   snprintf(path, sizeof path, "%s/manifest.json", dir);
+   text = slurp(path, &n);
+   if (!text)
+   {
+      fprintf(stderr, "cannot read %s\n", path);
+      return 0;
+   }
+   man = hd_json_parse((const char *)text, n, &err);
+   free(text);
+   if (!man)
+   {
+      fprintf(stderr, "%s: %s\n", path, err);
+      return 0;
+   }
+   strcpy(names[0], "manifest.json");
+   *count = 1;
+   j = hd_json_get(man, "level");
+   if (!j || j->type != JSON_STRING)
+   {
+      fprintf(stderr, "%s names no level\n", path);
+      ok = 0;
+   }
+   else
+      snprintf(names[(*count)++], 256, "%s", j->str);
+   pics = hd_json_get(man, "pictures");
+   for (k = 0; ok && pics && k < sizeof pictures / sizeof pictures[0]; k++)
+   {
+      j = hd_json_get(pics, pictures[k]);
+      if (!j)
+         continue;
+      if (j->type != JSON_STRING)
+      {
+         fprintf(stderr, "%s: pictures.%s must be a file name\n", path, pictures[k]);
+         ok = 0;
+         break;
+      }
+      for (i = 0; i < *count && strcmp(names[i], j->str); i++)
+         ;
+      if (i == *count)
+         snprintf(names[(*count)++], 256, "%s", j->str);
+   }
+   for (i = 0; ok && i < *count; i++)
+      if (!names[i][0] || names[i][0] == '/' || names[i][0] == '\\' || strstr(names[i], "..") || strchr(names[i], ':'))
+      {
+         fprintf(stderr, "%s: \"%s\" is not a file inside the package\n", path, names[i]);
+         ok = 0;
+      }
+   hd_json_free(man);
+   return ok;
+}
+
+/* A zip of the files a package folder's manifest names, stored, in a fixed
+ * order (same bytes every time). */
 static int pack(const char *dir, const char *out)
 {
-   static const char *names[] = { "manifest.json", "level.json", "hero.png", "enemy.png", "tiles.png", "coin.png", "checkpoint.png", "goal.png" };
-   enum { N = sizeof names / sizeof names[0] };
-   uint32_t offs[N], crcs[N], sizes[N], at = 0, cd_at, cd_size;
-   FILE *f = fopen(out, "wb");
+   char names[PACK_MAX][256];
+   int N = 0;
+   uint32_t offs[PACK_MAX], crcs[PACK_MAX], sizes[PACK_MAX], at = 0, cd_at, cd_size;
+   FILE *f;
    int i;
+   if (!pack_names(dir, names, &N))
+      return 0;
+   f = fopen(out, "wb");
    if (!f)
       return 0;
    for (i = 0; i < N; i++)

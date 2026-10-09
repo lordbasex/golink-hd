@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+- The API test games (`examples/`, written by `examples/make-api-test.py`): a 16:9 game that uses every picture, letter and effect of the package format with a dialog at each stop, and 4:3 and 9:16 ones; CI packs, checks and plays them (`tools/runs/api.txt`, `api.expected`).
+- `tools/hdrun --check` (the game's info, a state saved halfway and played again, a restart played again) and `--music off`.
+
+### Fixed
+- `tools/glhd pack` packs the files the manifest names (its level and pictures, the portrait and the LUT too), not a fixed list that needed every demo picture.
+
 ## [0.2.0] - 2026-10-08
 
 The first public version; go-link 0.2.8 ships it inside the device.

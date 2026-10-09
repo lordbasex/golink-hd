@@ -74,7 +74,19 @@ A level's `effects`, every key optional:
 
 PNGs may be RGBA, RGB, grey or palette (with transparency), 8 bits per channel, not interlaced. Numbers in JSON are integers. A package of a newer `format` is refused with a clear message ("made for a newer go-link HD"); unknown keys are ignored, so a newer package with extra data still plays where its format allows. A package is identified by its SHA-256, which save states carry: a save state of another game is refused. Limits: 256 MB per package, 64 MB per file unpacked, 4096 px per picture side.
 
-`tools/glhd export-demo DIR` writes the built-in demo as a package folder, `tools/glhd pack DIR OUT.glhd` zips it and `tools/glhd check FILE.glhd` loads a package like the core does (its title and SHA-256, or why it cannot play). The tests play `tests/data/demo-deflate.glhd` (the demo zipped with deflate, its PNGs saved by an image library) and check it is the very same game as the built-in one, and that every cut or damaged copy fails cleanly.
+`tools/glhd export-demo DIR` writes the built-in demo as a package folder, `tools/glhd pack DIR OUT.glhd` zips a package folder (the manifest, its level and the pictures it names) and `tools/glhd check FILE.glhd` loads a package like the core does (its title and SHA-256, or why it cannot play). The tests play `tests/data/demo-deflate.glhd` (the demo zipped with deflate, its PNGs saved by an image library) and check it is the very same game as the built-in one, and that every cut or damaged copy fails cleanly.
+
+### The API test games
+
+`examples/` holds three packages made to check everything at once (written by `python3 examples/make-api-test.py`, pictures drawn in colors no built-in picture has, so a picture that failed to load shows as the demo's):
+
+| Folder | What it checks |
+|---|---|
+| `api-test` | 16:9, 4 players: every picture (8 player rows, the portrait, a LUT), every letter of the level, every effect, and a dialog at each stop (English, Spanish, Portuguese) saying what should be seen there |
+| `api-test-43` | The 4:3 screen, 2 players |
+| `api-test-916` | The vertical 9:16 screen, 1 player, a level that climbs |
+
+CI packs and checks the three and plays `api-test` with `tools/runs/api.txt` and `--check`, against `tools/runs/api.expected`. `tools/hdrun --check` tries the rest of the API on the run: it prints the game's info, saves the state halfway and plays the rest again from it, restarts and plays it all again, and fails when anything differs; `--music off` turns the music off.
 
 ## Controls
 

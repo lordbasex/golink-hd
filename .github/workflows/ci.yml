@@ -35,6 +35,11 @@ jobs:
           tools/glhd export-demo demo && tools/glhd pack demo demo.glhd && tools/glhd check demo.glhd
           lib=$(ls libgolinkhd.so libgolinkhd.dylib 2>/dev/null || true)
           tools/hdrun ./$lib --content demo.glhd --frames 460 --script tools/runs/walk.txt
+          # the API test game: every picture, letter and effect, played with the whole API
+          python3 examples/make-api-test.py && git diff --exit-code examples/
+          for d in api-test api-test-43 api-test-916; do tools/glhd pack examples/$d $d.glhd && tools/glhd check $d.glhd; done
+          tools/hdrun ./$lib --content api-test.glhd --language es --frames 3000 --script tools/runs/api.txt --check | tail -1 > api.out
+          diff tools/runs/api.expected api.out
 
   windows:
     runs-on: windows-latest
