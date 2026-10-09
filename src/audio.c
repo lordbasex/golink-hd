@@ -7,6 +7,7 @@
  */
 #include <string.h>
 #include "hd.h"
+#include "sprite.h"
 
 #define WAVE_LEN 64
 
@@ -129,6 +130,15 @@ void hd_audio_build(void)
    samples[WAVE_TRIANGLE] = (sample){ w_triangle, WAVE_LEN, 1 };
 }
 
+void hd_audio_sample(int32_t sfx, const int16_t *data, int32_t len)
+{
+   if (sfx < 0 || sfx >= SFX_COUNT || !data || len <= 0)
+      return;
+   samples[sfx].data = data;
+   samples[sfx].len = len;
+   samples[sfx].loop = 0;
+}
+
 /* Starts a sound effect; screen_x (0..639) places it left or right. */
 void hd_play(hd_state *s, int32_t sfx, int32_t screen_x)
 {
@@ -169,6 +179,8 @@ static void note(hd_channel *c, int32_t wave, int32_t midi, int32_t vol, int32_t
 /* One frame of the sequencer: a row every 7 frames (about 128 beats a minute). */
 void hd_music_step(hd_state *s)
 {
+   if (hd_pkg_music)
+      return; /* a package's own music plays instead (hd_mix) */
    if (s->music_tick++ % 7)
       return;
    s->music_row = (s->music_row + 1) % 64;
@@ -225,6 +237,22 @@ void hd_mix(hd_state *s, int16_t *out, int music_on)
             c->sample = -1;
          }
       }
+   }
+   /* a package's music, stereo, over and over */
+   if (hd_pkg_music)
+   {
+      int32_t pos = hd_clamp(s->music_pos, 0, hd_pkg_music_frames - 1);
+      for (n = 0; n < HD_SAMPLES_PER_FRAME; n++)
+      {
+         if (music_on)
+         {
+            acc[2 * n] += hd_pkg_music[2 * pos] * hd_pkg_music_vol >> 8;
+            acc[2 * n + 1] += hd_pkg_music[2 * pos + 1] * hd_pkg_music_vol >> 8;
+         }
+         if (++pos >= hd_pkg_music_frames)
+            pos = hd_pkg_music_loop;
+      }
+      s->music_pos = pos;
    }
    /* the mix's effects: a one pole low pass (muffled, underwater) and an echo (caves) */
    if (s->lowpass > 0 && s->lowpass < 256)

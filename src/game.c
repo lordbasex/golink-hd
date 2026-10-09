@@ -726,13 +726,14 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       {
          uint32_t rng = s->rng;
          hd_channel ch[MAX_CHANNELS];
-         int32_t row = s->music_row, tick = s->music_tick, sfx = s->sfx_next;
+         int32_t row = s->music_row, tick = s->music_tick, sfx = s->sfx_next, mpos = s->music_pos;
          memcpy(ch, s->ch, sizeof ch);
          hd_reset(s);
          s->rng = rng;
          memcpy(s->ch, ch, sizeof ch);
          s->music_row = row;
          s->music_tick = tick;
+         s->music_pos = mpos;
          s->sfx_next = sfx;
          return;
       }

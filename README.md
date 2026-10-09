@@ -118,6 +118,15 @@ Format 3 adds two keys to the manifest, both optional; a package of format 1 or 
 
 Back to front in the list's order, up to 8. `speed` is the share of the camera's movement in hundredths (0 stays still, 100 moves with the level, more passes faster in front), 0 to 400; `y` is the picture's top in level pixels at speed 100 (it moves up and down at its speed too); `front` draws it over the characters. Pictures may be opaque or see-through; with layers, the built-in clouds and hills are not drawn and the manifest's sky fills what no layer covers. Layers and sprites share the 64 million pixels.
 
+**`sounds`** and **`music`**: a game's own sound, as WAV files (PCM, 16 bits, 48000 Hz, mono or stereo):
+
+```json
+"sounds": {"jump": "jump.wav", "coin": "gem.wav", "hurt": "ouch.wav"},
+"music": {"file": "colon.wav", "volume": 180, "loop_from": 0}
+```
+
+`sounds` replaces the built-in effects it names (`jump`, `coin`, `stomp`, `hurt`, `join`, `check`, `clear`, `pause`; up to 10 seconds each, mixed to mono, placed left or right by the game). `music` plays over and over instead of the built-in tune, in stereo (up to 10 minutes), at `volume` 0 to 256 (200 by default), starting again at `loop_from` milliseconds; its position is in the save state, so a loaded state goes on exactly where it was, and `golinkhd_set_music` turns it off like the built-in tune.
+
 `tools/sprites.py` cuts an image AI's strip (frames in a row on a transparent background) into such a sheet; [docs/howto/ai-art-and-audio.md](docs/howto/ai-art-and-audio.md) shows the whole path, from the prompts to the package, for [ANTÍDOTO](examples/antidoto).
 
 ### The API test games

@@ -204,6 +204,7 @@ typedef struct
    int32_t shake, shake_x, shake_y;
    int32_t cam_x, cam_y; /* 16.16, top-left of the screen in the level */
    int32_t music_row, music_tick;
+   int32_t music_pos; /* a package's music (format 3): the stereo sample it plays next */
    int32_t part_next, sfx_next;
    uint32_t taken[(MAP_MAX_W * MAP_MAX_H + 31) / 32]; /* coins taken, checkpoints reached */
    hd_player p[MAX_PLAYERS];
@@ -317,6 +318,8 @@ void hd_show_sanitize(hd_show *w);
 
 /* audio.c */
 void hd_audio_build(void);
+/* A package's own effect in place of a built-in one (mono, HD_RATE). */
+void hd_audio_sample(int32_t sfx, const int16_t *data, int32_t len);
 void hd_play(hd_state *s, int32_t sfx, int32_t screen_x);
 void hd_music_step(hd_state *s);
 /* Mixes one frame (HD_SAMPLES_PER_FRAME stereo samples) into out. */

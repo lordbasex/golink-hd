@@ -269,6 +269,21 @@ The effects the user asked for (the heroes' jump, shot, being hit and a yawn whe
 
 Tool: [MOSS-SoundEffect v2](https://github.com/OpenMOSS/MOSS-TTS) (Apache 2.0, a 1.3B flow matching model, up to 30 s at 48 kHz, natural, biological and human action sounds), on the M1 after the music. Effects it cannot make well (a yawn may be one) are synthesized in code, like classic cartoon effects (slide whistles, pops, bonks).
 
+## Putting it together and watching it
+
+[`examples/antidoto/build.py`](../../examples/antidoto/build.py) writes the package folder (`examples/antidoto/game`): the manifest with the heroes' physics (an 80 px hero: hitbox 28 × 66, a jump of about 12 cells), their skins from the cut sheets, the zone's painted layers (resized to the game's height) and its music, and the level. Then it is packed and played without a screen, with a button script, saving every other frame and the sound, and ffmpeg makes a video of it:
+
+```bash
+UV=/path/to/uv examples/antidoto/cut.sh 80
+UV=/path/to/uv python3 examples/antidoto/build.py
+tools/glhd pack examples/antidoto/game antidoto.glhd && tools/glhd check antidoto.glhd
+tools/hdrun ./libgolinkhd.dylib --content antidoto.glhd --frames 1100 --script run.txt --every 2 --audio audio.raw --out frames
+ffmpeg -framerate 30 -pattern_type glob -i 'frames/frame-*.png' -f s16le -ar 48000 -ac 2 -i audio.raw \
+  -vf scale=1280:720:flags=neighbor -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest antidoto.mp4
+```
+
+The first version (2026-10-09): Rojo and Azul running, jumping and yawning in the painted colon with its music; the floor, the enemies and the pickups are still the built-in game's.
+
 ## Cleaning up
 
 When the game's audio is done, the generated files are copied off the M1 and `~/ai` (the models, the virtual environment and the outputs) is removed there, as the user asked.

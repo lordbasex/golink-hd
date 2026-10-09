@@ -63,6 +63,12 @@ const char *hd_layers_load(const hd_zip *zip, const json *layers);
 /* Draws the back (front 0) or front (1) layers into a surface whose top-left is the camera at (cx, cy). */
 void hd_layers_draw(uint32_t *px, int32_t w, int32_t h, int32_t cx, int32_t cy, int32_t front);
 
+/* sound.c: format 3's "sounds" and "music" (WAV files). */
+extern const int16_t *hd_pkg_music; /* stereo, NULL: the built-in tune */
+extern int32_t hd_pkg_music_frames, hd_pkg_music_loop, hd_pkg_music_vol;
+const char *hd_sounds_load(const hd_zip *zip, const json *sounds, const json *music);
+void hd_sounds_free(void);
+
 /* Frames standing still before the hero looks bored. */
 #define BORED_AFTER 360
 

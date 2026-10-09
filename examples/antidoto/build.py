@@ -55,6 +55,15 @@ def layers(zone):
     return out
 
 
+def music(track):
+    """The zone's music from source/music (made by make_tracks.py on the machine with the model)."""
+    src = os.path.join(HERE, "source", "music", track + ".wav")
+    if not os.path.exists(src):
+        return None
+    shutil.copy(src, os.path.join(OUT, track + ".wav"))
+    return {"file": track + ".wav", "volume": 180}
+
+
 def level():
     """A first stretch of the colon: ground, gaps, platforms at a big hero's reach, enemies, a checkpoint, the goal."""
     w, h = 220, 30
@@ -125,7 +134,9 @@ def main():
         "physics": {"hitbox": [28, 66], "walk": 300, "run": 460, "jump": 1050, "gravity": 50, "gravity_hold": 30, "fall_max": 1200},
         "sprites": {"hero": {"players": SKINS, "skins": skins}},
         "layers": layers("colon"),
+        "music": music("colon"),
     }
+    manifest = {k: v for k, v in manifest.items() if v is not None}
     with open(os.path.join(OUT, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
         f.write("\n")

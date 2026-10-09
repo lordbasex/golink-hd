@@ -40,6 +40,7 @@ void hd_content_builtin(void)
 {
    hd_art_build();
    hd_sprites_free();
+   hd_sounds_free(); /* the built-in effects and tune */
    hd_physics_default(); /* before the level: its start stands on the hitbox's height */
    hd_level_build();
    strcpy(hd_title, "GO-LINK HD DEMO");
@@ -566,6 +567,8 @@ static const char *load_package(const uint8_t *data, size_t size)
       err = hd_sprites_load(&zip, hd_json_get(man, "sprites"));
    if (!err)
       err = hd_layers_load(&zip, hd_json_get(man, "layers"));
+   if (!err)
+      err = hd_sounds_load(&zip, hd_json_get(man, "sounds"), hd_json_get(man, "music"));
    hd_json_free(man);
    return err;
 }

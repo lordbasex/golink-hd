@@ -6,7 +6,7 @@
  *
  *   tools/hdrun LIBRARY [--content FILE.glhd] [--demo showcase] [--language en|es|pt]
  *                       [--music off] [--frames N] [--script FILE] [--shot F1,F2,...]
- *                       [--out DIR] [--check]
+ *                       [--out DIR] [--check] [--every N] [--audio FILE.raw]
  *
  * A script line is "FRAME PORT BUTTONS": from that frame on, the port (0-7)
  * holds those buttons (comma separated: up down left right a b x y start
@@ -19,6 +19,10 @@
  * second half again (it must give the very same frames and sound as the
  * first time), and restarts the game and plays it all again (the same
  * again). It exits with 1 when anything differs.
+ *
+ * --every N also saves every Nth frame as PNG, and --audio writes the whole
+ * run's sound as raw 48 kHz stereo 16-bit samples: with ffmpeg they make a
+ * video (docs/howto/ai-art-and-audio.md).
  */
 #include <stdarg.h>
 #include <stdio.h>
@@ -238,6 +242,8 @@ typedef struct
    long shots[64];
    int nshots;
    const char *out;
+   long every;
+   FILE *audio;
 } host_t;
 
 static hash_t fresh(void)
@@ -287,8 +293,10 @@ static void play(const host_t *h, long from, long to, hash_t *a, hash_t *b, int 
          hs[k]->audio = fnv(fr.audio, (size_t)fr.audio_frames * 4, hs[k]->audio);
          hs[k]->samples += fr.audio_frames;
       }
-      for (i = 0; shoot && i < h->nshots; i++)
-         if (h->shots[i] == f)
+      if (shoot && h->audio)
+         fwrite(fr.audio, 4, (size_t)fr.audio_frames, h->audio);
+      for (i = 0; shoot && i < h->nshots + (h->every > 0 && f % h->every == 0); i++)
+         if (i == h->nshots || h->shots[i] == f)
          {
             char path[1024];
             snprintf(path, sizeof path, "%s/frame-%05ld.png", h->out, f);
@@ -356,6 +364,17 @@ int main(int argc, char **argv)
          music = strcmp(argv[++i], "off") != 0;
       else if (!strcmp(argv[i], "--check"))
          check = 1;
+      else if (!strcmp(argv[i], "--every") && i + 1 < argc)
+         host.every = atol(argv[++i]);
+      else if (!strcmp(argv[i], "--audio") && i + 1 < argc)
+      {
+         host.audio = fopen(argv[++i], "wb");
+         if (!host.audio)
+         {
+            fprintf(stderr, "cannot write %s\n", argv[i]);
+            return 1;
+         }
+      }
       else if (!strcmp(argv[i], "--content") && i + 1 < argc)
          content = argv[++i];
       else if (!strcmp(argv[i], "--language") && i + 1 < argc)
@@ -467,6 +486,8 @@ int main(int argc, char **argv)
       free(state);
    }
    printf("frames %ld video %08x audio %08x samples %ld\n", frames, run.video, run.audio, run.samples);
+   if (host.audio)
+      fclose(host.audio);
    destroy(e);
    return failed;
 }

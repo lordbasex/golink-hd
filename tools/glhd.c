@@ -285,6 +285,25 @@ static int pack_names(const char *dir, char (*names)[256], int *count)
       if (i == *count)
          snprintf(names[(*count)++], 256, "%s", j->str);
    }
+   /* format 3: the sounds and the music */
+   {
+      const json *snd = hd_json_get(man, "sounds"), *mus = hd_json_get(man, "music"), *it, *f;
+      for (it = snd ? snd->child : NULL; ok && it; it = it->next)
+         if (it->type == JSON_STRING)
+         {
+            for (i = 0; i < *count && strcmp(names[i], it->str); i++)
+               ;
+            if (i == *count && *count < PACK_MAX)
+               snprintf(names[(*count)++], 256, "%s", it->str);
+         }
+      if (mus && (f = hd_json_get(mus, "file")) && f->type == JSON_STRING)
+      {
+         for (i = 0; i < *count && strcmp(names[i], f->str); i++)
+            ;
+         if (i == *count && *count < PACK_MAX)
+            snprintf(names[(*count)++], 256, "%s", f->str);
+      }
+   }
    /* format 3: every layer's file */
    {
       const json *ls = hd_json_get(man, "layers"), *it;
