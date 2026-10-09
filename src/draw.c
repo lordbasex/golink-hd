@@ -85,8 +85,11 @@ static void text(const char *s, int32_t x, int32_t y, int32_t scale, uint32_t c)
    text_draw(&surf, s, x, y, scale, c, 1, -1);
 }
 
+/* A line in the middle of the screen, smaller when it would not fit (4:3 and 9:16 screens). */
 static void center(const char *s, int32_t y, int32_t scale, uint32_t c)
 {
+   while (scale > 1 && text_width(s, scale) > surf.w - 16)
+      scale--;
    text_center(&surf, s, y, scale, c);
 }
 

@@ -259,15 +259,21 @@ static void hurt(hd_state *s, hd_player *p, int32_t from_x)
 }
 
 /*
- * Checkpoints and the goal count when a player passes their column at any
- * height, even jumping over them.
+ * Checkpoints and the goal count when a player passes their column near
+ * their height: from a little below to well above, so jumping over them
+ * counts, but passing far under them (a level that climbs) does not.
  */
+#define TOUCH_ABOVE 8 /* rows above the cell that still count */
+#define TOUCH_BELOW 2
 static void touch_column(hd_state *s, const hd_player *p)
 {
    int32_t tx = (FX_INT(p->x) + PW / 2) >> 4, ty, j;
+   int32_t top = FX_INT(p->y) >> 4, feet = (FX_INT(p->y) + PH - 1) >> 4;
    for (ty = 0; ty < MAP_H; ty++)
    {
       int32_t t = hd_cell(tx, ty);
+      if (feet < ty - TOUCH_ABOVE || top > ty + TOUCH_BELOW)
+         continue;
       if (t == T_CHECK && !taken(s, tx, ty))
       {
          take(s, tx, ty);

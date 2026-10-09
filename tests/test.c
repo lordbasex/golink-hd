@@ -678,6 +678,52 @@ static void test_effects_package(void)
    hd_content_builtin();
 }
 
+/* One cell of a flat_level's text. */
+static void put_cell(char *level, int w, int x, int y, char c)
+{
+   char *rows = strstr(level, "\"rows\": [") + 9; /* the '[' of the rows */
+   rows[1 + y * (w + 3) + 1 + x] = c;
+}
+
+/* The goal counts near its height: running far under it (a level that climbs) does not clear the stage. */
+static void test_goal_height(void)
+{
+   static uint8_t zip[200000];
+   static char level[100000];
+   static hd_state s;
+   hd_input in[MAX_PLAYERS];
+   const char *err;
+   size_t n;
+   int32_t f, high;
+   zfile files[2];
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 2, \"title\": \"Tall\", \"players\": 1, \"screen\": \"9:16\", \"level\": \"level.json\"}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   for (high = 1; high >= 0; high--)
+   {
+      flat_level(level, sizeof level, 24, 64); /* ground on rows 61 to 63, the players start on row 60 */
+      put_cell(level, 24, 14, high ? 20 : 60, 'F');
+      n = make_zip(zip, files, 2);
+      CHECK(hd_content_load(zip, n, &err) == 1);
+      if (err)
+         printf("  goal height: %s\n", err);
+      hd_reset(&s);
+      for (f = 0; f < 400; f++)
+      {
+         memset(in, 0, sizeof in);
+         if (f == 10)
+            in[0].buttons = PAD_START;
+         if (f > 20)
+            in[0].buttons = PAD_RIGHT;
+         hd_step(&s, in);
+      }
+      CHECK(!high || FX_INT(s.p[0].x) > 16 * 16); /* under the high goal, it ran past its column */
+      CHECK(high ? s.phase != PH_CLEAR : s.phase == PH_CLEAR);
+   }
+   hd_content_builtin();
+}
+
 static int32_t logged;
 
 static void count_log(void *user, int32_t level, const char *msg)
@@ -784,6 +830,7 @@ int main(void)
    test_fx();
    test_showcase();
    test_effects_package();
+   test_goal_height();
    test_api();
    if (failures)
    {
