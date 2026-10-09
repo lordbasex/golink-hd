@@ -341,6 +341,8 @@ UV=/path/to/uv python3 examples/antidoto/build.py   # adds "rig" to both skins
 
 - "The black arms are wrong: too close to the mouth, move them further left" (the user, on the first puppet video). The shoulders were in front of the body's middle, so the near arm crossed the face. They moved behind it (the near one a sixth of the body back, the far one two fifths), the hand swings forward less than back, the arms got shorter (15 pixels) so the hands stop at the hip, and the gloves turn along the forearm instead of always pointing forward. "Much better" (the user).
 
+- "With the arms up, how would it look jumping while shooting with the finger? I don't think the arms up is a good idea" (the user). In the air the near arm now goes forward at the hip, ready to shoot, and the far one back for balance; the engine also has the aiming pose for when shooting arrives: the near arm straight forward at the hip with the finger pistol pointing level (where the shots go), in any state, walking, standing or jumping, while the rest of the puppet keeps moving. Every arm stays below the mouth.
+
 ## Cleaning up
 
 When the game's audio is done, the generated files are copied off the M1 and `~/ai` (the models, the virtual environment and the outputs) is removed there, as the user asked.

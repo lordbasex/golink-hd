@@ -98,10 +98,12 @@ static void place(hd_surface *s, const hd_image *im, int32_t x, int32_t y, int32
    gfx_blit_rot(s, im, x, y, left ? im->w - px : px, py, angle & (ANGLE_FULL - 1), sx, sy, &st);
 }
 
-/* A glove at the end of an arm bending through (bx, by): pointing the way the forearm goes. */
-static void glove(hd_surface *s, const hd_image *im, int32_t x, int32_t y, int32_t bx, int32_t by, int32_t left, int32_t white)
+/* A glove at the end of an arm bending through (bx, by): pointing the way the forearm goes, or straight
+   ahead when `level` (the finger pistol fires where the shots go). */
+static void glove(hd_surface *s, const hd_image *im, int32_t x, int32_t y, int32_t bx, int32_t by, int32_t left,
+                  int32_t level, int32_t white)
 {
-   int32_t a = turn(x - bx, y - by);
+   int32_t a = level ? (left ? ANGLE_FULL / 2 : 0) : turn(x - bx, y - by);
    place(s, im, x, y, 0, im->h / 2, left, left ? a - ANGLE_FULL / 2 : a, FX_ONE, FX_ONE, white);
 }
 
@@ -118,7 +120,9 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
    int32_t left = p->facing < 0, k;
    int32_t moving = p->ground && hd_abs(p->vx) >= FX_FRAC(1, 4);
    int32_t phase = 0, bob = 0, squash = FX_ONE, stretch = FX_ONE, face = FACE_NORMAL;
-   int32_t hip_y, body_bottom, shoulder_y, hand_pose = HAND_FIST;
+   int32_t hip_y, body_bottom, shoulder_y, hand_pose[2] = { HAND_FIST, HAND_FIST };
+   /* aiming: the near arm straight forward at the hip with the finger pistol, in any state (set by shooting) */
+   int32_t aim = 0;
    int32_t foot_x[2], foot_y[2], foot_pose[2], hand_x[2], hand_y[2], knee[2], elbow[2];
    int32_t t = st->frame + i * 37;
 
@@ -191,7 +195,7 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
       knee[k] = FWD(rig->leg / 4); /* knees bend forward */
    }
 
-   /* arms: swing against the legs; still, hands on the hips; in the air, up */
+   /* arms: swing against the legs; standing, they hang; in the air, the near one forward and the far one back */
    for (k = 0; k < 2; k++)
    {
       int32_t sh_x = SHOULDER_X(k);
@@ -203,23 +207,25 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
             swing = swing * 2 / 3; /* forward less than back: the hand stops before the mouth */
          hand_x[k] = sh_x + FWD(swing);
          hand_y[k] = shoulder_y + rig->arm * 4 / 5 - hd_abs(swing) / 3;
-         hand_pose = HAND_FIST;
+         hand_pose[k] = HAND_FIST;
          elbow[k] = FWD(-rig->arm / 4);
       }
       else if (!p->ground)
       {
-         /* in the air: the arms thrown up and back (clear of the face), flapping a little on the way down */
-         int32_t flap = p->vy > 0 ? (int32_t)(((int64_t)hd_sin((t * 64 + k * 1024) & 4095) * 3) >> 14) : 0;
-         hand_x[k] = sh_x + FWD(-rig->arm * 3 / 5 - k * 3);
-         hand_y[k] = shoulder_y - rig->arm * 3 / 5 + flap;
-         hand_pose = HAND_OPEN;
-         elbow[k] = FWD(-rig->arm / 4);
+         /* in the air: the near arm forward at the hip, ready to shoot, the far one back for balance;
+            rising they lift a little, falling they drop and wave */
+         int32_t rise = p->vy < 0 ? rig->arm / 5 : -rig->arm / 6;
+         int32_t wave = p->vy > 0 ? (int32_t)(((int64_t)hd_sin((t * 64 + k * 1024) & 4095) * 2) >> 14) : 0;
+         hand_x[k] = sh_x + FWD(k ? -rig->arm * 3 / 4 : rig->arm * 2 / 3);
+         hand_y[k] = shoulder_y + (k ? rig->arm / 3 : rig->arm * 4 / 5) - rise + wave;
+         hand_pose[k] = k ? HAND_OPEN : HAND_FIST;
+         elbow[k] = k ? FWD(-rig->arm / 6) : 0;
       }
       else if (face == FACE_YAWN)
       {
          hand_x[k] = sh_x + FWD(k ? -rig->arm / 3 : rig->arm / 3);
          hand_y[k] = shoulder_y - rig->arm;
-         hand_pose = HAND_OPEN;
+         hand_pose[k] = HAND_OPEN;
          elbow[k] = FWD(k ? -rig->arm / 2 : rig->arm / 2);
       }
       else
@@ -228,8 +234,15 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
          int32_t sway = (int32_t)(((int64_t)hd_sin(((t % 150 * 4096 / 150) + k * 700) & 4095) * 2) >> 14);
          hand_x[k] = sh_x + FWD((k ? -2 : 3) + sway);
          hand_y[k] = shoulder_y + rig->arm * 9 / 10;
-         hand_pose = HAND_FIST;
+         hand_pose[k] = HAND_FIST;
          elbow[k] = FWD(-rig->arm / 5);
+      }
+      if (aim && k == 0)
+      {
+         hand_x[0] = sh_x + FWD(rig->arm * 9 / 10);
+         hand_y[0] = shoulder_y + rig->arm * 3 / 5;
+         hand_pose[0] = HAND_GUN;
+         elbow[0] = FWD(0);
       }
    }
 
@@ -244,7 +257,7 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
          int32_t sh_x = SHOULDER_X(1);
          int32_t ex = (sh_x + hand_x[1]) / 2 + elbow[1], ey = (shoulder_y + hand_y[1]) / 2;
          hose(s, sh_x, shoulder_y, ex, ey, hand_x[1], hand_y[1], rig->limb);
-         glove(s, part(&rig->hand, hand_pose), hand_x[1], hand_y[1], ex, ey, left, white);
+         glove(s, part(&rig->hand, hand_pose[1]), hand_x[1], hand_y[1], ex, ey, left, hand_pose[1] == HAND_GUN, white);
       }
       hose(s, hip_x, hip_y, bx, by, foot_x[k], foot_y[k] - shoe->h / 2, rig->limb);
       place(s, shoe, foot_x[k], foot_y[k], shoe->w / 3, shoe->h - rig->foot.feet, left, 0, FX_ONE, FX_ONE, white);
@@ -255,6 +268,6 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
       int32_t sh_x = SHOULDER_X(0);
       int32_t ex = (sh_x + hand_x[0]) / 2 + elbow[0], ey = (shoulder_y + hand_y[0]) / 2;
       hose(s, sh_x, shoulder_y, ex, ey, hand_x[0], hand_y[0], rig->limb);
-      glove(s, part(&rig->hand, hand_pose), hand_x[0], hand_y[0], ex, ey, left, white);
+      glove(s, part(&rig->hand, hand_pose[0]), hand_x[0], hand_y[0], ex, ey, left, hand_pose[0] == HAND_GUN, white);
    }
 }
