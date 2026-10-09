@@ -25,6 +25,7 @@ ENGINE_C := \
 	$(CORE_DIR)/src/rig.c \
 	$(CORE_DIR)/src/stage.c \
 	$(CORE_DIR)/src/par.c \
+	$(CORE_DIR)/src/picture.c \
 	$(CORE_DIR)/src/showcase.c \
 	$(CORE_DIR)/src/sound.c \
 	$(CORE_DIR)/src/sprite.c \

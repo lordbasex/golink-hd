@@ -188,6 +188,8 @@ Back to front in the list's order, up to 8. `speed` is the share of the camera's
 
 **`resolution`**: `"360p"` (the default), `"720p"` or `"1080p"`. The game's rules stay on the logical screen (640 x 360 on 16:9, cells of 16 pixels, the same physics and levels), and the picture is drawn 2 or 3 times bigger: 1280 x 720 or 1920 x 1080 (the API's frame and `golinkhd_get_info` say so). The package's pictures are made for that size: sprites, layers and screens as big as they should look at it, and textures whose sides are multiples of 32 (720p) or 48 (1080p), a cell being 32 or 48 pixels of it; a puppet's hose sizes (`limb`, `leg`, `arm`, `lift`, `bob`) are in its pixels too, its `stride` in the game's. The built-in art, the text, the HUD and the effects are drawn bigger by the engine. The big passes (layers, grading) run on up to 4 cores, the same picture pixel for pixel. Measured on an Intel Mac with ANTÍDOTO: 1.1 ms a frame at 360p, 2.4 at 720p and 5.6 at 1080p (the worst frames 1.8, 5.7 and 14.9; 16.6 is 60 frames a second).
 
+**`art_scale`**: how many times the logical screen the pictures were painted, 1 to 6 (by default the `resolution`'s: 1, 2 or 3; 6 is 2160p). Every pixel number that goes with the pictures (a sprite's `frame` and `feet`, a puppet's hoses, textures' multiples of 16) is in their pixels. The host picks the drawing's size (`golinkhd_set_resolution`, else the package's `resolution`), never bigger than `art_scale`, and pictures painted bigger are made that size as the package loads (each new pixel the average of the ones it covers, weighted by alpha), so one package painted for 1080p plays at 360p, 720p and 1080p. Every picture's transparency is cleaned as it loads: alpha 247 and over becomes solid and 8 and under empty, the soft edge in between stays. Image AIs cut their pictures out of a background themselves and leave the inside of a character at alpha 250-254 (the background showing through a little) and a faint haze around it; cleaned, a character is drawn without blending.
+
 **`levels`**: a game of several levels (up to 16) in one package, in place of `level`. Each one has its own level file (with its effects), `sky`, `layers`, `textures`, `intro` picture and `music`; everything else (heroes, enemies' and things' sprites, sounds, physics, weapon, health, the title and the ending) is shared. Clearing a level shows STAGE CLEAR, then the next one's intro, and the players go on with their coins and health; the ending comes after the last one, then the title. A save state keeps the level it was taken in.
 
 ```json
@@ -238,7 +240,7 @@ A pad (`golinkhd_pad`) carries every button of a modern controller (L2, R2, L3 a
 
 ## Settings
 
-`golinkhd_set_music(e, on)` and `golinkhd_set_language(e, "en" | "es" | "pt")` (texts and dialogs).
+`golinkhd_set_music(e, on)` and `golinkhd_set_language(e, "en" | "es" | "pt")` (texts and dialogs). API 2 adds `golinkhd_set_resolution(e, 360 | 720 | 1080)`: the picture's size for the next `golinkhd_load` (0 is the package's own; see `art_scale`). A host that loads the library at run time looks the function up and goes without it on an older engine.
 
 ## Building
 
@@ -251,7 +253,7 @@ make tools           # tools/hdrun (a headless host of the library) and tools/gl
 make bench           # milliseconds per frame of each scene
 ```
 
-`tools/hdrun LIBRARY [--content FILE.glhd] [--demo showcase] [--language es] --frames N --script tools/runs/walk.txt --shot 60,300 --out DIR` plays a button script on the built library, saves the chosen frames as PNG and prints a hash of all frames and sound, so two builds can be compared. `tools/runs/walk.expected` and `tools/runs/showcase.expected` hold the hashes every platform must give (checked in CI; macOS Clang, Linux GCC on x86_64 and arm64 give the same). A change that alters the picture or the sound on purpose updates it.
+`tools/hdrun LIBRARY [--content FILE.glhd] [--demo showcase] [--language es] [--res 720] --frames N --script tools/runs/walk.txt --shot 60,300 --out DIR` plays a button script on the built library, saves the chosen frames as PNG and prints a hash of all frames and sound, so two builds can be compared. `tools/runs/walk.expected` and `tools/runs/showcase.expected` hold the hashes every platform must give (checked in CI; macOS Clang, Linux GCC on x86_64 and arm64 give the same). A change that alters the picture or the sound on purpose updates it.
 
 ## Design rules
 

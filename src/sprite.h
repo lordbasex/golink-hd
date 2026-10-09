@@ -132,6 +132,19 @@ int hd_stage_keep(int32_t k); /* takes what the loaders just loaded as level k *
 void hd_stages_free(void);
 void hd_sounds_free(void);
 
+/*
+ * picture.c: a package's pictures as they load. hd_art is format 3's
+ * "art_scale", how many times the logical screen they were painted (the
+ * drawing's hd_res by default); pictures painted bigger are made hd_res
+ * sized, and so are the pixel sizes that go with them (hd_art_px).
+ */
+extern int32_t hd_art;
+int32_t hd_art_px(int32_t v);
+/* Nearly solid pixels made solid and nearly empty ones empty (the soft edges stay). */
+void hd_pic_clean(uint32_t *px, int64_t n);
+/* A new dw x dh picture (no bigger) from sw x sh pixels in rows of `pitch`, by area; NULL without memory. */
+uint32_t *hd_pic_shrink(const uint32_t *px, int32_t pitch, int32_t sw, int32_t sh, int32_t dw, int32_t dh);
+
 /* Frames standing still before the hero looks bored. */
 #define BORED_AFTER 360
 

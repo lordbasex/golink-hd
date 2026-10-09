@@ -33,7 +33,7 @@
 extern "C" {
 #endif
 
-#define GOLINKHD_API_VERSION 1
+#define GOLINKHD_API_VERSION 2
 
 #if defined(_WIN32) && defined(GOLINKHD_BUILD_SHARED)
 #define GOLINKHD_API __declspec(dllexport)
@@ -131,6 +131,14 @@ GOLINKHD_API void golinkhd_get_info(golinkhd_engine *e, golinkhd_info *out);
 /* Settings: the language of texts and dialogs ("en", "es", "pt") and the music (on or off). */
 GOLINKHD_API void golinkhd_set_language(golinkhd_engine *e, const char *language);
 GOLINKHD_API void golinkhd_set_music(golinkhd_engine *e, int on);
+/*
+ * API 2: the picture's size for the next golinkhd_load, in lines (360, 720
+ * or 1080; 0, the default, is the package's own "resolution"). A package
+ * draws it from pictures painted that big or bigger, made smaller as it
+ * loads, so one package serves every size; it is never drawn bigger than
+ * its pictures (golinkhd_frame_out says what it is).
+ */
+GOLINKHD_API void golinkhd_set_resolution(golinkhd_engine *e, int32_t lines);
 
 /* One frame: the controllers of ports 1..count (the rest are idle), then the picture and sound. */
 GOLINKHD_API void golinkhd_frame(golinkhd_engine *e, const golinkhd_pad *pads, int32_t count, golinkhd_frame_out *out);

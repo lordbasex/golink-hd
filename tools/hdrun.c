@@ -344,7 +344,7 @@ static void play(const host_t *h, long from, long to, hash_t *a, hash_t *b, int 
 int main(int argc, char **argv)
 {
    void *lib;
-   long frames = 600, half;
+   long frames = 600, half, res = 0;
    int i, check = 0, music = 1, failed = 0;
    const char *content = NULL, *language = NULL, *err = NULL;
    int showcase = 0;
@@ -370,7 +370,7 @@ int main(int argc, char **argv)
 
    if (argc < 2)
    {
-      fprintf(stderr, "usage: %s LIBRARY [--content FILE] [--demo showcase] [--language en|es|pt] [--music off] [--frames N] [--script FILE] [--shot F1,F2] [--out DIR] [--check] [--every N] [--audio FILE.raw] [--time]\n", argv[0]);
+      fprintf(stderr, "usage: %s LIBRARY [--content FILE] [--demo showcase] [--language en|es|pt] [--music off] [--frames N] [--script FILE] [--shot F1,F2] [--out DIR] [--check] [--every N] [--audio FILE.raw] [--time] [--res 360|720|1080]\n", argv[0]);
       return 2;
    }
    memset(&host, 0, sizeof host);
@@ -418,6 +418,8 @@ int main(int argc, char **argv)
          language = argv[++i];
       else if (!strcmp(argv[i], "--demo") && i + 1 < argc)
          showcase = !strcmp(argv[++i], "showcase");
+      else if (!strcmp(argv[i], "--res") && i + 1 < argc)
+         res = atol(argv[++i]);
    }
    for (n = 0; n < 256; n++)
    {
@@ -467,6 +469,16 @@ int main(int argc, char **argv)
    }
    if (language)
       set_language(e, language);
+   if (res)
+   {
+      void (*set_resolution)(golinkhd_engine *, int32_t) = (void (*)(golinkhd_engine *, int32_t))SYM(lib, "golinkhd_set_resolution");
+      if (!set_resolution)
+      {
+         fprintf(stderr, "this engine cannot change its resolution (API 2)\n");
+         return 1;
+      }
+      set_resolution(e, (int32_t)res);
+   }
    if (content)
    {
       size_t size;

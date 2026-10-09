@@ -32,6 +32,7 @@ hd_image hd_portrait;
 static uint32_t portrait_px[64 * 64];
 int32_t hd_w = 640, hd_h = 360;
 int32_t hd_res = 1;
+int32_t hd_res_host; /* the host's choice (golinkhd_set_resolution), 0: the package's; kept across loads */
 int32_t hd_players = DEFAULT_PLAYERS;
 uint32_t hd_sky_top, hd_sky_bottom;
 uint8_t hd_content_id[32];
@@ -50,6 +51,7 @@ void hd_content_builtin(void)
    hd_w = 640;
    hd_h = 360;
    hd_res = 1;
+   hd_art = 1;
    hd_players = DEFAULT_PLAYERS;
    hd_sky_top = 0x3a6ad0u;
    hd_sky_bottom = 0xbfe6fau;
@@ -675,7 +677,7 @@ static const char *load_package(const uint8_t *data, size_t size)
    uint8_t *text;
    size_t len;
    json *man;
-   const json *format, *title, *level, *pictures, *sky, *players, *screen, *levels, *res;
+   const json *format, *title, *level, *pictures, *sky, *players, *screen, *levels, *res, *art;
    int32_t s;
 
    zip.data = data;
@@ -702,6 +704,7 @@ static const char *load_package(const uint8_t *data, size_t size)
    screen = hd_json_get(man, "screen");
    levels = hd_json_get(man, "levels");
    res = hd_json_get(man, "resolution");
+   art = hd_json_get(man, "art_scale");
    if (!format || format->type != JSON_INT)
       err = "manifest.json has no format number";
    else if (format->num > HD_PACKAGE_FORMAT)
@@ -720,6 +723,8 @@ static const char *load_package(const uint8_t *data, size_t size)
       err = "manifest.json's screen must be \"16:9\", \"4:3\" or \"9:16\"";
    else if (res && (res->type != JSON_STRING || (strcmp(res->str, "360p") && strcmp(res->str, "720p") && strcmp(res->str, "1080p"))))
       err = "manifest.json's resolution must be \"360p\", \"720p\" or \"1080p\"";
+   else if (art && (art->type != JSON_INT || art->num < 1 || art->num > HD_ART_MAX))
+      err = "manifest.json's art_scale must be 1 to 6";
    else if (sky && (sky->type != JSON_ARRAY || sky->count != 2 || !parse_color(hd_json_at(sky, 0), &hd_sky_top) || !parse_color(hd_json_at(sky, 1), &hd_sky_bottom)))
       err = "manifest.json's sky must be two colors like \"#3a6ad0\"";
    else
@@ -742,8 +747,17 @@ static const char *load_package(const uint8_t *data, size_t size)
       hd_w = 360;
       hd_h = 640;
    }
-   /* its pictures are made for this size: the logical screen 1, 2 or 3 times */
+   /*
+    * The drawing is the logical screen 1, 2 or 3 times: the host's choice, else
+    * the package's "resolution". Its pictures are painted art_scale times (by
+    * default the resolution's): never drawn bigger than that, and made smaller
+    * as they load when they are bigger.
+    */
    hd_res = res && !strcmp(res->str, "720p") ? 2 : res && !strcmp(res->str, "1080p") ? 3 : 1;
+   hd_art = art ? (int32_t)art->num : hd_res;
+   if (hd_res_host)
+      hd_res = hd_res_host;
+   hd_res = hd_min(hd_res, hd_art);
 
    err = load_physics(hd_json_get(man, "physics"));
    if (!err)

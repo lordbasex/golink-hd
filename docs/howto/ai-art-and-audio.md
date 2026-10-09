@@ -393,6 +393,9 @@ tools/hdrun ./libgolinkhd.dylib --content antidoto720.glhd --frames 720 --script
 
   The game is the same (the same sound hash at every size); only the picture changes. The package at 1080p weighs about 190 MB.
 
+- One package for every size. The 1080p package also plays at 720p and 360p: the host asks for the size (`golinkhd_set_resolution`, `hdrun --res 360`) and the engine makes the pictures smaller as they load, about half a second more. Side by side with the package cut for 360p it is the same picture, a little softer (an average of 3 x 3 pixels instead of a resize from the original). `art_scale` lets a package carry pictures bigger than the size it plays at by default (up to 6, 2160p); ANTÍDOTO's backgrounds are about 1500 pixels wide, so 1080p (3) is as far as its art goes without enlarging.
+- Transparency. The images come from ChatGPT as RGBA with a transparent background already (53-79 % of their pixels fully transparent): nothing is cut out of a background color here, the tools only split strips into frames. Measured with numpy, the inside of a character is not quite solid: alpha 253 in the middle of the body (95 % of its pixels from 250 to 254), so the picture behind showed through by 1 % and every pixel was blended. ChatGPT paints on a background and cuts it out itself. The engine cleans every picture as it loads (247 and over solid, 8 and under empty); the anti-aliased outline in between stays.
+
 - The 24 effects were done on the M1 (MOSS-SoundEffect, 30 steps, from 7 to 35 minutes each); `build.py` gives the engine the ones it plays (jump, vitamin, germ squash, hurt, ready, checkpoint, victory, menu, shoot, virus pop, knockout, super, yawn), the rest wait for the bosses and the enemies to come.
 
 ## Cleaning up

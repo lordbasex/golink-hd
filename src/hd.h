@@ -43,6 +43,8 @@ extern int32_t hd_w, hd_h;
  */
 extern int32_t hd_res;
 #define HD_RES_MAX 3
+extern int32_t hd_res_host; /* the host's choice for the next package, 0: the package's own */
+#define HD_ART_MAX 6        /* format 3's art_scale: pictures up to 2160p (4K) */
 #define HD_OUT_W (hd_w * hd_res)
 #define HD_OUT_H (hd_h * hd_res)
 #define HD_OUT_MAX_W (HD_MAX_W * HD_RES_MAX)

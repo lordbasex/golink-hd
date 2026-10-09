@@ -992,6 +992,80 @@ static void test_resolution(void)
    hd_content_builtin();
 }
 
+/* picture.c and sprite.c (sprite.h is not included here: its names meet the bones') */
+extern int32_t hd_art;
+extern hd_image hd_textures[TL_COUNT];
+void hd_pic_clean(uint32_t *px, int64_t n);
+uint32_t *hd_pic_shrink(const uint32_t *px, int32_t pitch, int32_t sw, int32_t sh, int32_t dw, int32_t dh);
+
+/* Format 3's art_scale: an image AI's almost solid pixels become solid; pictures painted bigger are made
+   smaller by area (a see-through pixel's color left out); one package draws at the size the host asks. */
+static void test_art_scale(void)
+{
+   static uint8_t zip[400000], png[200000];
+   static char level[100000], man[400];
+   uint32_t px[6] = { 0xfd102030u, 0x05ffffffu, 0x80405060u, 0xffff0000u, 0x0000ff00u, 0xffff0000u }, *out;
+   uint32_t flat[5 * 3];
+   const char *err;
+   size_t n;
+   int32_t k;
+   zfile files[3] = {{0}};
+   hd_pic_clean(px, 3);
+   CHECK(px[0] == 0xff102030u && px[1] == 0 && px[2] == 0x80405060u);
+   /* a 2 x 2 square, half solid red, half empty green: one pixel, half see-through and red */
+   {
+      uint32_t sq[4] = { 0xffff0000u, 0x0000ff00u, 0x0000ff00u, 0xffff0000u };
+      out = hd_pic_shrink(sq, 2, 2, 2, 1, 1);
+      CHECK(out && out[0] == 0x80ff0000u);
+      free(out);
+   }
+   /* 5 x 3 to 3 x 2 (not a whole ratio): an even color stays that color, everywhere */
+   for (k = 0; k < 15; k++)
+      flat[k] = 0xff336699u;
+   out = hd_pic_shrink(flat, 5, 5, 3, 3, 2);
+   CHECK(out != NULL);
+   for (k = 0; out && k < 6; k++)
+      CHECK(out[k] == 0xff336699u);
+   free(out);
+
+   flat_level(level, sizeof level, 60, 30);
+   files[0].name = "manifest.json";
+   files[0].text = man;
+   files[1].name = "level.json";
+   files[1].text = level;
+   files[2].name = "ground.png";
+   files[2].text = (const char *)png;
+   files[2].len = tiny_png(png, 96, 96); /* a cell's piece painted 6 times: 2160p */
+   snprintf(man, sizeof man, "{\"format\": 3, \"title\": \"Art\", \"level\": \"level.json\", \"art_scale\": 6,"
+            " \"textures\": {\"ground\": \"ground.png\"}}");
+   n = make_zip(zip, files, 3);
+   for (k = 0; k <= 3; k++)
+   {
+      hd_res_host = k;
+      CHECK(hd_content_load(zip, n, &err) == 1);
+      if (err)
+         printf("  art_scale: %s\n", err);
+      /* no choice: the package's resolution (360p by default) */
+      CHECK(hd_art == 6 && hd_res == (k ? k : 1) && HD_OUT_W == 640 * hd_res);
+      CHECK(hd_textures[TL_GROUND].w == 16 * hd_res && hd_textures[TL_GROUND].h == 16 * hd_res);
+   }
+   /* never drawn bigger than its pictures: painted for 720p, asked for 1080p */
+   files[2].len = tiny_png(png, 32, 32);
+   snprintf(man, sizeof man, "{\"format\": 3, \"title\": \"Art\", \"level\": \"level.json\", \"resolution\": \"720p\","
+            " \"textures\": {\"ground\": \"ground.png\"}}");
+   n = make_zip(zip, files, 3);
+   hd_res_host = 3;
+   CHECK(hd_content_load(zip, n, &err) == 1 && hd_res == 2 && hd_art == 2 && hd_textures[TL_GROUND].w == 32);
+   hd_res_host = 1; /* and a 720p package played at 360p */
+   CHECK(hd_content_load(zip, n, &err) == 1 && hd_res == 1 && hd_textures[TL_GROUND].w == 16);
+   snprintf(man, sizeof man, "{\"format\": 3, \"title\": \"Art\", \"level\": \"level.json\", \"art_scale\": 7}");
+   n = make_zip(zip, files, 3);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "art_scale") != NULL);
+   hd_res_host = 0;
+   hd_content_builtin();
+   CHECK(hd_res == 1 && hd_art == 1);
+}
+
 /* A level of w x 30 cells: a floor, a coin row near the start and a goal near the end. */
 static void goal_level(char *out, size_t cap, int w)
 {
@@ -1425,6 +1499,7 @@ int main(void)
    test_super();
    test_stages();
    test_resolution();
+   test_art_scale();
    test_path();
    test_bones();
    test_fx();

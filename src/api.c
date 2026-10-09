@@ -71,6 +71,7 @@ golinkhd_engine *golinkhd_create(const golinkhd_config *config, const char **err
    }
    e->config = *config;
    e->music = 1;
+   hd_res_host = 0;
    hd_static_init();
    hd_content_builtin();
    hd_reset(&e->state);
@@ -147,6 +148,12 @@ void golinkhd_set_language(golinkhd_engine *e, const char *language)
 void golinkhd_set_music(golinkhd_engine *e, int on)
 {
    e->music = on ? 1 : 0;
+}
+
+void golinkhd_set_resolution(golinkhd_engine *e, int32_t lines)
+{
+   (void)e;
+   hd_res_host = lines >= 1080 ? 3 : lines >= 720 ? 2 : lines > 0 ? 1 : 0;
 }
 
 void golinkhd_frame(golinkhd_engine *e, const golinkhd_pad *pads, int32_t count, golinkhd_frame_out *out)

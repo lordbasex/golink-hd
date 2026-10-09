@@ -116,7 +116,7 @@ static const char *load_anim(const hd_zip *zip, const json *def, hd_anim *an, co
    uint8_t *png;
    size_t size;
    uint32_t *px, *block;
-   int32_t w, h, fw, fh, n, i, y, first;
+   int32_t w, h, fw, fh, dw, dh, n, i, y, first;
    int bad = 0;
    if (def->type != JSON_OBJECT || !file || file->type != JSON_STRING || !frame || frame->type != JSON_ARRAY || frame->count != 2 ||
        hd_json_at(frame, 0)->type != JSON_INT || hd_json_at(frame, 1)->type != JSON_INT)
@@ -127,13 +127,16 @@ static const char *load_anim(const hd_zip *zip, const json *def, hd_anim *an, co
    fw = (int32_t)hd_json_at(frame, 0)->num;
    fh = (int32_t)hd_json_at(frame, 1)->num;
    an->fps = get_int(def, "fps", 1, 60, 10, &bad);
-   an->feet = get_int(def, "feet", 0, 64, 0, &bad);
-   an->stride = get_int(def, "stride", 0, 4096, 0, &bad);
-   if (bad || fw < 4 || fw > 512 || fh < 4 || fh > 512)
+   an->feet = hd_art_px(get_int(def, "feet", 0, 64 * hd_art, 0, &bad));
+   an->stride = get_int(def, "stride", 0, 4096, 0, &bad); /* walked in the game's pixels */
+   if (bad || fw < 4 || fw > 512 * hd_art || fh < 4 || fh > 512 * hd_art)
    {
-      snprintf(msg, sizeof msg, "the sprite %s's %s: frames of 4 to 512 pixels, fps 1 to 60, feet 0 to 64", skin, name);
+      snprintf(msg, sizeof msg, "the sprite %s's %s: frames of 4 to 512 pixels (times the art_scale), fps 1 to 60, feet 0 to 64", skin, name);
       return msg;
    }
+   /* the frames as they are drawn */
+   dw = hd_max(1, hd_art_px(fw));
+   dh = hd_max(1, hd_art_px(fh));
    png = hd_zip_read(zip, file->str, &size, &err);
    if (!png)
    {
@@ -162,12 +165,13 @@ static const char *load_anim(const hd_zip *zip, const json *def, hd_anim *an, co
       snprintf(msg, sizeof msg, "%s: \"from\" and \"frames\" must stay inside its %d frames", file->str, (int)(w / fw));
       return msg;
    }
-   if (pixels_used + (int64_t)n * fw * fh > SPRITE_PIXELS_MAX)
+   if (pixels_used + (int64_t)n * dw * dh > SPRITE_PIXELS_MAX)
    {
       free(px);
       return "the sprites are bigger than go-link HD keeps (64 million pixels)";
    }
-   block = (uint32_t *)malloc((size_t)n * fw * fh * 4);
+   hd_pic_clean(px, (int64_t)w * h);
+   block = (uint32_t *)malloc((size_t)n * dw * dh * 4);
    an->frames = (hd_image *)calloc((size_t)n, sizeof *an->frames);
    if (!block || !an->frames)
    {
@@ -179,14 +183,30 @@ static const char *load_anim(const hd_zip *zip, const json *def, hd_anim *an, co
    }
    for (i = 0; i < n; i++)
    {
-      an->frames[i].w = fw;
-      an->frames[i].h = fh;
-      an->frames[i].px = block + (size_t)i * fw * fh;
-      for (y = 0; y < fh; y++)
-         memcpy(an->frames[i].px + y * fw, px + (size_t)y * w + (size_t)(first + i) * fw, (size_t)fw * 4);
+      const uint32_t *src = px + (size_t)(first + i) * fw;
+      an->frames[i].w = dw;
+      an->frames[i].h = dh;
+      an->frames[i].px = block + (size_t)i * dw * dh;
+      if (dw == fw && dh == fh)
+         for (y = 0; y < fh; y++)
+            memcpy(an->frames[i].px + y * fw, src + (size_t)y * w, (size_t)fw * 4);
+      else
+      {
+         uint32_t *small = hd_pic_shrink(src, w, fw, fh, dw, dh);
+         if (!small)
+         {
+            free(block);
+            free(an->frames);
+            an->frames = NULL;
+            free(px);
+            return "not enough memory for the sprites";
+         }
+         memcpy(an->frames[i].px, small, (size_t)dw * dh * 4);
+         free(small);
+      }
    }
    an->count = n;
-   pixels_used += (int64_t)n * fw * fh;
+   pixels_used += (int64_t)n * dw * dh;
    free(px);
    return NULL;
 }
@@ -222,14 +242,15 @@ static const char *load_rig(const hd_zip *zip, const json *rig, hd_rig *r, const
       if (err)
          return err;
    }
-   r->limb = get_int(rig, "limb", 1, 32, 5, &bad);
-   r->leg = get_int(rig, "leg", 4, 200, 24, &bad);
-   r->arm = get_int(rig, "arm", 4, 200, 22, &bad);
+   /* the hoses are drawn at the pictures' scale (art_scale times the numbers below); the stride is walked in the game's pixels */
+   r->limb = hd_max(1, hd_art_px(get_int(rig, "limb", 1, 32 * hd_art, 5 * hd_art, &bad)));
+   r->leg = hd_art_px(get_int(rig, "leg", 4, 200 * hd_art, 24 * hd_art, &bad));
+   r->arm = hd_art_px(get_int(rig, "arm", 4, 200 * hd_art, 22 * hd_art, &bad));
    r->stride = get_int(rig, "stride", 0, 4096, 110, &bad);
-   r->lift = get_int(rig, "lift", 0, 100, 9, &bad);
-   r->bob = get_int(rig, "bob", 0, 50, 3, &bad);
+   r->lift = hd_art_px(get_int(rig, "lift", 0, 100 * hd_art, 9 * hd_art, &bad));
+   r->bob = hd_art_px(get_int(rig, "bob", 0, 50 * hd_art, 3 * hd_art, &bad));
    if (bad)
-      return "a rig's sizes are out of range (limb 1-32, leg and arm 4-200, stride 0-4096, lift 0-100, bob 0-50)";
+      return "a rig's sizes are out of range (limb 1-32, leg and arm 4-200, lift 0-100, bob 0-50, all times the art_scale; stride 0-4096)";
    return NULL;
 }
 
@@ -369,6 +390,18 @@ const char *hd_layers_load(const hd_zip *zip, const json *layers)
       {
          snprintf(msg, sizeof msg, "%s: %s", file->str, err);
          return msg;
+      }
+      hd_pic_clean(l->img.px, (int64_t)l->img.w * l->img.h);
+      if (hd_art != hd_res)
+      {
+         int32_t dw = hd_max(1, hd_art_px(l->img.w)), dh = hd_max(1, hd_art_px(l->img.h));
+         uint32_t *small = hd_pic_shrink(l->img.px, l->img.w, l->img.w, l->img.h, dw, dh);
+         free(l->img.px);
+         l->img.px = small;
+         l->img.w = dw;
+         l->img.h = dh;
+         if (!small)
+            return "not enough memory for the layers";
       }
       if (pixels_used + (int64_t)l->img.w * l->img.h > SPRITE_PIXELS_MAX)
       {
@@ -519,12 +552,31 @@ const char *hd_textures_load(const hd_zip *zip, const json *tex)
          snprintf(msg, sizeof msg, "%s: %s", f->str, err);
          return msg;
       }
-      if (im->w % (16 * hd_res) || im->h % (16 * hd_res) || im->w > 1024 * hd_res || im->h > 1024 * hd_res || pixels_used + (int64_t)im->w * im->h > SPRITE_PIXELS_MAX)
+      if (im->w % (16 * hd_art) || im->h % (16 * hd_art) || im->w > 1024 * hd_art || im->h > 1024 * hd_art)
       {
          free(im->px);
          im->px = NULL;
-         snprintf(msg, sizeof msg, "%s: a texture's sides must be multiples of 16, up to 1024 (times 2 at 720p, 3 at 1080p)", f->str);
+         snprintf(msg, sizeof msg, "%s: a texture's sides must be multiples of 16, up to 1024 (times the art_scale: 2 at 720p, 3 at 1080p)", f->str);
          return msg;
+      }
+      hd_pic_clean(im->px, (int64_t)im->w * im->h);
+      if (hd_art != hd_res)
+      {
+         /* a 16 * art_scale piece per cell becomes 16 * hd_res: exact, the cells stay whole */
+         int32_t dw = im->w / hd_art * hd_res, dh = im->h / hd_art * hd_res;
+         uint32_t *small = hd_pic_shrink(im->px, im->w, im->w, im->h, dw, dh);
+         free(im->px);
+         im->px = small;
+         im->w = dw;
+         im->h = dh;
+         if (!small)
+            return "not enough memory for the textures";
+      }
+      if (pixels_used + (int64_t)im->w * im->h > SPRITE_PIXELS_MAX)
+      {
+         free(im->px);
+         im->px = NULL;
+         return "the textures, layers and sprites are bigger than go-link HD keeps (64 million pixels)";
       }
       pixels_used += (int64_t)im->w * im->h;
    }
