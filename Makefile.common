@@ -23,6 +23,7 @@ ENGINE_C := \
 	$(CORE_DIR)/src/save.c \
 	$(CORE_DIR)/src/sha256.c \
 	$(CORE_DIR)/src/rig.c \
+	$(CORE_DIR)/src/stage.c \
 	$(CORE_DIR)/src/showcase.c \
 	$(CORE_DIR)/src/sound.c \
 	$(CORE_DIR)/src/sprite.c \

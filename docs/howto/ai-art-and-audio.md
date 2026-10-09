@@ -372,6 +372,14 @@ red_granule.png: a sheet of ONE small medicine GRANULE (a tiny glossy RED round 
 
 - "They are very loud, very over the top; I may replace them with ElevenLabs" (the user, about the effects). Every effect is now at a lower peak (`SFX_PEAK` 13000 in `build.py`), and any WAV dropped in `source/sfx` with the same name replaces one (the build cuts its silence and sets its level).
 
+- The whole body: the engine got `levels` (several levels in one package), and `build.py` puts ANTÍDOTO's six zones in it, bottom up: colon, intestine, stomach, lungs, heart, brain. The colon stays the hand-made first level; the others are made by `made_level` from a fixed seed (the same game on every build): ground broken by gaps a hero clears (2 to 4 cells), platforms with vitamins over some of them, brick steps, germs on the flat stretches, two checkpoints and the goal, longer and with more germs and gaps the higher up. Each zone has its painted layers, its floor (`textures.py` on its tile strip), its intro card, its music and its grade. The package weighs about 137 MB, almost all of it the six songs as WAV.
+
+```bash
+for z in intestine stomach lungs heart brain; do uv run --with pillow --with numpy examples/antidoto/textures.py examples/antidoto/source/tiles_$z.png examples/antidoto/textures; done
+UV=/path/to/uv python3 examples/antidoto/build.py
+tools/glhd pack examples/antidoto/game antidoto.glhd && tools/glhd check antidoto.glhd
+```
+
 ## Cleaning up
 
 When the game's audio is done, the generated files are copied off the M1 and `~/ai` (the models, the virtual environment and the outputs) is removed there, as the user asked.

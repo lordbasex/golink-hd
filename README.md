@@ -186,6 +186,18 @@ Back to front in the list's order, up to 8. `speed` is the share of the camera's
 
 `sounds` replaces the built-in effects it names (`jump`, `coin`, `stomp`, `hurt`, `join`, `check`, `clear`, `pause`, `shoot`, `hit` (a shot hits an enemy that does not pop), `knockout`, `super`; up to 10 seconds each, mixed to mono, placed left or right by the game). `music` plays over and over instead of the built-in tune, in stereo (up to 10 minutes), at `volume` 0 to 256 (200 by default), starting again at `loop_from` milliseconds; its position is in the save state, so a loaded state goes on exactly where it was, and `golinkhd_set_music` turns it off like the built-in tune.
 
+**`levels`**: a game of several levels (up to 16) in one package, in place of `level`. Each one has its own level file (with its effects), `sky`, `layers`, `textures`, `intro` picture and `music`; everything else (heroes, enemies' and things' sprites, sounds, physics, weapon, health, the title and the ending) is shared. Clearing a level shows STAGE CLEAR, then the next one's intro, and the players go on with their coins and health; the ending comes after the last one, then the title. A save state keeps the level it was taken in.
+
+```json
+"levels": [
+  {"level": "colon.json", "sky": ["#3a1420", "#7a3a3a"], "layers": [...], "textures": {...},
+   "intro": "intro_colon.png", "music": {"file": "colon.wav", "volume": 180}},
+  {"level": "stomach.json", "intro": "intro_stomach.png", "music": {"file": "stomach.wav"}}
+]
+```
+
+A level without `sky` uses the manifest's; without `layers`, `textures`, `intro` or `music` it has none (the built-in scenery and tune, no intro).
+
 **`screens`**: pictures over the whole screen, scaled to it (keeping their shape, cropped from the middle):
 
 ```json

@@ -39,6 +39,7 @@ int32_t hd_content_gen;
 void hd_content_builtin(void)
 {
    hd_art_build();
+   hd_stages_free(); /* first: the globals may point into its levels */
    hd_sprites_free();
    hd_sounds_free(); /* the built-in effects and tune */
    hd_physics_default(); /* before the level: its start stands on the hitbox's height */
@@ -594,6 +595,76 @@ static const char *load_extras(const hd_zip *zip, const json *pictures)
    return NULL;
 }
 
+/* A level file of the package: its cells and its effects. */
+static const char *load_level_file(const hd_zip *zip, const char *name)
+{
+   static char msg[200];
+   const char *err;
+   size_t len;
+   json *lv = NULL;
+   uint8_t *text = hd_zip_read(zip, name, &len, &err);
+   if (text)
+   {
+      lv = hd_json_parse((const char *)text, len, &err);
+      free(text);
+   }
+   if (!lv)
+   {
+      snprintf(msg, sizeof msg, "%s: %s", name, err);
+      return msg;
+   }
+   err = load_level(lv);
+   if (!err)
+      err = load_effects(hd_json_get(lv, "effects"));
+   hd_json_free(lv);
+   return err;
+}
+
+/*
+ * Format 3's "levels" (stage.c): each entry's level file, sky, layers,
+ * textures, intro picture and music, loaded one after another and kept.
+ */
+static const char *load_stages(const hd_zip *zip, const json *levels)
+{
+   static char msg[200];
+   uint32_t sky_top = hd_sky_top, sky_bottom = hd_sky_bottom;
+   const json *it;
+   int32_t k = 0;
+   if (levels->type != JSON_ARRAY || levels->count < 1 || levels->count > MAX_STAGES)
+      return "manifest.json's levels must be a list of 1 to 16 levels";
+   free(hd_music_take()); /* each level has its own music */
+   for (it = levels->child; it; it = it->next, k++)
+   {
+      const json *file = hd_json_get(it, "level"), *sky = hd_json_get(it, "sky"), *intro = hd_json_get(it, "intro"), *music = hd_json_get(it, "music");
+      const char *err;
+      if (it->type != JSON_OBJECT || !file || file->type != JSON_STRING)
+         return "each of the levels needs a \"level\" file";
+      memset(&hd_fx, 0, sizeof hd_fx);
+      hd_sky_top = sky_top;
+      hd_sky_bottom = sky_bottom;
+      if (sky && (sky->type != JSON_ARRAY || sky->count != 2 || !parse_color(hd_json_at(sky, 0), &hd_sky_top) || !parse_color(hd_json_at(sky, 1), &hd_sky_bottom)))
+         return "a level's sky must be two colors like \"#3a6ad0\"";
+      err = load_level_file(zip, file->str);
+      if (!err)
+         err = hd_layers_load(zip, hd_json_get(it, "layers"));
+      if (!err)
+         err = hd_textures_load(zip, hd_json_get(it, "textures"));
+      if (!err && intro)
+         err = hd_screen_load(zip, intro, SCREEN_INTRO);
+      if (!err && music)
+         err = hd_music_load(zip, music);
+      if (!err && !hd_stage_keep(k))
+         err = "not enough memory for the levels";
+      if (err)
+      {
+         snprintf(msg, sizeof msg, "level %d: %s", (int)k + 1, err);
+         return msg;
+      }
+   }
+   hd_stage_select(0);
+   return NULL;
+}
+
 static const char *load_package(const uint8_t *data, size_t size)
 {
    static char msg[160];
@@ -601,8 +672,8 @@ static const char *load_package(const uint8_t *data, size_t size)
    const char *err;
    uint8_t *text;
    size_t len;
-   json *man, *lv = NULL;
-   const json *format, *title, *level, *pictures, *sky, *players, *screen;
+   json *man;
+   const json *format, *title, *level, *pictures, *sky, *players, *screen, *levels;
    int32_t s;
 
    zip.data = data;
@@ -627,6 +698,7 @@ static const char *load_package(const uint8_t *data, size_t size)
    sky = hd_json_get(man, "sky");
    players = hd_json_get(man, "players");
    screen = hd_json_get(man, "screen");
+   levels = hd_json_get(man, "levels");
    if (!format || format->type != JSON_INT)
       err = "manifest.json has no format number";
    else if (format->num > HD_PACKAGE_FORMAT)
@@ -635,7 +707,7 @@ static const char *load_package(const uint8_t *data, size_t size)
       err = "manifest.json has an unknown format";
    else if (!title || title->type != JSON_STRING || !title->str[0])
       err = "manifest.json has no title";
-   else if (!level || level->type != JSON_STRING)
+   else if ((!level || level->type != JSON_STRING) && !levels)
       err = "manifest.json names no level";
    else if (pictures && pictures->type != JSON_OBJECT)
       err = "manifest.json's pictures must be an object";
@@ -676,36 +748,24 @@ static const char *load_package(const uint8_t *data, size_t size)
       hd_json_free(man);
       return err;
    }
-   text = hd_zip_read(&zip, level->str, &len, &err);
-   if (text)
-   {
-      lv = hd_json_parse((const char *)text, len, &err);
-      free(text);
-   }
-   if (!lv)
-   {
-      snprintf(msg, sizeof msg, "%s: %s", level->str, err);
-      hd_json_free(man);
-      return msg;
-   }
-   err = load_level(lv);
-   if (!err)
-      err = load_effects(hd_json_get(lv, "effects"));
-   hd_json_free(lv);
+   /* a package of several levels loads them last, after what they share */
+   err = levels ? NULL : load_level_file(&zip, level->str);
    for (s = 0; !err && s < (int32_t)(sizeof sheets / sizeof sheets[0]); s++)
       err = load_sheet(&zip, pictures, s);
    if (!err)
       err = load_extras(&zip, pictures);
    if (!err)
       err = hd_sprites_load(&zip, hd_json_get(man, "sprites"));
-   if (!err)
+   if (!err && !levels)
       err = hd_layers_load(&zip, hd_json_get(man, "layers"));
-   if (!err)
+   if (!err && !levels)
       err = hd_textures_load(&zip, hd_json_get(man, "textures"));
    if (!err)
       err = hd_screens_load(&zip, hd_json_get(man, "screens"));
    if (!err)
       err = hd_sounds_load(&zip, hd_json_get(man, "sounds"), hd_json_get(man, "music"));
+   if (!err && levels)
+      err = load_stages(&zip, levels);
    hd_json_free(man);
    return err;
 }

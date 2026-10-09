@@ -212,8 +212,37 @@ void hd_reset(hd_state *s)
       s->ch[i].sample = -1;
    s->sfx_next = MUSIC_CHANNELS;
    s->zoom = 256;
+   hd_stage_select(0); /* a package of several levels starts at the first */
    hd_audio_effects(s, hd_fx.lowpass, hd_fx.echo_ms, 150, 110);
    reset_level(s);
+}
+
+/* The next level of a package of several: its intro (if it has one), then the players at its start, keeping their coins and health. */
+static void next_stage(hd_state *s)
+{
+   int32_t i;
+   s->stage++;
+   hd_stage_select(s->stage);
+   hd_audio_effects(s, hd_fx.lowpass, hd_fx.echo_ms, 150, 110);
+   reset_level(s);
+   s->music_pos = 0;
+   s->phase = hd_screens[SCREEN_INTRO].px ? PH_INTRO : PH_PLAY;
+   s->phase_t = 0;
+   s->skip_hold = 0;
+   s->intro_join = 0;
+   for (i = 0; i < MAX_PLAYERS; i++)
+   {
+      hd_player *p = &s->p[i];
+      if (!p->active)
+         continue;
+      p->check_x = hd_start_x + i * 18;
+      p->check_y = hd_start_y;
+      place(p, p->check_x, p->check_y - 48);
+      p->respawn = p->ko = p->super_t = p->shot_wait = p->aim = 0;
+      if (p->hp <= 0)
+         p->hp = hd_health.hits;
+      p->hurt = 60;
+   }
 }
 
 static void move_x(hd_player *p)
@@ -821,6 +850,7 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
 {
    int32_t i;
    uint32_t any = 0;
+   hd_stage_select(s->stage); /* the level the state plays (a save state may bring another) */
    s->frame++;
    if (s->show.on)
    {
@@ -889,10 +919,14 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       if (++s->phase_t >= hd_intro_frames || s->skip_hold >= SKIP_HOLD_FRAMES)
       {
          uint32_t who = s->intro_join;
-         reset_level(s);
+         int32_t playing = 0;
+         for (i = 0; i < MAX_PLAYERS; i++)
+            playing |= s->p[i].active;
+         if (!playing)
+            reset_level(s); /* from the title; after a level the next one is already set up */
          s->phase = PH_PLAY;
          for (i = 0; i < MAX_PLAYERS; i++)
-            if (who & (1u << i))
+            if ((who & (1u << i)) && !s->p[i].active)
                join(s, i);
       }
       return;
@@ -954,6 +988,11 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       if (s->phase_t % 20 == 0 && s->phase_t < 200)
          burst(s, FX_INT(s->cam_x) + 80 + rng_range(&s->rng, HD_W - 160), 60 + rng_range(&s->rng, 120), 16,
                hd_player_color[rng_range(&s->rng, hd_players)], FX(3), 3);
+      if (s->phase_t >= CLEAR_FRAMES && s->stage + 1 < hd_stage_count)
+      {
+         next_stage(s);
+         return;
+      }
       if (s->phase_t >= CLEAR_FRAMES)
       {
          uint32_t rng = s->rng;

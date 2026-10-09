@@ -529,7 +529,6 @@ static uint32_t *fit(const uint32_t *px, int32_t pw, int32_t ph, int32_t w, int3
  */
 const char *hd_screens_load(const hd_zip *zip, const json *screens)
 {
-   static char msg[200];
    static const char *const keys[SCREEN_COUNT] = { "title", "intro", "ending" };
    const json *secs;
    int32_t i;
@@ -548,12 +547,21 @@ const char *hd_screens_load(const hd_zip *zip, const json *screens)
    {
       const json *f = hd_json_get(screens, keys[i]);
       const char *err;
+      if (f && (err = hd_screen_load(zip, f, i)))
+         return err;
+   }
+   return NULL;
+}
+
+const char *hd_screen_load(const hd_zip *zip, const json *f, int32_t i)
+{
+   static char msg[200];
+   {
+      const char *err;
       uint8_t *png;
       size_t size;
       uint32_t *px;
       int32_t w, h;
-      if (!f)
-         continue;
       if (f->type != JSON_STRING)
          return "each screen must be a file name";
       png = hd_zip_read(zip, f->str, &size, &err);

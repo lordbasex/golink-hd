@@ -71,9 +71,17 @@ def png_size(path):
 
 
 # zone -> its layers: (picture, height in the game, speed % of the camera, y)
-LAYERS = {
-    "colon": [("bg_colon_far", 400, 20, -20), ("bg_colon_mid", 300, 55, 200)],
-}
+# the body from the bottom up: each zone's level, sky, grade and difficulty (0 = the hand-made first level)
+ZONES = [
+    ("colon", ["#3a1420", "#7a3a3a"], "sepia"),
+    ("intestine", ["#3a1a12", "#8a4a30"], "sepia"),
+    ("stomach", ["#2a1008", "#9a4a1a"], "sunset"),
+    ("lungs", ["#2a3040", "#a07080"], "sepia"),
+    ("heart", ["#300810", "#902030"], "sunset"),
+    ("brain", ["#1a1030", "#6a4a8a"], "night"),
+]
+# zone -> its layers: (picture, height in the game, speed % of the camera, y)
+LAYERS = {z: [(f"bg_{z}_far", 400, 20, -20), (f"bg_{z}_mid", 300, 55, 200)] for z, _, _ in ZONES}
 
 
 def layers(zone):
@@ -116,10 +124,10 @@ def thing(name, total, fps, part=None):
     return dict({"file": name + ".png", "frame": [w // total, h], "fps": fps, "feet": 2}, **(part or {}))
 
 
-def screens(zone):
-    """The title, the zone's intro card and the ending (resized by the engine to the screen)."""
+def screens():
+    """The title and the ending (resized by the engine to the screen); each level has its own intro card."""
     out = {}
-    for key, name in (("title", "ui_start"), ("intro", f"ui_intro_{zone}"), ("ending", "ui_end")):
+    for key, name in (("title", "ui_start"), ("ending", "ui_end")):
         src = os.path.join(HERE, "source", name + ".png")
         if os.path.exists(src):
             shutil.copy(src, os.path.join(OUT, name + ".png"))
@@ -221,6 +229,84 @@ def level():
             "effects": {"shadows": True, "zoom": "auto", "grade": "sepia", "grade_amount": 40}}
 
 
+def intro(zone):
+    """The zone's intro card."""
+    name = f"ui_intro_{zone}"
+    src = os.path.join(HERE, "source", name + ".png")
+    if not os.path.exists(src):
+        return None
+    shutil.copy(src, os.path.join(OUT, name + ".png"))
+    return name + ".png"
+
+
+def made_level(k, grade):
+    """Level k + 1 (k >= 1), made from a fixed seed so every build is the same: the ground broken by
+    gaps a hero clears, platforms with vitamins over some of them, brick steps, germs on the flat
+    stretches, two checkpoints and the goal; longer, with more gaps and germs, as the body goes up."""
+    import random
+    rnd = random.Random(1930 + k)
+    w, h, ground = 200 + 20 * k, 30, 26
+    rows = [["."] * w for _ in range(h)]
+    for r in range(ground, h):
+        for c in range(w):
+            rows[r][c] = "#"
+
+    def put(col, row, text):
+        for i, ch in enumerate(text):
+            if 0 <= col + i < w:
+                rows[row][col + i] = ch
+
+    def gap(c0, n):
+        for r in range(ground, h):
+            for c in range(c0, c0 + n):
+                rows[r][c] = "."
+
+    c, enemies, checks = 14, 0, [w // 3, 2 * w // 3]
+    while c < w - 24:
+        run = rnd.randint(9, 16) - min(k, 4)
+        stretch = max(6, run)
+        # germs on the flat, more of them higher up the body
+        for _ in range(rnd.randint(0, 1 + k // 2) if stretch >= 8 else 0):
+            put(c + rnd.randint(3, stretch - 2), ground - 1, "E")
+            enemies += 1
+        kind = rnd.random()
+        if kind < 0.35:
+            put(c + 2, ground - 5, "=" * 5)
+            put(c + 2, ground - 6, "ooo")
+        elif kind < 0.55:
+            put(c + 3, ground - 1, "BB")
+            put(c + 4, ground - 2, "B")
+            put(c + 4, ground - 3, "o")
+        c += stretch
+        if any(c - stretch < x <= c for x in checks):
+            put(c - 2, ground - 1, "C")
+            continue
+        n = rnd.randint(2, 3 + (k >= 3))
+        gap(c, n)
+        if rnd.random() < 0.5:
+            put(c - 1, ground - 5, "=" * (n + 2))
+            put(c, ground - 6, "o" * n)
+        c += n
+    put(w - 8, ground - 1, "F")
+    return {"width": w, "height": h, "start": [4, ground - 1], "rows": ["".join(r) for r in rows],
+            "effects": {"shadows": True, "zoom": "auto", "grade": grade, "grade_amount": 40}}
+
+
+def levels():
+    """Every zone's level, in the order the body is climbed."""
+    out = []
+    for k, (zone, sky, grade) in enumerate(ZONES):
+        lv = level() if k == 0 else made_level(k, grade)
+        name = f"level_{k + 1}_{zone}.json"
+        with open(os.path.join(OUT, name), "w", encoding="utf-8") as f:
+            json.dump(lv, f, indent=1)
+            f.write("\n")
+        entry = {"level": name, "sky": sky, "layers": layers(zone), "textures": textures(zone),
+                 "intro": intro(zone), "music": music(zone)}
+        out.append({k2: v for k2, v in entry.items() if v})
+    return out
+
+
 def main():
     if os.path.isdir(OUT):
         shutil.rmtree(OUT)
@@ -254,7 +340,6 @@ def main():
         "genre": "platformer",
         "players": 2,
         "screen": "16:9",
-        "level": "level.json",
         "sky": ["#3a1420", "#7a3a3a"],
         # a hero about 80 px tall: hitbox, and a jump of about 12 cells
         "weapon": WEAPON,
@@ -269,18 +354,13 @@ def main():
                                               "on": thing("obj_leukocyte", 4, 4, {"from": 2, "frames": 2})}.items() if v} or None,
             "goal": thing("obj_portal", 4, 6),
         }.items() if v},
-        "textures": textures("colon"),
-        "screens": screens("colon"),
-        "layers": layers("colon"),
-        "music": music("colon"),
+        "screens": screens(),
         "sounds": sounds(),
+        "levels": levels(),
     }
     manifest = {k: v for k, v in manifest.items() if v is not None}
     with open(os.path.join(OUT, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
-        f.write("\n")
-    with open(os.path.join(OUT, "level.json"), "w", encoding="utf-8") as f:
-        json.dump(level(), f, indent=1)
         f.write("\n")
     print(OUT)
 

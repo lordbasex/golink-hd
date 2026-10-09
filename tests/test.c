@@ -936,6 +936,83 @@ static void test_weapon(void)
    hd_content_builtin();
 }
 
+extern int32_t hd_stage_count; /* sprite.h (not included here: its names meet the bones') */
+
+/* A level of w x 30 cells: a floor, a coin row near the start and a goal near the end. */
+static void goal_level(char *out, size_t cap, int w)
+{
+   int x, y;
+   size_t n = (size_t)snprintf(out, cap, "{\"width\": %d, \"height\": 30, \"start\": [2, 26], \"rows\": [", w);
+   for (y = 0; y < 30; y++)
+   {
+      out[n++] = '"';
+      for (x = 0; x < w; x++)
+         out[n++] = y >= 27 ? '#' : (y == 26 && x == w - 6) ? 'F' : (y == 26 && x >= 5 && x < 9) ? 'o' : '.';
+      out[n++] = '"';
+      if (y + 1 < 30)
+         out[n++] = ',';
+   }
+   snprintf(out + n, cap - n, "]}");
+}
+
+/* Several levels in one package (format 3's levels): clearing one starts the next, keeping the coins;
+   a save state brings back the level it was taken in; the last one ends the game. */
+static void test_stages(void)
+{
+   static uint8_t zip[400000], save[HD_SAVE_SIZE];
+   static char one[100000], two[100000];
+   static hd_state s, b;
+   hd_input in[MAX_PLAYERS];
+   const char *err;
+   size_t n;
+   int32_t f, coins = 0;
+   zfile files[3] = {{0}};
+   goal_level(one, sizeof one, 50);
+   goal_level(two, sizeof two, 70);
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Stages\", \"levels\": [{\"level\": \"one.json\", \"sky\": [\"#102030\", \"#203040\"]},"
+                   " {\"level\": \"two.json\"}]}";
+   files[1].name = "one.json";
+   files[1].text = one;
+   files[2].name = "two.json";
+   files[2].text = two;
+   n = make_zip(zip, files, 3);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  stages: %s\n", err);
+   CHECK(hd_stage_count == 2 && hd_map_w == 50 && hd_sky_top == 0x102030u);
+   hd_reset(&s);
+   memset(in, 0, sizeof in);
+   in[0].buttons = PAD_START;
+   hd_step(&s, in);
+   for (f = 0; f < 2000 && s.stage == 0; f++)
+   {
+      in[0].buttons = PAD_RIGHT;
+      hd_step(&s, in);
+      coins = s.p[0].coins;
+   }
+   CHECK(s.stage == 1 && hd_map_w == 70 && s.phase == PH_PLAY);
+   CHECK(coins == 4 && s.p[0].coins == 4 && s.p[0].active); /* kept into the next level */
+   CHECK(FX_INT(s.p[0].x) < 100);                           /* at the new level's start */
+   hd_save(&s, save);
+   hd_reset(&b); /* level 1 again ... */
+   CHECK(hd_map_w == 50);
+   CHECK(hd_load(&b, save, HD_SAVE_SIZE) == 1); /* ... and the save state's level 2 back */
+   in[0].buttons = PAD_RIGHT;
+   hd_step(&b, in);
+   CHECK(b.stage == 1 && hd_map_w == 70);
+   for (f = 0; f < 3000 && s.phase != PH_TITLE; f++)
+   {
+      in[0].buttons = PAD_RIGHT;
+      hd_step(&s, in);
+   }
+   CHECK(s.phase == PH_TITLE && s.stage == 0 && hd_map_w == 50); /* the last level ends the game */
+   files[0].text = "{\"format\": 3, \"title\": \"Stages\", \"levels\": [{\"level\": \"missing.json\"}]}";
+   n = make_zip(zip, files, 3);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "level 1") != NULL && hd_stage_count == 0);
+   hd_content_builtin();
+}
+
 /* The super attack: nothing without charge; shots' hits charge it; its button throws the granules at the
    release, the player standing still and unhurt the whole time; granules fall and cost `damage` hits. */
 static void test_super(void)
@@ -1292,6 +1369,7 @@ int main(void)
    test_weapon();
    test_health();
    test_super();
+   test_stages();
    test_path();
    test_bones();
    test_fx();

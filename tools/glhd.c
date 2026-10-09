@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "hd.h"
+extern int32_t hd_stage_count; /* sprite.h */
 #include "pack.h"
 
 #ifdef _WIN32
@@ -307,7 +308,9 @@ static int pack_names(const char *dir, char (*names)[256], int *count)
    strcpy(names[0], "manifest.json");
    *count = 1;
    j = hd_json_get(man, "level");
-   if (!j || j->type != JSON_STRING)
+   if ((!j || j->type != JSON_STRING) && hd_json_get(man, "levels"))
+      ; /* a package of several levels: each one's files below */
+   else if (!j || j->type != JSON_STRING)
    {
       fprintf(stderr, "%s names no level\n", path);
       ok = 0;
@@ -366,6 +369,16 @@ static int pack_names(const char *dir, char (*names)[256], int *count)
    }
    /* format 3: every "file" in the sprites (the heroes', the enemy's, the level's things) and every texture */
    ok = ok && add_files(hd_json_get(man, "sprites"), names, count, path) && add_values(hd_json_get(man, "textures"), names, count, path) && add_values(hd_json_get(man, "screens"), names, count, path);
+   /* format 3's levels: each one's level file and intro, every "file" inside it (layers, music) and its textures */
+   for (j = hd_json_get(man, "levels"), j = j && j->type == JSON_ARRAY ? j->child : NULL; ok && j; j = j->next)
+   {
+      const json *lv = hd_json_get(j, "level"), *intro = hd_json_get(j, "intro");
+      if (lv && lv->type == JSON_STRING)
+         ok = add_name(names, count, lv->str, path);
+      if (ok && intro && intro->type == JSON_STRING)
+         ok = add_name(names, count, intro->str, path);
+      ok = ok && add_files(j, names, count, path) && add_values(hd_json_get(j, "textures"), names, count, path);
+   }
    for (i = 0; ok && i < *count; i++)
       if (!names[i][0] || names[i][0] == '/' || names[i][0] == '\\' || strstr(names[i], "..") || strchr(names[i], ':'))
       {
@@ -477,7 +490,10 @@ static int check(const char *path)
       free(data);
       return 0;
    }
-   printf("%s: \"%s\", level %dx%d, %d enemies, sha256 ", path, hd_title, (int)MAP_W, (int)MAP_H, (int)hd_enemy_count);
+   if (hd_stage_count > 1)
+      printf("%s: \"%s\", %d levels (the first %dx%d, %d enemies), sha256 ", path, hd_title, (int)hd_stage_count, (int)MAP_W, (int)MAP_H, (int)hd_enemy_count);
+   else
+      printf("%s: \"%s\", level %dx%d, %d enemies, sha256 ", path, hd_title, (int)MAP_W, (int)MAP_H, (int)hd_enemy_count);
    for (i = 0; i < 32; i++)
       printf("%02x", hd_content_id[i]);
    printf("\n");

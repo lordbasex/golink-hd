@@ -165,6 +165,35 @@ const char *hd_sounds_load(const hd_zip *zip, const json *sounds, const json *mu
    }
    if (music)
    {
+      const char *err = hd_music_load(zip, music);
+      if (err)
+      {
+         hd_sounds_free();
+         return err;
+      }
+   }
+   return NULL;
+}
+
+int16_t *hd_music_take(void)
+{
+   int16_t *m = music_data;
+   music_data = NULL;
+   hd_pkg_music = NULL;
+   hd_pkg_music_frames = hd_pkg_music_loop = 0;
+   hd_pkg_music_vol = 200;
+   return m;
+}
+
+const char *hd_music_load(const hd_zip *zip, const json *music)
+{
+   static char msg[200];
+   int32_t frames;
+   free(music_data);
+   music_data = NULL;
+   hd_pkg_music = NULL;
+   hd_pkg_music_frames = hd_pkg_music_loop = 0;
+   {
       const json *f = hd_json_get(music, "file"), *vol = hd_json_get(music, "volume"), *loop = hd_json_get(music, "loop_from");
       if (music->type != JSON_OBJECT || !f || f->type != JSON_STRING)
          return "manifest.json's music needs a \"file\"";
@@ -172,10 +201,7 @@ const char *hd_sounds_load(const hd_zip *zip, const json *sounds, const json *mu
          return "the music's volume must be 0 to 256 and its loop_from a number of milliseconds";
       music_data = load_wav(zip, f->str, MUSIC_SECONDS_MAX, &frames, msg, sizeof msg);
       if (!music_data)
-      {
-         hd_sounds_free();
          return msg;
-      }
       hd_pkg_music = music_data;
       hd_pkg_music_frames = frames;
       hd_pkg_music_vol = vol ? (int32_t)vol->num : 200;

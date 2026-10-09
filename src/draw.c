@@ -495,7 +495,7 @@ static int screen_picture(const hd_state *s)
       im = &hd_screens[SCREEN_TITLE];
    else if (s->phase == PH_INTRO && hd_screens[SCREEN_INTRO].px)
       im = &hd_screens[SCREEN_INTRO];
-   else if (s->phase == PH_CLEAR && s->phase_t >= 180 && hd_screens[SCREEN_ENDING].px)
+   else if (s->phase == PH_CLEAR && s->phase_t >= 180 && hd_screens[SCREEN_ENDING].px && s->stage + 1 >= hd_stage_count)
       im = &hd_screens[SCREEN_ENDING];
    if (!im)
       return 0;
@@ -678,6 +678,7 @@ void hd_draw(const hd_state *s, uint32_t *out)
    hd_surface screen;
    int32_t zoom = s->zoom ? hd_clamp(s->zoom, 128, 512) : 256; /* 0 (an old or zeroed state) is 1x */
    int32_t cx = FX_INT(s->cam_x) + s->shake_x, cy = FX_INT(s->cam_y) + s->shake_y;
+   hd_stage_select(s->stage);
    if (ready_gen != hd_content_gen)
       prepare();
    screen.px = out;

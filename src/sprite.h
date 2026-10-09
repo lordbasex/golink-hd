@@ -97,6 +97,8 @@ extern hd_image hd_screens[SCREEN_COUNT];
 extern int32_t hd_intro_frames; /* how long the intro shows by itself */
 #define SKIP_HOLD_FRAMES 45      /* holding jump this long skips the intro */
 const char *hd_screens_load(const hd_zip *zip, const json *screens);
+/* One screen picture (a file name) into hd_screens[i], scaled to the screen. */
+const char *hd_screen_load(const hd_zip *zip, const json *file, int32_t i);
 
 /* Reads "textures" (NULL is fine). */
 const char *hd_textures_load(const hd_zip *zip, const json *textures);
@@ -109,6 +111,22 @@ void hd_layers_draw(uint32_t *px, int32_t w, int32_t h, int32_t cx, int32_t cy, 
 extern const int16_t *hd_pkg_music; /* stereo, NULL: the built-in tune */
 extern int32_t hd_pkg_music_frames, hd_pkg_music_loop, hd_pkg_music_vol;
 const char *hd_sounds_load(const hd_zip *zip, const json *sounds, const json *music);
+/* Only the music (the effects stay); and handing its samples over (the caller frees them). */
+const char *hd_music_load(const hd_zip *zip, const json *music);
+int16_t *hd_music_take(void);
+
+/*
+ * Format 3's "levels": a game of several levels, each with its own level
+ * file, effects, sky, layers, textures, intro picture and music; the rest
+ * (heroes, sounds, physics, weapon, health, title and ending) is shared.
+ * Everything is loaded with the package; the state's `stage` says which
+ * one is played, and hd_stage_select points the engine at it.
+ */
+#define MAX_STAGES 16
+extern int32_t hd_stage_count; /* 0: a package of one level (no "levels") */
+void hd_stage_select(int32_t k);
+int hd_stage_keep(int32_t k); /* takes what the loaders just loaded as level k */
+void hd_stages_free(void);
 void hd_sounds_free(void);
 
 /* Frames standing still before the hero looks bored. */

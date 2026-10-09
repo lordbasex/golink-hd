@@ -277,6 +277,7 @@ typedef struct
    int32_t cam_x, cam_y; /* 16.16, top-left of the screen in the level */
    int32_t music_row, music_tick;
    int32_t music_pos; /* a package's music (format 3): the stereo sample it plays next */
+   int32_t stage;     /* the level played, of a package of several (format 3's levels) */
    int32_t part_next, sfx_next;
    uint32_t taken[(MAP_MAX_W * MAP_MAX_H + 31) / 32]; /* coins taken, checkpoints reached */
    hd_player p[MAX_PLAYERS];
