@@ -118,6 +118,7 @@ enum
    SFX_SHOOT, /* a weapon fires (format 3's "weapon") */
    SFX_HIT,   /* a shot hits an enemy that does not die */
    SFX_KO,    /* a player runs out of health (format 3's "health") */
+   SFX_SUPER, /* a super attack (format 3's "super") */
    SFX_COUNT
 };
 /* Every sample the mixer knows: the effects and the music's two waves. */
@@ -152,6 +153,17 @@ typedef struct
    int32_t life;           /* frames a shot flies before it fades (its range over its speed) */
    int32_t muzzle_x, muzzle_y; /* where shots start: pixels in front of the hitbox's middle, and from its feet (up is negative) */
    int32_t enemy_health;   /* hits an enemy takes */
+   /* the super attack (format 3's "super"): charged by the shots' hits, it throws a fan of granules */
+   int32_t super_on;
+   uint32_t super_button;
+   int32_t super_charge;   /* hits that fill it */
+   int32_t super_count;    /* granules thrown */
+   int32_t super_spread;   /* the fan's width, in the engine's angle units (4096 a turn) */
+   int32_t super_speed;    /* 16.16 pixels a frame */
+   int32_t super_life;     /* frames a granule flies */
+   int32_t super_damage;   /* hits a granule costs an enemy */
+   int32_t super_frames;   /* the whole attack, in frames (the player stands still and cannot be hurt) */
+   int32_t super_release;  /* frames into it when the granules leave */
 } hd_weapon_config;
 extern hd_weapon_config hd_weapon;
 void hd_weapon_default(void);
@@ -195,6 +207,8 @@ typedef struct
    int32_t aim;              /* frames left of the shooting pose */
    int32_t hp;               /* hits it still takes (format 3's health) */
    int32_t ko;               /* frames left of a knockout */
+   int32_t charge;           /* the super attack's charge: its shots' hits */
+   int32_t super_t;          /* frames into a super attack (0: none) */
 } hd_player;
 
 typedef struct
@@ -217,6 +231,9 @@ typedef struct
    int32_t owner;    /* the player who fired it */
    int32_t hit;
    int32_t age;
+   int32_t vy;       /* a granule falls in an arc; a shot flies straight (0) */
+   int32_t damage;   /* hits it costs an enemy */
+   int32_t granule;  /* 1: a super attack's granule */
 } hd_shot;
 
 typedef struct

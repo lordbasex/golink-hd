@@ -129,6 +129,9 @@ static void sanitize(hd_state *s)
       q->x = hd_clamp(q->x, -FAR, FAR);
       q->y = hd_clamp(q->y, -FAR, FAR);
       q->vx = hd_clamp(q->vx, -SPEED, SPEED);
+      q->vy = hd_clamp(q->vy, -SPEED, SPEED);
+      q->damage = hd_clamp(q->damage, 0, 100);
+      q->granule = q->granule ? 1 : 0;
    }
    for (i = 0; i < MAX_ENEMIES; i++)
    {
@@ -169,6 +172,8 @@ static void sanitize(hd_state *s)
       p->aim = hd_clamp(p->aim, 0, 200);
       p->hp = hd_clamp(p->hp, 0, 99);
       p->ko = hd_clamp(p->ko, 0, 600);
+      p->charge = hd_clamp(p->charge, 0, 200);
+      p->super_t = hd_clamp(p->super_t, 0, 240);
    }
 }
 

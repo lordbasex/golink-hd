@@ -16,13 +16,14 @@ for who in red blue; do
   for anim in walk12:12 run:8 jump:6 shoot:6 shoot_up:6 bored:8 dash:6 tired_idle:6 tired_run:8 dissolve:8 duck:6 hurt:4 win:6 super:8; do
     name=${anim%%:*}; frames=${anim##*:}
     [ -f source/${who}_$name.png ] || continue
-    # a dissolve breaks the capsule apart: its size is measured on the first, whole, frame
-    first=""; [ "$name" = dissolve ] && first="--shell-frames 1"
+    # a dissolve breaks the capsule apart and a super opens it: their size is measured on the first, whole, frame
+    # (and a super's spray reaches into the next frames' columns: split by blobs, never by a straight cut)
+    first=""; case $name in dissolve) first="--shell-frames 1" ;; super) first="--shell-frames 1 --separate" ;; esac
     cut source/${who}_$name.png sprites/${who}_$name.png --height "$H" --frames "$frames" --shell "$shell" $first
   done
 done
 # the enemies and the level's things: their own heights
-for item in red_shot:4:18 blue_shot:4:18 red_shot_hit:6:40 blue_shot_hit:6:40 enemy_germ:6:44 enemy_germ_walk:8:44 enemy_spore:6:44 enemy_spitter:6:52 obj_vitamin:4:24 obj_leukocyte:4:64 obj_portal:4:120; do
+for item in red_granule:4:11 blue_granule:4:11 red_shot:4:18 blue_shot:4:18 red_shot_hit:6:40 blue_shot_hit:6:40 enemy_germ:6:44 enemy_germ_walk:8:44 enemy_spore:6:44 enemy_spitter:6:52 obj_vitamin:4:24 obj_leukocyte:4:64 obj_portal:4:120; do
   name=${item%%:*}; rest=${item#*:}; frames=${rest%%:*}; height=${rest##*:}
   [ -f source/$name.png ] || continue
   cut source/$name.png sprites/$name.png --height "$height" --frames "$frames"

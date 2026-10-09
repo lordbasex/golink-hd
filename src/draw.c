@@ -274,6 +274,15 @@ static void hero_sprite(const hd_state *s, const hd_player *p, int32_t i)
       if ((p->ko >> 2) & 1)
          return;
    }
+   if (p->super_t && sk->anim[ANIM_SUPER].frames)
+   {
+      /* the super attack: the skin's "super" played once over it */
+      const hd_anim *an = &sk->anim[ANIM_SUPER];
+      const hd_image *im = &an->frames[hd_clamp((int32_t)((int64_t)p->super_t * an->count / hd_max(1, hd_weapon.super_frames)), 0, an->count - 1)];
+      actor(im, FX_INT(p->x) + PW / 2 - im->w / 2 - cam_x, FX_INT(p->y) + PH - (im->h - an->feet) - cam_y,
+            p->facing < 0 ? BLIT_FLIP : 0, FX_INT(p->x) + PW / 2 - cam_x, FX_INT(p->y) + PH - cam_y, PW * 3 / 5);
+      return;
+   }
    if (sk->has_rig)
    {
       if (p->hurt && p->hurt <= HURT_FRAMES - 30 && ((p->hurt >> 2) & 1))
@@ -416,6 +425,17 @@ static void shots(const hd_state *s)
          rect(x - r, y - r, 1, 2 * r, c);
          rect(x + r, y - r, 1, 2 * r + 1, c);
       }
+      else if (q->life && q->granule)
+      {
+         if (sk && sk->anim[ANIM_GRANULE].frames)
+         {
+            const hd_image *im = anim_frame(&sk->anim[ANIM_GRANULE], q->age, 1);
+            blit(im, x - im->w / 2, y - im->h / 2, 0);
+            continue;
+         }
+         rect(x - 2, y - 2, 4, 4, c);
+         rect(x - 1, y - 1, 1, 1, 0xffffffu);
+      }
       else if (q->life)
       {
          if (sk && sk->anim[ANIM_SHOT].frames)
@@ -553,6 +573,14 @@ static void hud(const hd_state *s)
          number(buf + 2, p->hp);
          if (!worn || ((s->frame >> 4) & 1))
             text(buf, x + 90, y, 2, worn ? 0xff4040u : 0xffffffu);
+      }
+      if (hd_weapon.super_on)
+      {
+         /* the super's charge: a bar under the line, gold and blinking when full */
+         int32_t full = p->charge >= hd_weapon.super_charge, w = 60;
+         rect(x, y + 17, w + 2, 4, 0x201018u);
+         rect(x + 1, y + 18, w * p->charge / hd_max(1, hd_weapon.super_charge), 2,
+              full ? (((s->frame >> 3) & 1) ? 0xfff0a0u : 0xf8c838u) : hd_player_color[i] & 0xffffffu);
       }
    }
    if (s->paused)

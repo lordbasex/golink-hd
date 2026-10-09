@@ -936,6 +936,103 @@ static void test_weapon(void)
    hd_content_builtin();
 }
 
+/* The super attack: nothing without charge; shots' hits charge it; its button throws the granules at the
+   release, the player standing still and unhurt the whole time; granules fall and cost `damage` hits. */
+static void test_super(void)
+{
+   static uint8_t zip[300000];
+   static char level[100000];
+   static hd_state s;
+   hd_input in[MAX_PLAYERS];
+   const char *err;
+   size_t n;
+   int32_t f, k, row, granules = 0, fell = 0;
+   char *at;
+   zfile files[2] = {{0}};
+   flat_level(level, sizeof level, 60, 30);
+   for (at = level, row = 0; row < 27 * 2 - 1; at++)
+      if (*at == '"')
+         row++;
+   at[14] = 'E';
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Super\", \"level\": \"level.json\", \"weapon\": {\"button\": \"x\", \"rate\": 4,"
+                   " \"enemy_health\": 20, \"super\": {\"button\": \"y\", \"charge\": 2, \"granules\": 6, \"damage\": 3, \"frames\": 30, \"release\": 10}}}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  super: %s\n", err);
+   CHECK(hd_weapon.super_on && hd_weapon.super_button == PAD_Y && hd_weapon.super_count == 6);
+   hd_reset(&s);
+   memset(in, 0, sizeof in);
+   in[0].buttons = PAD_START;
+   hd_step(&s, in);
+   in[0].buttons = PAD_Y; /* no charge yet: nothing */
+   hd_step(&s, in);
+   CHECK(s.p[0].super_t == 0);
+   for (f = 0; f < 120 && s.p[0].charge < 2; f++)
+   {
+      in[0].buttons = PAD_X;
+      hd_step(&s, in);
+   }
+   CHECK(s.p[0].charge == 2);
+   in[0].buttons = 0;
+   hd_step(&s, in);
+   in[0].buttons = PAD_Y;
+   hd_step(&s, in);
+   CHECK(s.p[0].super_t == 1 && s.p[0].charge == 0);
+   in[0].buttons = 0;
+   for (f = 0; f < 40; f++)
+   {
+      /* an enemy on the player until the granules leave: no harm during the attack */
+      if (s.p[0].super_t && s.p[0].super_t < hd_weapon.super_release - 1)
+      {
+         s.e[1] = s.e[0];
+         s.e[1].alive = 1;
+         s.e[1].x = s.p[0].x;
+         s.e[1].y = s.p[0].y + FX(PH - EH);
+      }
+      else
+         s.e[1].alive = 0; /* gone before the granules leave, so they fly and fall */
+      if (s.p[0].super_t)
+         CHECK(s.p[0].vx == 0 && s.p[0].hurt < HURT_FRAMES - 10); /* only what is left of joining */
+      hd_step(&s, in);
+      {
+         int32_t now = 0;
+         for (k = 0; k < MAX_SHOTS; k++)
+         {
+            now += s.shot[k].granule && (s.shot[k].life || s.shot[k].hit);
+            if (s.shot[k].granule && s.shot[k].life && s.shot[k].vy > 0)
+               fell = 1;
+         }
+         granules = hd_max(granules, now);
+      }
+   }
+   CHECK(granules == 6 && fell);
+   {
+      /* a granule costs `damage` hits */
+      hd_shot *q = &s.shot[0];
+      memset(q, 0, sizeof *q);
+      s.e[2] = s.e[0];
+      s.e[2].alive = 1;
+      s.e[2].hp = 20;
+      s.e[2].x += FX(300); /* away from the others */
+      q->life = 10;
+      q->granule = 1;
+      q->damage = hd_weapon.super_damage;
+      q->x = s.e[2].x + FX(EW / 2);
+      q->y = s.e[2].y + FX(EH / 2);
+      hd_step(&s, in);
+      CHECK(s.e[2].hp == 17);
+   }
+   CHECK(s.p[0].super_t == 0 && s.p[0].hp == 0 && !s.p[0].ko); /* no health in this game: hp stays 0 */
+   files[0].text = "{\"format\": 3, \"title\": \"Super\", \"level\": \"level.json\", \"weapon\": {\"super\": {\"frames\": 20, \"release\": 20}}}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "super") != NULL);
+   hd_content_builtin();
+}
+
 /* Health (format 3): an enemy's hits cost health, not coins; the last knocks the player out, who comes
    back at the checkpoint with all of it; nothing hurts a knocked-out player; bad health is refused. */
 static void test_health(void)
@@ -1194,6 +1291,7 @@ int main(void)
    test_rig();
    test_weapon();
    test_health();
+   test_super();
    test_path();
    test_bones();
    test_fx();

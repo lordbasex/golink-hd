@@ -362,6 +362,16 @@ red_parts_body_worn.png: the SAME sheet as the puppet body of ROJO (the red and 
 
 `parts.py` cuts it like the body (same height), and `build.py` adds `"health": {"hits": 3, "worn": 1, "knockout": 100}`, the `worn` sheet to the rig and the dissolve as the skin's `knockout`. The first try drew the dissolve two and a half times too big: the cutter scales a strip by the median height of the capsule's colored half, and in a dissolve the capsule breaks into crumbs, so the median was tiny. `--shell-frames 1` measures only the first frame, where the capsule is still whole.
 
+- The super attack (the capsule opens and sprays granules, from the user's first brief). The `super` strip drawn at the start shows the capsule opening; the engine throws real granules that hit enemies, drawn from:
+
+```
+red_granule.png: a sheet of ONE small medicine GRANULE (a tiny glossy RED round bead, like the little pellets inside a medicine capsule, with a white shine dot and a soft red glow), 4 frames in ONE horizontal row, same size and same position in every cell: it tumbles and twinkles (the shine moves around, a tiny sparkle on frame 3). Very small and readable: the whole bead fits a square.
+```
+
+  ANTÍDOTO's buttons became Cuphead's: A (and B) jump, X shoots, Y throws the super once 6 antibodies have hit. Two cutting lessons. The super strip measured as small as its open lid (the capsule's colored half is only the lid while it is open), so it is measured on its first, closed frame (`--shell-frames 1`). Then the user saw it in the video: "you can see the transparency of the hero's cut". The spray of frames 4 and 5 is wider than an eighth of the strip, so the even vertical cuts sliced it with straight edges and left slivers in the neighbors. `--separate` thins the blobs until the frames stand apart, gives every pixel to the nearest frame and lays the frames side by side before cutting: no straight edge anywhere.
+
+- "They are very loud, very over the top; I may replace them with ElevenLabs" (the user, about the effects). Every effect is now at a lower peak (`SFX_PEAK` 13000 in `build.py`), and any WAV dropped in `source/sfx` with the same name replaces one (the build cuts its silence and sets its level).
+
 ## Cleaning up
 
 When the game's audio is done, the generated files are copied off the M1 and `~/ai` (the models, the virtual environment and the outputs) is removed there, as the user asked.

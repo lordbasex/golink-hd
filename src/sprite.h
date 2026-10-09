@@ -23,6 +23,8 @@ enum
    ANIM_SHOT,     /* the skin's shot flying (format 3's weapon; facing right) */
    ANIM_SHOT_HIT, /* its burst where it hits (played once) */
    ANIM_KO,       /* knocked out (format 3's health): played once over the knockout */
+   ANIM_SUPER,    /* the super attack (format 3's weapon): played once over it */
+   ANIM_GRANULE,  /* a super attack's granule (looped) */
    ANIM_COUNT
 };
 

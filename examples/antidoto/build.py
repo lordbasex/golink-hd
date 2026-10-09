@@ -23,6 +23,7 @@ ANIMS = {
     "bored": ("bored", 8, 6),
     "win": ("win", 6, 8),
     "knockout": ("dissolve", 8, 10),  # played once over the knockout (its fps does not count)
+    "super": ("super", 8, 10),        # played once over the super attack
 }
 SKINS = ["red", "blue"]
 # pixels walked in one whole walk cycle (12 frames, two steps): the steps follow the ground; at the
@@ -31,13 +32,15 @@ STRIDE = 110
 # the rubber-hose puppet (src/rig.c): parts cut by parts.py, arms and legs drawn by the engine;
 # a skin with a rig is posed on every frame instead of playing its sheets
 RIG = {"limb": 4, "leg": 24, "arm": 15, "stride": 84, "lift": 8, "bob": 3}
-# the finger pistol: Y or X fires antibodies (about 7 a second) from the fingertip of the puppet's
-# aiming pose; a germ takes 3
+# the finger pistol: X fires antibodies (about 7 a second) from the fingertip of the puppet's aiming
+# pose; a germ takes 3. Y, once 6 antibodies have hit (the first two germs), opens the capsule: a fan of 10 granules
 # three hits; with the last one left the capsule looks worn out; at none it dissolves
 HEALTH = {"hits": 3, "worn": 1, "knockout": 100}
-WEAPON = {"button": "run", "rate": 8, "speed": 900, "range": 420, "muzzle": [30, -33], "enemy_health": 3}
+WEAPON = {"button": "x", "rate": 8, "speed": 900, "range": 420, "muzzle": [30, -33], "enemy_health": 3,
+          "super": {"button": "y", "charge": 6, "granules": 10, "spread": 70, "speed": 650, "range": 260,
+                    "damage": 2, "frames": 48, "release": 22}}
 # a skin's shot and its burst (cut.sh): strip, frames, fps
-SHOTS = {"shot": ("shot", 4, 12), "shot_hit": ("shot_hit", 6, 20)}
+SHOTS = {"shot": ("shot", 4, 12), "shot_hit": ("shot_hit", 6, 20), "granule": ("granule", 4, 12)}
 
 
 def rig(skin):
@@ -129,8 +132,8 @@ def screens(zone):
 # the engine's effects -> ANTÍDOTO's (made by make_sfx.py on the machine with the model, in source/sfx)
 SOUNDS = {"jump": "jump", "coin": "vitamin", "stomp": "germ_squash", "hurt": "hurt",
           "join": "ready_go", "check": "checkpoint", "clear": "victory", "pause": "menu",
-          "shoot": "shoot", "hit": "virus_pop", "knockout": "knockout"}
-SFX_PEAK = 20000       # every effect at the same loudness, under the music's
+          "shoot": "shoot", "hit": "virus_pop", "knockout": "knockout", "super": "super"}
+SFX_PEAK = 13000       # every effect at the same loudness, well under the music's
 SFX_QUIET = 600        # quieter than this at the start or the end is silence
 
 

@@ -11,7 +11,8 @@ arm may reach into the next frame's space); without it, the columns with no
 visible pixel split it. In each frame only the character is kept: its
 biggest blob and what lies near it (a puff of smoke at the hand stays, a
 sliver of the next frame or a bullet already flying is dropped). Every
-frame is scaled by the same factor: --scale, or --shell, which measures the
+frame is scaled by the same factor (--separate first splits frames that
+reach into each other's columns by their blobs): --scale, or --shell, which measures the
 colored half of a capsule hero (its biggest strongly colored blob) in every
 frame and scales the strip so its median height is that many pixels, since
 an image AI draws each strip at its own size (take the "shell" printed for
@@ -65,6 +66,48 @@ def even(alpha: np.ndarray, n: int) -> list:
         cuts.append(lo + int(np.argmin(load[lo:hi + 1])))
     cuts.append(w)
     return [(cuts[i], cuts[i + 1]) for i in range(n)]
+
+
+def separate(rgba: np.ndarray, n: int) -> np.ndarray:
+    """The strip redrawn with its n frames side by side, none overlapping: for strips whose frames
+    reach into each other's columns or touch (a spray, a burst), where any vertical cut would slice
+    one of them. The blobs are thinned until n big cores stand apart (thin bridges between frames
+    break first); every visible pixel then goes with the nearest core, and far specks are dropped."""
+    alpha = rgba[..., 3]
+    solid = alpha > ALPHA_MIN
+    for thin in range(0, 40, 2):
+        core = ndimage.binary_erosion(solid, iterations=thin) if thin else solid
+        labels, count = ndimage.label(core)
+        if count < n:
+            continue
+        sizes = ndimage.sum(core, labels, range(1, count + 1))
+        order = np.argsort(sizes)[::-1]
+        # n cores of a like size (a speck or a lone shoe is not a frame), clearly bigger than the rest
+        top = sizes[order[:n]]
+        if top[-1] * 4 >= np.median(top) and (count == n or top[-1] > 4 * sizes[order[n]]):
+            break
+    else:
+        sys.exit(f"could not find {n} frames in the strip")
+    cores = sorted(order[:n], key=lambda i: ndimage.find_objects(labels)[i][1].start)
+    marks = np.zeros_like(labels)
+    for k, c in enumerate(cores):
+        marks[labels == c + 1] = k + 1
+    # every pixel takes the frame of its nearest core; a speck far from all of them is dropped
+    dist, (iy, ix) = ndimage.distance_transform_edt(marks == 0, return_indices=True)
+    frame_of = np.where((alpha > 0) & (dist <= thin + 40), marks[iy, ix], 0)
+    crops = []
+    for k in range(1, n + 1):
+        mask = frame_of == k
+        cols = np.where(mask.any(axis=0))[0]
+        part = rgba[:, cols[0]:cols[-1] + 1].copy()
+        part[..., 3] = np.where(mask[:, cols[0]:cols[-1] + 1], part[..., 3], 0)
+        crops.append(part)
+    slot = max(c.shape[1] for c in crops) + 2 * GAP_MIN
+    out = np.zeros((alpha.shape[0], slot * n, 4), dtype=rgba.dtype)
+    for k, c in enumerate(crops):
+        x = k * slot + (slot - c.shape[1]) // 2
+        out[:, x:x + c.shape[1]] = c
+    return out
 
 
 def keep_character(alpha: np.ndarray) -> np.ndarray:
@@ -138,10 +181,13 @@ def main() -> None:
     ap.add_argument("--scale", type=float, default=0, help="game pixels per picture pixel (0: the tallest frame gets --height)")
     ap.add_argument("--shell", type=float, default=0, help="scale so the colored half measures this many game pixels (an image AI draws each strip at its own size)")
     ap.add_argument("--shell-frames", type=int, default=0, help="measure the colored half only in the first N frames (a character that breaks apart, like a dissolve)")
+    ap.add_argument("--separate", action="store_true", help="with --frames: frames reach into each other's columns (a spray, a burst); split them by blobs, not by columns")
     args = ap.parse_args()
 
     img = Image.open(args.src).convert("RGBA")
     rgba = np.asarray(img)
+    if args.separate and args.frames:
+        rgba = separate(rgba, args.frames)
     alpha = rgba[..., 3]
     runs = even(alpha, args.frames) if args.frames else pieces(alpha)
     # each frame keeps only its character

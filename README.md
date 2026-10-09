@@ -102,12 +102,22 @@ Format 3 adds two keys to the manifest, both optional; a package of format 1 or 
 
 | Key | Default | Range |
 |---|---|---|
-| `button` | `"run"` (the second action, Y or X, which then no longer runs) | `"run"`, `"a"`, `"b"`, `"x"`, `"y"`, `"l"`, `"r"` |
+| `button` | `"run"` (the second action, Y or X) | `"run"`, `"a"`, `"b"`, `"x"`, `"y"`, `"l"`, `"r"` |
 | `rate` | 10 frames between shots | 2 to 120 |
 | `speed` | 700 (hundredths of a pixel a frame) | 100 to 4000 |
 | `range` | 400 pixels | 16 to 4000 |
 | `muzzle` | half the hitbox's width plus 4 in front, half its height up | pixels in front of the hitbox's middle and from its feet (up is negative), -256 to 256 |
 | `enemy_health` | 1 | 1 to 100 |
+
+With a weapon the run button no longer runs.
+
+`super` (inside `weapon`) is the super attack. Every hit of a player's shots charges it (a bar under the HUD line, gold and blinking when full); with `charge` hits its button throws `granules` in a fan `spread` degrees wide, a little above straight ahead, each a bit faster or slower, falling in arcs and costing an enemy `damage` hits. The player stands still (in the air too) and cannot be hurt for `frames`; the granules leave `release` frames into it. The skin's `super` animation is played once over it and its `granule` pictures draw the granules (else small pellets in the player's color).
+
+```json
+"super": {"button": "y", "charge": 6, "granules": 10, "spread": 70, "speed": 650, "range": 260, "damage": 2, "frames": 48, "release": 22}
+```
+
+`button` as the weapon's (`"r"` by default), `charge` 1 to 200 (8), `granules` 1 to 24 (10), `spread` 0 to 180 degrees (70), `speed` 100 to 4000 (650), `range` 16 to 4000 pixels (260), `damage` 1 to 100 (2), `frames` 10 to 240 (48), `release` 1 to 240, before `frames` (22).
 
 A skin's `shot` (facing right, looped) and `shot_hit` (the burst where it hits, played once over 18 frames) draw its shots, centered on them; without them a shot is a small glowing pellet in the player's color. A puppet (`rig`) takes its aiming pose while it shoots: the near arm straight ahead at the hip, the finger pistol level.
 
@@ -174,7 +184,7 @@ Back to front in the list's order, up to 8. `speed` is the share of the camera's
 "music": {"file": "colon.wav", "volume": 180, "loop_from": 0}
 ```
 
-`sounds` replaces the built-in effects it names (`jump`, `coin`, `stomp`, `hurt`, `join`, `check`, `clear`, `pause`, `shoot`, `hit` (a shot hits an enemy that does not pop), `knockout`; up to 10 seconds each, mixed to mono, placed left or right by the game). `music` plays over and over instead of the built-in tune, in stereo (up to 10 minutes), at `volume` 0 to 256 (200 by default), starting again at `loop_from` milliseconds; its position is in the save state, so a loaded state goes on exactly where it was, and `golinkhd_set_music` turns it off like the built-in tune.
+`sounds` replaces the built-in effects it names (`jump`, `coin`, `stomp`, `hurt`, `join`, `check`, `clear`, `pause`, `shoot`, `hit` (a shot hits an enemy that does not pop), `knockout`, `super`; up to 10 seconds each, mixed to mono, placed left or right by the game). `music` plays over and over instead of the built-in tune, in stereo (up to 10 minutes), at `volume` 0 to 256 (200 by default), starting again at `loop_from` milliseconds; its position is in the save state, so a loaded state goes on exactly where it was, and `golinkhd_set_music` turns it off like the built-in tune.
 
 **`screens`**: pictures over the whole screen, scaled to it (keeping their shape, cropped from the middle):
 

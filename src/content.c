@@ -308,17 +308,61 @@ static const char *load_physics(const json *ph)
  * speed in hundredths of a pixel a frame (100 to 4000); range in pixels
  * (16 to 4000); muzzle where shots start, in pixels in front of the
  * hitbox's middle and from its feet (up is negative); enemy_health the
- * hits an enemy takes (1 to 100).
+ * hits an enemy takes (1 to 100). With a weapon the run button no longer
+ * runs.
+ *
+ * Its optional "super" is the super attack: charged by `charge` hits of the
+ * player's shots, its button throws `granules` in a fan `spread` degrees
+ * wide that fall in arcs, each costing an enemy `damage` hits; the player
+ * stands still and cannot be hurt for `frames`, the granules leaving
+ * `release` frames into it:
+ *   {"button": "y", "charge": 8, "granules": 10, "spread": 70, "speed": 650,
+ *    "range": 260, "damage": 2, "frames": 48, "release": 22}
  */
+static const struct { const char *name; uint32_t bit; } weapon_buttons[] = {
+   { "run", PAD_RUN }, { "a", PAD_A }, { "b", PAD_B }, { "x", PAD_X }, { "y", PAD_Y }, { "l", PAD_L }, { "r", PAD_R },
+};
+
+/* A weapon's button by name, 0 when it is not one. */
+static uint32_t weapon_button(const json *b)
+{
+   size_t i;
+   for (i = 0; b->type == JSON_STRING && i < sizeof weapon_buttons / sizeof weapon_buttons[0]; i++)
+      if (!strcmp(b->str, weapon_buttons[i].name))
+         return weapon_buttons[i].bit;
+   return 0;
+}
+
+static const char *load_super(const json *sp)
+{
+   const json *b;
+   int bad = 0;
+   int32_t range;
+   if (sp->type != JSON_OBJECT)
+      return "the weapon's super must be an object";
+   hd_weapon.super_on = 1;
+   hd_weapon.super_button = PAD_R;
+   if ((b = hd_json_get(sp, "button")) && !(hd_weapon.super_button = weapon_button(b)))
+      return "the super's button must be \"run\", \"a\", \"b\", \"x\", \"y\", \"l\" or \"r\"";
+   hd_weapon.super_charge = num(sp, "charge", 1, 200, 8, &bad);
+   hd_weapon.super_count = num(sp, "granules", 1, 24, 10, &bad);
+   hd_weapon.super_spread = num(sp, "spread", 0, 180, 70, &bad) * ANGLE_FULL / 360;
+   hd_weapon.super_speed = FX_FRAC(num(sp, "speed", 100, 4000, 650, &bad), 100);
+   range = num(sp, "range", 16, 4000, 260, &bad);
+   hd_weapon.super_damage = num(sp, "damage", 1, 100, 2, &bad);
+   hd_weapon.super_frames = num(sp, "frames", 10, 240, 48, &bad);
+   hd_weapon.super_release = num(sp, "release", 1, 240, 22, &bad);
+   if (bad || hd_weapon.super_release >= hd_weapon.super_frames)
+      return "the super has a value out of range (charge 1-200, granules 1-24, spread 0-180, speed 100-4000, range 16-4000, damage 1-100, frames 10-240, release before frames)";
+   hd_weapon.super_life = hd_max(1, (int32_t)((int64_t)FX(range) / hd_weapon.super_speed));
+   return NULL;
+}
+
 static const char *load_weapon(const json *w)
 {
-   static const struct { const char *name; uint32_t bit; } buttons[] = {
-      { "run", PAD_RUN }, { "a", PAD_A }, { "b", PAD_B }, { "x", PAD_X }, { "y", PAD_Y }, { "l", PAD_L }, { "r", PAD_R },
-   };
    const json *b, *m;
    int bad = 0;
    int32_t range;
-   size_t i;
    if (!w)
       return NULL;
    if (w->type != JSON_OBJECT)
@@ -327,10 +371,7 @@ static const char *load_weapon(const json *w)
    hd_weapon.button = PAD_RUN;
    if ((b = hd_json_get(w, "button")))
    {
-      hd_weapon.button = 0;
-      for (i = 0; b->type == JSON_STRING && i < sizeof buttons / sizeof buttons[0]; i++)
-         if (!strcmp(b->str, buttons[i].name))
-            hd_weapon.button = buttons[i].bit;
+      hd_weapon.button = weapon_button(b);
       if (!hd_weapon.button)
          return "the weapon's button must be \"run\", \"a\", \"b\", \"x\", \"y\", \"l\" or \"r\"";
    }
@@ -352,6 +393,8 @@ static const char *load_weapon(const json *w)
       hd_weapon.muzzle_x = (int32_t)hd_json_at(m, 0)->num;
       hd_weapon.muzzle_y = (int32_t)hd_json_at(m, 1)->num;
    }
+   if ((m = hd_json_get(w, "super")))
+      return load_super(m);
    return NULL;
 }
 

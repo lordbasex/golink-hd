@@ -29,7 +29,7 @@ int32_t hd_layer_count;
 int32_t hd_skin_count;
 int32_t hd_skin_of[MAX_PLAYERS];
 
-static const char *const anim_names[ANIM_COUNT] = { "idle", "run", "jump", "hurt", "bored", "win", "shot", "shot_hit", "knockout" };
+static const char *const anim_names[ANIM_COUNT] = { "idle", "run", "jump", "hurt", "bored", "win", "shot", "shot_hit", "knockout", "super", "granule" };
 
 /* Every picture of every skin together may hold this many pixels (256 MB). */
 #define SPRITE_PIXELS_MAX (64 * 1024 * 1024)

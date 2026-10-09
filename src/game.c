@@ -367,6 +367,34 @@ static void touch_coins(hd_state *s, hd_player *p)
          }
 }
 
+/* A super attack's granules: a fan forward, a little upward, each a bit faster or slower, falling in arcs. */
+static void granules(hd_state *s, int32_t i)
+{
+   hd_player *p = &s->p[i];
+   int32_t k, n = hd_weapon.super_count;
+   int32_t x = FX_INT(p->x) + PW / 2 + p->facing * hd_weapon.muzzle_x / 2, y = FX_INT(p->y) + PH / 3;
+   for (k = 0; k < n; k++)
+   {
+      hd_shot *q = &s->shot[s->shot_next];
+      /* from the fan's top to its bottom, centered a little above straight ahead */
+      int32_t a = (n > 1 ? -hd_weapon.super_spread / 2 + hd_weapon.super_spread * k / (n - 1) : 0) - ANGLE_FULL / 48;
+      int32_t speed = hd_weapon.super_speed * (80 + rng_range(&s->rng, 41)) / 100;
+      s->shot_next = (s->shot_next + 1) % MAX_SHOTS;
+      memset(q, 0, sizeof *q);
+      q->life = hd_weapon.super_life;
+      q->x = FX(x);
+      q->y = FX(y);
+      q->vx = p->facing * (int32_t)(((int64_t)hd_cos(a & (ANGLE_FULL - 1)) * speed) >> 14);
+      q->vy = (int32_t)(((int64_t)hd_sin(a & (ANGLE_FULL - 1)) * speed) >> 14);
+      q->owner = i;
+      q->damage = hd_weapon.super_damage;
+      q->granule = 1;
+      q->age = rng_range(&s->rng, 8); /* not all twinkling together */
+   }
+   burst(s, x, y, 14, 0xffff6060u, FX(3), 3);
+   s->shake = 12;
+}
+
 /* The weapon: held, it fires every hd_weapon.rate frames, straight ahead from the muzzle. */
 static void fire(hd_state *s, int32_t i)
 {
@@ -389,6 +417,7 @@ static void fire(hd_state *s, int32_t i)
    q->y = FX(y);
    q->vx = p->facing * hd_weapon.speed;
    q->owner = i;
+   q->damage = 1;
    p->shot_wait = hd_weapon.rate;
    p->aim = hd_weapon.rate + 14; /* the pose stays a little after the last shot */
    p->still = 0;
@@ -404,8 +433,8 @@ static void player_step(hd_state *s, int32_t i)
    /* the left stick moves too, when the D-pad does not */
    if (!dir && hd_abs(p->lx) > STICK_DEAD)
       dir = p->lx > 0 ? 1 : -1;
-   /* the run button runs, unless the weapon uses it */
-   int32_t max = (pad & PAD_RUN) && !(hd_weapon.on && hd_weapon.button == PAD_RUN) ? RUN_MAX : WALK_MAX;
+   /* the run button runs, unless the game has a weapon (its buttons shoot) */
+   int32_t max = (pad & PAD_RUN) && !hd_weapon.on ? RUN_MAX : WALK_MAX;
    int32_t was_vy;
 
    if (p->ko)
@@ -428,6 +457,27 @@ static void player_step(hd_state *s, int32_t i)
    }
    if (p->hurt)
       p->hurt--;
+
+   if (p->super_t)
+   {
+      /* a super attack: standing still (in the air too), the granules leave at the release */
+      p->vx = 0;
+      p->vy = 0;
+      if (++p->super_t == hd_weapon.super_release)
+         granules(s, i);
+      if (p->super_t >= hd_weapon.super_frames)
+         p->super_t = 0;
+      return;
+   }
+   if (hd_weapon.super_on && p->charge >= hd_weapon.super_charge && (pressed & hd_weapon.super_button))
+   {
+      p->super_t = 1;
+      p->charge = 0;
+      p->aim = 0;
+      s->shake = 6;
+      hd_play(s, SFX_SUPER, screen_x(s, FX_INT(p->x)));
+      return;
+   }
 
    /* walking and running */
    if (dir)
@@ -584,8 +634,8 @@ static void fights(hd_state *s)
    {
       hd_player *p = &s->p[i];
       int32_t px, py;
-      if (!p->active || p->respawn || p->ko)
-         continue;
+      if (!p->active || p->respawn || p->ko || p->super_t)
+         continue; /* nothing hurts a player knocked out or in a super attack */
       px = FX_INT(p->x);
       py = FX_INT(p->y);
       for (j = 0; j < MAX_ENEMIES; j++)
@@ -629,6 +679,11 @@ static void shots_step(hd_state *s)
       q->life--;
       q->age++;
       q->x += q->vx;
+      if (q->granule)
+      {
+         q->vy = hd_min(q->vy + FX_FRAC(18, 100), FX(8)); /* granules fall */
+         q->y += q->vy;
+      }
       x = FX_INT(q->x);
       y = FX_INT(q->y);
       if (solid(x >> 4, y >> 4) || y < 0)
@@ -648,7 +703,10 @@ static void shots_step(hd_state *s)
          q->hit = SHOT_HIT_FRAMES;
          q->life = 0;
          e->flash = 6;
-         if (--e->hp <= 0)
+         if (!q->granule && hd_weapon.super_on && q->owner >= 0 && q->owner < MAX_PLAYERS)
+            s->p[q->owner].charge = hd_min(s->p[q->owner].charge + 1, hd_weapon.super_charge);
+         e->hp -= hd_max(1, q->damage);
+         if (e->hp <= 0)
          {
             e->alive = 2;
             e->squash = 30;
