@@ -322,6 +322,25 @@ and the same for the germ (`a smooth ROLLING and HOPPING cycle of 8 frames … t
 
 - "None of the three videos looks smooth; can't you see it yourself?" (the user). Measuring the video frame by frame did: the capsule moved about 3 pixels in one frame and half a pixel in the next, and its top went up and down every frame. A probe printing the player's state each frame showed `ground` going 1, 0, 1, 0: with the game's gravity (half a pixel a frame) a standing player sank half a pixel, the engine looked for the floor at the whole pixel and missed it, so every other frame was drawn as a jump. Fixed in the engine for every game (and a second bug it hid: the speed crept past the top speed). The lesson: measure the picture, then print the state, before tuning by eye.
 
+- After the floor fix the user said "much better", but a drawn walk cycle still has only 12 drawings for every speed. The user chose a **rubber-hose puppet**: the body, gloves and shoes as separate pictures, and the engine poses them again on every frame (`rig` in the package format). ChatGPT drew the parts (one queue, `P` being the style prefix below):
+
+```
+Next image (same 1930s rubber-hose style, transparent background, everything separated with empty space between pieces, nothing overlapping, no limbs drawn on the body):
+red_parts_body.png:  a sheet of ROJO the red pill hero as a PUPPET BODY ONLY: just the capsule (glossy red top half, white bottom half) with its cartoon face, NO arms, NO legs, NO gloves, NO shoes, side view facing right, 6 versions in ONE horizontal row, same size: 1 normal grin, 2 blinking, 3 mouth wide open shouting, 4 hurt with a shocked face, 5 tired with droopy eyes, 6 yawning. All the same size and the same position in their cells.
+red_parts_hands.png: a sheet of 6 separate white cartoon GLOVES (rubber-hose style, thick black outline, a cuff at the wrist), in ONE horizontal row, same size, the wrist pointing to the LEFT and the hand to the right: 1 open hand, 2 fist, 3 finger pistol (index forward, thumb up), 4 hand waving, 5 pointing up, 6 open hand seen from the palm.
+red_parts_feet.png:  a sheet of 4 separate chunky glossy RED cartoon SHOES (rubber-hose style, thick black outline, like the hero's shoes), side view with the toe to the RIGHT, in ONE horizontal row, same size: 1 flat on the ground, 2 toe pointing down (pushing off), 3 heel down toe up (contact), 4 seen a little from below while in the air.
+```
+
+Then Azul's parts are recolored and every piece is cut into the engine's sheets, each with the pivot the engine expects (the glove's cuff on the left edge at mid height, the shoe's ankle opening a third of the way across, the body standing on its bottom), every piece of a sheet scaled by the same factor:
+
+```bash
+uv run --with pillow --with numpy examples/antidoto/recolor.py
+uv run --with pillow --with numpy --with scipy examples/antidoto/parts.py 52 22 18   # body, glove and shoe heights
+UV=/path/to/uv python3 examples/antidoto/build.py   # adds "rig" to both skins
+```
+
+- "The black arms are wrong: too close to the mouth, move them further left" (the user, on the first puppet video). The shoulders were in front of the body's middle, so the near arm crossed the face. They moved behind it (the near one a sixth of the body back, the far one two fifths), the hand swings forward less than back, the arms got shorter (15 pixels) so the hands stop at the hip, and the gloves turn along the forearm instead of always pointing forward. "Much better" (the user).
+
 ## Cleaning up
 
 When the game's audio is done, the generated files are copied off the M1 and `~/ai` (the models, the virtual environment and the outputs) is removed there, as the user asked.

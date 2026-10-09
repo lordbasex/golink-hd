@@ -863,6 +863,64 @@ static void test_screens(void)
    hd_content_builtin();
 }
 
+/* A rubber-hose puppet: loads, refuses bad sizes, and draws in every pose, facing both ways and at the
+   screen's edges, without leaving the screen's memory. */
+static void test_rig(void)
+{
+   static uint8_t zip[300000], png[70000];
+   static char level[100000];
+   static hd_state s;
+   const char *err;
+   size_t n;
+   int32_t pose, x;
+   zfile files[3] = {{0}};
+   flat_level(level, sizeof level, 60, 30);
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Puppet\", \"level\": \"level.json\","
+                   " \"sprites\": {\"hero\": {\"players\": [\"a\"], \"skins\": {\"a\": {\"rig\": {"
+                   "\"body\": {\"file\": \"a.png\", \"frame\": [16, 24], \"feet\": 2},"
+                   " \"hand\": {\"file\": \"a.png\", \"frame\": [16, 24]},"
+                   " \"foot\": {\"file\": \"a.png\", \"frame\": [16, 24], \"feet\": 2},"
+                   " \"limb\": 4, \"leg\": 20, \"arm\": 15, \"stride\": 84}}}}}}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   files[2].name = "a.png";
+   files[2].text = (const char *)png;
+   files[2].len = tiny_png(png, 48, 24); /* 3 parts, fewer than a rig names: the last one is used */
+   n = make_zip(zip, files, 3);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  rig: %s\n", err);
+   hd_reset(&s);
+   s.phase = PH_PLAY;
+   s.p[0].active = 1;
+   for (pose = 0; pose < 6; pose++)
+      for (x = -2; x <= 2; x++)
+      {
+         hd_player *p = &s.p[0];
+         p->ground = pose != 2 && pose != 3;
+         p->vx = pose == 1 ? FX(2) : 0;
+         p->vy = pose == 2 ? -FX(3) : FX(2);
+         p->facing = x < 0 ? -1 : 1;
+         p->hurt = pose == 4 ? HURT_FRAMES : 0;
+         p->still = pose == 5 ? 400 : 0; /* past BORED_AFTER (360): yawning */
+         p->landed = pose == 0 ? 2 : 100;
+         p->anim = 1 << 30;
+         s.frame = pose == 5 ? 1 << 30 : pose * 37;
+         /* the camera follows the player: put it near the level's ends and the floor */
+         p->x = FX(x < 0 ? 2 : x > 0 ? 60 * 16 - 20 : 300);
+         p->y = FX(x == 2 ? 2 : 26 * 16 - 40);
+         hd_draw(&s, fb);
+      }
+   files[0].text = "{\"format\": 3, \"title\": \"Puppet\", \"level\": \"level.json\","
+                   " \"sprites\": {\"hero\": {\"players\": [\"a\"], \"skins\": {\"a\": {\"rig\": {"
+                   "\"body\": {\"file\": \"a.png\", \"frame\": [16, 24]}, \"hand\": {\"file\": \"a.png\", \"frame\": [16, 24]},"
+                   " \"foot\": {\"file\": \"a.png\", \"frame\": [16, 24]}, \"limb\": 0}}}}}}";
+   n = make_zip(zip, files, 3);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "limb 1-32") != NULL);
+   hd_content_builtin();
+}
+
 /* A sprite drawn when the state's counters are at their highest (2^30): the frame stays inside the animation. */
 static void test_sprite_counters(void)
 {
@@ -997,6 +1055,7 @@ int main(void)
    test_package();
    test_players_screens_sticks();
    test_trig();
+   test_rig();
    test_path();
    test_bones();
    test_fx();

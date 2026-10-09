@@ -27,6 +27,25 @@ SKINS = ["red", "blue"]
 # pixels walked in one whole walk cycle (12 frames, two steps): the steps follow the ground; at the
 # walking speed (1.8 px a frame) a cycle lasts about a second, 12 drawings a second like an animated cartoon
 STRIDE = 110
+# the rubber-hose puppet (src/rig.c): parts cut by parts.py, arms and legs drawn by the engine;
+# a skin with a rig is posed on every frame instead of playing its sheets
+RIG = {"limb": 4, "leg": 24, "arm": 15, "stride": 84, "lift": 8, "bob": 3}
+
+
+def rig(skin):
+    """The skin's puppet from sprites/ (parts.py), or None."""
+    files = {"body": f"{skin}_body.png", "hand": f"{skin}_hands.png", "foot": f"{skin}_feet.png"}
+    if os.environ.get("NO_RIG") or not all(os.path.exists(os.path.join(HERE, "sprites", f)) for f in files.values()):
+        return None
+    out = dict(RIG)
+    for part, name in files.items():
+        shutil.copy(os.path.join(HERE, "sprites", name), os.path.join(OUT, name))
+        w, h = png_size(os.path.join(OUT, name))
+        cells = 4 if part == "foot" else 6
+        out[part] = {"file": name, "frame": [w // cells, h]}
+        if part != "hand":
+            out[part]["feet"] = 2
+    return out
 
 
 def png_size(path):
@@ -162,6 +181,9 @@ def main():
             if name == "run":
                 anims[name]["stride"] = STRIDE
         skins[skin] = anims
+        puppet = rig(skin)
+        if puppet:
+            skins[skin]["rig"] = puppet
     manifest = {
         "format": 3,
         "title": "ANTÍDOTO",

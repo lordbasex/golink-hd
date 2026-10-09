@@ -108,6 +108,18 @@ Format 3 adds two keys to the manifest, both optional; a package of format 1 or 
 - Each animation is one PNG with its frames in a row, `frame` pixels each (4 to 512), so the frame count is the picture's width over the frame's; `fps` 1 to 60 (10 by default); `feet`, the empty pixels under the feet in every frame. The character's feet stand on the hitbox's bottom, centered on it, and it faces right (the engine mirrors it).
 - The states: `idle` (required), `run` (on the ground and moving), `jump` (in the air: the frames go from rising to falling with the speed, leaving out the first and the last, take-off and landing, when there are 4 or more), `hurt` (once, when hit), `bored` (after 6 seconds standing still with no button held: once, then idle for 4 seconds, again and again), `win` (the stage is cleared). A missing one shows `idle`.
 - `stride` (pixels, for `run`): the frames follow the distance walked instead of the time, one whole cycle every `stride` pixels, so the steps match the ground at any speed (walking and running look different without two animations).
+- `rig` (in place of the animations) makes the skin a rubber-hose puppet posed again on every frame: a body picture with its faces, gloves and shoes, the arms and legs drawn by the engine as black hoses. The walk follows the distance walked (feet planted on the ground, heel then toe, the arms swinging against the legs, the body bouncing), standing it breathes with its arms hanging, it stretches in the air and squashes on landing, blinks, shouts when it jumps, makes a face when hurt and yawns when bored; the gloves turn the way the forearm points.
+
+  ```json
+  "rig": {
+    "body": {"file": "red_body.png", "frame": [39, 54], "feet": 2},
+    "hand": {"file": "red_hands.png", "frame": [24, 35]},
+    "foot": {"file": "red_feet.png", "frame": [27, 20], "feet": 2},
+    "limb": 4, "leg": 24, "arm": 15, "stride": 84, "lift": 8, "bob": 3
+  }
+  ```
+
+  `body` holds 6 faces in a row (normal, blink, shout, hurt, tired, yawn), facing right, standing on its bottom; `hand` 6 gloves (open, fist, finger pistol, wave, pointing up, palm), the wrist's cuff on the cell's left edge at mid height and the fingers to the right; `foot` 4 shoes (flat, toe down, heel down, in the air), the toe to the right and the ankle a third of the way across. A sheet with fewer pictures uses its last one for the rest. `limb` is the hoses' width (1 to 32), `leg` and `arm` their length (4 to 200), `stride` the pixels of a whole walk cycle (two steps), `lift` how high a foot rises (0 to 100), `bob` how much the body bounces (0 to 50). `examples/antidoto/parts.py` cuts an image AI's part sheets into these.
 - `from` and `frames` use only part of a picture's frames (`{"file": "germ.png", "frame": [44, 48], "from": 0, "frames": 4}`), so one strip can give several animations.
 - The level's things have their own animations too, all optional: `coin` (any pickup), `checkpoint` with `off` and `on`, `goal`, and `enemy` with `walk` and `squashed` (it faces left, like the built-in one; its hitbox is the physics' `enemy_hitbox`). Each stands on its cell's bottom (an enemy on its hitbox's bottom), centered.
 - All the sprites together may hold 64 million pixels.

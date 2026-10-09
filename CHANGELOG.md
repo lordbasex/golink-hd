@@ -7,6 +7,7 @@
 - ANTÍDOTO (`examples/antidoto`), a game whose art and music are made with AI: the heroes' strips, `cut.sh` and `recolor.py` (Azul is Rojo recolored), `build.py` and `make_tracks.py`; `tools/sprites.py` cuts an image AI's strip into an engine sheet; `docs/howto/ai-art-and-audio.md` logs every prompt and command.
 - Format 3 also has the enemy's hitbox, sprites for the level's things (pickup, checkpoint, goal, enemy), `from`/`frames` to use part of a strip, `stride` (a run animation that follows the distance walked), `textures` (a tile kind painted as a picture laid over the level) and `screens` (title, a level intro skipped by holding jump, ending).
 - `tools/glhd pack` packs every file the manifest names: sprites, layers, textures and sounds.
+- `rig`: a skin can be a rubber-hose puppet (a body with 6 faces, 6 gloves, 4 shoes; arms and legs drawn as hoses) posed again on every frame from the player's state, so the walk is as smooth as the screen with 16 small pictures: planted feet, swinging arms, gloves turned along the forearm, bounce, breath, stretch and squash, blinks, shouts, hurt and yawn faces. ANTÍDOTO's heroes use it (`examples/antidoto/parts.py` cuts the part sheets; Azul's are recolored).
 - `tools/hdrun --every N --audio FILE.raw`: every Nth frame as PNG and the run's sound, to make a video with ffmpeg.
 
 ### Added

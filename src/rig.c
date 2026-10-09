@@ -56,23 +56,60 @@ static void hose(hd_surface *s, int32_t x0, int32_t y0, int32_t bx, int32_t by, 
    }
 }
 
+/* The direction of (dx, dy) on the screen, 0..4095 clockwise from the right (y grows down), found on the
+   engine's own sine table so it is the same on every computer. */
+static int32_t turn(int32_t dx, int32_t dy)
+{
+   int32_t ax = hd_abs(dx), ay = hd_abs(dy), lo = 0, hi = ANGLE_FULL / 4, a;
+   if (!ax && !ay)
+      return 0;
+   /* the first quarter: the angle where sin * ax meets cos * ay */
+   while (lo < hi)
+   {
+      int32_t mid = (lo + hi) / 2;
+      if ((int64_t)hd_sin(mid) * ax < (int64_t)hd_cos(mid) * ay)
+         lo = mid + 1;
+      else
+         hi = mid;
+   }
+   a = lo;
+   if (dx < 0)
+      a = ANGLE_FULL / 2 - a;
+   if (dy < 0)
+      a = ANGLE_FULL - a;
+   return a & (ANGLE_FULL - 1);
+}
+
 /* One picture of a parts sheet. */
 static const hd_image *part(const hd_anim *an, int32_t k)
 {
    return &an->frames[hd_clamp(k, 0, an->count - 1)];
 }
 
-/* A part drawn with its pivot (px, py, in the picture) at (x, y), mirrored when facing left, scaled (16.16). */
-static void place(hd_surface *s, const hd_image *im, int32_t x, int32_t y, int32_t px, int32_t py, int32_t left, int32_t sx, int32_t sy, int32_t white)
+/* A part drawn with its pivot (px, py, in the picture) at (x, y), mirrored when facing left, turned by
+   `angle` on the screen (its right side then points that way; facing left, its mirrored left side does),
+   scaled (16.16). */
+static void place(hd_surface *s, const hd_image *im, int32_t x, int32_t y, int32_t px, int32_t py, int32_t left,
+                  int32_t angle, int32_t sx, int32_t sy, int32_t white)
 {
    hd_style st;
    memset(&st, 0, sizeof st);
    st.flags = (left ? DRAW_FLIP_X : 0) | (white ? DRAW_WHITE : 0);
-   gfx_blit_rot(s, im, x, y, left ? im->w - px : px, py, 0, sx, sy, &st);
+   gfx_blit_rot(s, im, x, y, left ? im->w - px : px, py, angle & (ANGLE_FULL - 1), sx, sy, &st);
+}
+
+/* A glove at the end of an arm bending through (bx, by): pointing the way the forearm goes. */
+static void glove(hd_surface *s, const hd_image *im, int32_t x, int32_t y, int32_t bx, int32_t by, int32_t left, int32_t white)
+{
+   int32_t a = turn(x - bx, y - by);
+   place(s, im, x, y, 0, im->h / 2, left, left ? a - ANGLE_FULL / 2 : a, FX_ONE, FX_ONE, white);
 }
 
 /* x of a point `dx` in front of the body (mirrored when facing left). */
 #define FWD(dx) (left ? -(dx) : (dx))
+/* The shoulders, seen from the side: both behind the middle (the far one, k 1, further back), so the arms
+   swing over the back of the white half and leave the face, on the front, clear. */
+#define SHOULDER_X(k) (feet_x + FWD((k) ? -body->w * 2 / 5 : -body->w / 6))
 
 void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_player *p, int32_t i,
                  int32_t feet_x, int32_t feet_y, int32_t white)
@@ -105,7 +142,7 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
       bob = (int32_t)(((int64_t)hd_abs(hd_sin(phase * 2)) * rig->bob) >> 14);
    else if (p->ground)
    {
-      squash = FX_ONE + (int32_t)(((int64_t)hd_sin((t * 4096 / 150) & 4095) * (FX_ONE / 50)) >> 14);
+      squash = FX_ONE + (int32_t)(((int64_t)hd_sin((t % 150 * 4096 / 150) & 4095) * (FX_ONE / 50)) >> 14);
       stretch = FX_ONE - (squash - FX_ONE);
    }
    if (p->ground && p->landed < 8)
@@ -122,7 +159,7 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
 
    hip_y = feet_y - rig->leg + bob / 2;
    body_bottom = hip_y + rig->limb;
-   shoulder_y = body_bottom - (int32_t)(((int64_t)body->h * squash >> 16) * 45 / 100);
+   shoulder_y = body_bottom - (int32_t)(((int64_t)body->h * squash >> 16) * 46 / 100);
 
    /* legs: the two feet half a cycle apart */
    for (k = 0; k < 2; k++)
@@ -157,11 +194,13 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
    /* arms: swing against the legs; still, hands on the hips; in the air, up */
    for (k = 0; k < 2; k++)
    {
-      int32_t sh_x = feet_x + FWD(k ? -body->w * 2 / 5 : body->w * 2 / 5);
+      int32_t sh_x = SHOULDER_X(k);
       if (moving)
       {
          int32_t ph = (phase + (k ? 0 : 2048)) & 4095;
          int32_t swing = (int32_t)(((int64_t)hd_sin(ph) * (rig->arm * 3 / 5)) >> 14);
+         if (swing > 0)
+            swing = swing * 2 / 3; /* forward less than back: the hand stops before the mouth */
          hand_x[k] = sh_x + FWD(swing);
          hand_y[k] = shoulder_y + rig->arm * 4 / 5 - hd_abs(swing) / 3;
          hand_pose = HAND_FIST;
@@ -183,11 +222,12 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
       }
       else
       {
-         /* on the hips: the elbows out, the hands at the body's sides */
-         hand_x[k] = sh_x + FWD(k ? rig->arm / 6 : -rig->arm / 6);
-         hand_y[k] = body_bottom - rig->limb * 2;
+         /* standing: the arms hang, swaying a little with the breath, the elbows a bit back */
+         int32_t sway = (int32_t)(((int64_t)hd_sin(((t % 150 * 4096 / 150) + k * 700) & 4095) * 2) >> 14);
+         hand_x[k] = sh_x + FWD((k ? -2 : 3) + sway);
+         hand_y[k] = shoulder_y + rig->arm * 9 / 10;
          hand_pose = HAND_FIST;
-         elbow[k] = FWD(k ? -rig->arm / 2 : rig->arm / 2);
+         elbow[k] = FWD(-rig->arm / 5);
       }
    }
 
@@ -199,18 +239,20 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
       const hd_image *shoe = part(&rig->foot, foot_pose[k]);
       if (k == 1)
       {
-         int32_t sh_x = feet_x + FWD(-body->w * 2 / 5);
-         hose(s, sh_x, shoulder_y, (sh_x + hand_x[1]) / 2 + elbow[1], (shoulder_y + hand_y[1]) / 2, hand_x[1], hand_y[1], rig->limb);
-         place(s, part(&rig->hand, hand_pose), hand_x[1], hand_y[1], 0, part(&rig->hand, hand_pose)->h / 2, left, FX_ONE, FX_ONE, white);
+         int32_t sh_x = SHOULDER_X(1);
+         int32_t ex = (sh_x + hand_x[1]) / 2 + elbow[1], ey = (shoulder_y + hand_y[1]) / 2;
+         hose(s, sh_x, shoulder_y, ex, ey, hand_x[1], hand_y[1], rig->limb);
+         glove(s, part(&rig->hand, hand_pose), hand_x[1], hand_y[1], ex, ey, left, white);
       }
       hose(s, hip_x, hip_y, bx, by, foot_x[k], foot_y[k] - shoe->h / 2, rig->limb);
-      place(s, shoe, foot_x[k], foot_y[k], shoe->w / 3, shoe->h - rig->foot.feet, left, FX_ONE, FX_ONE, white);
+      place(s, shoe, foot_x[k], foot_y[k], shoe->w / 3, shoe->h - rig->foot.feet, left, 0, FX_ONE, FX_ONE, white);
       if (k == 1)
-         place(s, body, feet_x, body_bottom, body->w / 2, body->h - rig->body.feet, left, stretch, squash, white);
+         place(s, body, feet_x, body_bottom, body->w / 2, body->h - rig->body.feet, left, 0, stretch, squash, white);
    }
    {
-      int32_t sh_x = feet_x + FWD(body->w * 2 / 5);
-      hose(s, sh_x, shoulder_y, (sh_x + hand_x[0]) / 2 + elbow[0], (shoulder_y + hand_y[0]) / 2, hand_x[0], hand_y[0], rig->limb);
-      place(s, part(&rig->hand, hand_pose), hand_x[0], hand_y[0], 0, part(&rig->hand, hand_pose)->h / 2, left, FX_ONE, FX_ONE, white);
+      int32_t sh_x = SHOULDER_X(0);
+      int32_t ex = (sh_x + hand_x[0]) / 2 + elbow[0], ey = (shoulder_y + hand_y[0]) / 2;
+      hose(s, sh_x, shoulder_y, ex, ey, hand_x[0], hand_y[0], rig->limb);
+      glove(s, part(&rig->hand, hand_pose), hand_x[0], hand_y[0], ex, ey, left, white);
    }
 }
