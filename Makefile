@@ -58,7 +58,7 @@ CFLAGS += -std=c99 $(WARNINGS) $(fpic) -fvisibility=hidden $(INCFLAGS)
 include Makefile.common
 
 OBJECTS := $(SOURCES_C:.c=.o)
-HEADERS := include/golink_hd.h src/hd.h src/fixed.h src/pack.h src/gfx.h src/text.h src/bones.h src/road.h src/path.h
+HEADERS := include/golink_hd.h src/hd.h src/fixed.h src/pack.h src/gfx.h src/text.h src/bones.h src/road.h src/path.h src/sprite.h
 
 all: $(TARGET)
 

@@ -18,10 +18,12 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
 #include "hd.h"
 #include "pack.h"
 #include "gfx.h"
+#include "sprite.h"
 
 char hd_title[64];
 hd_fx_config hd_fx;
@@ -37,6 +39,8 @@ int32_t hd_content_gen;
 void hd_content_builtin(void)
 {
    hd_art_build();
+   hd_sprites_free();
+   hd_physics_default(); /* before the level: its start stands on the hitbox's height */
    hd_level_build();
    strcpy(hd_title, "GO-LINK HD DEMO");
    hd_w = 640;
@@ -229,6 +233,60 @@ static int32_t num(const json *obj, const char *key, int32_t lo, int32_t hi, int
       return fallback;
    }
    return (int32_t)j->num;
+}
+
+/*
+ * The manifest's "physics" (format 3): the players' hitbox in pixels and
+ * their movement in hundredths of a pixel per frame (per frame squared for
+ * accelerations), every key optional:
+ *   {"hitbox": [w, h], "walk": 250, "run": 400, "accel": 30, "air_accel": 18,
+ *    "friction": 25, "air_friction": 5, "gravity": 45, "gravity_hold": 28,
+ *    "fall_max": 700, "jump": 640, "jump_cut": 200, "bounce": 450, "bounce_held": 700}
+ */
+static const char *load_physics(const json *ph)
+{
+   static const struct { const char *key; int32_t lo, hi; size_t at; int neg; } speeds[] = {
+      { "walk", 10, 2000, offsetof(hd_physics, walk_max), 0 },
+      { "run", 10, 2000, offsetof(hd_physics, run_max), 0 },
+      { "accel", 1, 500, offsetof(hd_physics, accel_ground), 0 },
+      { "air_accel", 1, 500, offsetof(hd_physics, accel_air), 0 },
+      { "friction", 1, 500, offsetof(hd_physics, friction_ground), 0 },
+      { "air_friction", 0, 500, offsetof(hd_physics, friction_air), 0 },
+      { "gravity", 1, 500, offsetof(hd_physics, gravity), 0 },
+      { "gravity_hold", 1, 500, offsetof(hd_physics, gravity_hold), 0 },
+      { "fall_max", 50, 3000, offsetof(hd_physics, fall_max), 0 },
+      { "jump", 50, 3000, offsetof(hd_physics, jump_speed), 0 },
+      { "jump_cut", 0, 3000, offsetof(hd_physics, jump_cut), 1 },
+      { "bounce", 50, 3000, offsetof(hd_physics, bounce), 1 },
+      { "bounce_held", 50, 3000, offsetof(hd_physics, bounce_held), 1 },
+   };
+   const json *hb;
+   size_t i;
+   int bad = 0;
+   if (!ph)
+      return NULL;
+   if (ph->type != JSON_OBJECT)
+      return "manifest.json's physics must be an object";
+   if ((hb = hd_json_get(ph, "hitbox")))
+   {
+      if (hb->type != JSON_ARRAY || hb->count != 2 || hd_json_at(hb, 0)->type != JSON_INT || hd_json_at(hb, 1)->type != JSON_INT ||
+          hd_json_at(hb, 0)->num < 4 || hd_json_at(hb, 0)->num > 128 || hd_json_at(hb, 1)->num < 4 || hd_json_at(hb, 1)->num > 192)
+         return "the physics' hitbox must be [width, height]: 4 to 128 and 4 to 192 pixels";
+      hd_phys.pw = (int32_t)hd_json_at(hb, 0)->num;
+      hd_phys.ph = (int32_t)hd_json_at(hb, 1)->num;
+   }
+   for (i = 0; i < sizeof speeds / sizeof speeds[0]; i++)
+   {
+      if (!hd_json_get(ph, speeds[i].key))
+         continue;
+      {
+         int32_t v = FX_FRAC(num(ph, speeds[i].key, speeds[i].lo, speeds[i].hi, 0, &bad), 100);
+         *(int32_t *)((char *)&hd_phys + speeds[i].at) = speeds[i].neg ? -v : v;
+      }
+   }
+   if (bad)
+      return "the physics have a value out of range or that is not a whole number";
+   return NULL;
 }
 
 /*
@@ -478,6 +536,12 @@ static const char *load_package(const uint8_t *data, size_t size)
       hd_h = 640;
    }
 
+   err = load_physics(hd_json_get(man, "physics"));
+   if (err)
+   {
+      hd_json_free(man);
+      return err;
+   }
    text = hd_zip_read(&zip, level->str, &len, &err);
    if (text)
    {
@@ -498,6 +562,8 @@ static const char *load_package(const uint8_t *data, size_t size)
       err = load_sheet(&zip, pictures, s);
    if (!err)
       err = load_extras(&zip, pictures);
+   if (!err)
+      err = hd_sprites_load(&zip, hd_json_get(man, "sprites"));
    hd_json_free(man);
    return err;
 }

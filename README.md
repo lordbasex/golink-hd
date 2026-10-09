@@ -76,6 +76,40 @@ PNGs may be RGBA, RGB, grey or palette (with transparency), 8 bits per channel, 
 
 `tools/glhd export-demo DIR` writes the built-in demo as a package folder, `tools/glhd pack DIR OUT.glhd` zips a package folder (the manifest, its level and the pictures it names) and `tools/glhd check FILE.glhd` loads a package like the core does (its title and SHA-256, or why it cannot play). The tests play `tests/data/demo-deflate.glhd` (the demo zipped with deflate, its PNGs saved by an image library) and check it is the very same game as the built-in one, and that every cut or damaged copy fails cleanly.
 
+### Physics and sprites (format 3)
+
+Format 3 adds two keys to the manifest, both optional; a package of format 1 or 2 plays as before.
+
+**`physics`**: the players' hitbox and movement, so a game can have a hero of its own size. The hitbox is in pixels; speeds are hundredths of a pixel per frame and accelerations hundredths of a pixel per frame squared. Every key is optional and the built-in game's value stays for the ones left out:
+
+| Key | Built-in | Range |
+|---|---|---|
+| `hitbox` | `[10, 22]` | 4 to 128 wide, 4 to 192 tall |
+| `walk`, `run` | 250, 400 | 10 to 2000 |
+| `accel`, `air_accel` | 30, 18 | 1 to 500 |
+| `friction`, `air_friction` | 25, 5 | 1 to 500, 0 to 500 |
+| `gravity`, `gravity_hold` (while jump is held going up) | 45, 28 | 1 to 500 |
+| `fall_max` | 700 | 50 to 3000 |
+| `jump`, `jump_cut` (the speed a released jump is cut to) | 640, 200 | 50 to 3000, 0 to 3000 |
+| `bounce`, `bounce_held` (off an enemy's head) | 450, 700 | 50 to 3000 |
+
+**`sprites`**: the heroes' own pictures, of any size, an animation per state and a skin per player:
+
+```json
+"sprites": {"hero": {
+  "players": ["red", "blue"],
+  "skins": {"red": {
+    "idle": {"file": "red_idle.png", "frame": [56, 84], "fps": 8, "feet": 2},
+    "run": {...}, "jump": {...}, "hurt": {...}, "bored": {...}, "win": {...}}}}}
+```
+
+- `players`: the skin of player 1, 2…; the list repeats for the rest (two skins: odd players wear the first, even the second).
+- Each animation is one PNG with its frames in a row, `frame` pixels each (4 to 512), so the frame count is the picture's width over the frame's; `fps` 1 to 60 (10 by default); `feet`, the empty pixels under the feet in every frame. The character's feet stand on the hitbox's bottom, centered on it, and it faces right (the engine mirrors it).
+- The states: `idle` (required), `run` (on the ground and moving), `jump` (in the air: the frames go from rising to falling with the speed, leaving out the first and the last, take-off and landing, when there are 4 or more), `hurt` (once, when hit), `bored` (after 6 seconds standing still with no button held: once, then idle for 4 seconds, again and again), `win` (the stage is cleared). A missing one shows `idle`.
+- All the sprites together may hold 64 million pixels.
+
+`tools/sprites.py` cuts an image AI's strip (frames in a row on a transparent background) into such a sheet; [docs/howto/ai-art-and-audio.md](docs/howto/ai-art-and-audio.md) shows the whole path, from the prompts to the package, for [ANTÍDOTO](examples/antidoto).
+
 ### The API test games
 
 `examples/` holds three packages made to check everything at once (written by `python3 examples/make-api-test.py`, pictures drawn in colors no built-in picture has, so a picture that failed to load shows as the demo's):

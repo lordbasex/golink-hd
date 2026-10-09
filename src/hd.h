@@ -23,7 +23,7 @@
  * The save state's layout version. Bump it whenever hd_state changes; a
  * save state of another version is refused cleanly, never misread.
  */
-#define HD_STATE_VERSION 4
+#define HD_STATE_VERSION 5
 
 /*
  * The logical screen, chosen by the game: 640 x 360 (16:9, scaled x3 to
@@ -119,9 +119,22 @@ enum
 /* Every sample the mixer knows: the effects and the music's two waves. */
 #define HD_SAMPLES (SFX_COUNT + 2)
 
-/* The player's hitbox inside its 16 x 24 picture. */
-#define PW 10
-#define PH 22
+/*
+ * The players' body and movement: the built-in game's by default, a
+ * package's own with format 3's "physics" (a bigger hero drawn from bigger
+ * pictures). Speeds and accelerations are 16.16 pixels per frame (squared).
+ */
+typedef struct
+{
+   int32_t pw, ph; /* the hitbox, in pixels */
+   int32_t walk_max, run_max, accel_ground, accel_air, friction_ground, friction_air;
+   int32_t gravity, gravity_hold, fall_max, jump_speed, jump_cut, bounce, bounce_held;
+} hd_physics;
+extern hd_physics hd_phys;
+void hd_physics_default(void);
+/* The player's hitbox (inside its 16 x 24 picture in the built-in game). */
+#define PW (hd_phys.pw)
+#define PH (hd_phys.ph)
 /* An enemy's hitbox inside its 16 x 16 picture. */
 #define EW 14
 #define EH 12
@@ -142,6 +155,7 @@ typedef struct
    int32_t lx, ly;           /* the left stick this frame */
    int32_t check_x, check_y; /* where it comes back, in pixels */
    int32_t landed;           /* frames since it touched the ground */
+   int32_t still;            /* frames standing still with no button held (a sprite's bored animation) */
 } hd_player;
 
 typedef struct
@@ -278,7 +292,7 @@ void hd_content_builtin(void);
  */
 int hd_content_load(const uint8_t *data, size_t size, const char **err);
 /* The package format this engine reads (manifest "format"). */
-#define HD_PACKAGE_FORMAT 2
+#define HD_PACKAGE_FORMAT 3
 
 /* game.c */
 void hd_static_init(void);

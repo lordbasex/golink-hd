@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Added
+- Package format 3: `physics` (the players' hitbox, speeds, gravity and jump) and `sprites` (the heroes' own pictures of any size: idle, run, jump, hurt, bored and win animations, a skin per player). Save states are version 5 (each player's frames standing still).
+- ANTÍDOTO (`examples/antidoto`), a game whose art and music are made with AI: the heroes' strips, `cut.sh` and `recolor.py` (Azul is Rojo recolored), `build.py` and `make_tracks.py`; `tools/sprites.py` cuts an image AI's strip into an engine sheet; `docs/howto/ai-art-and-audio.md` logs every prompt and command.
+- `tools/glhd pack` packs the sprites' files too.
+
+### Added
 - The API test games (`examples/`, written by `examples/make-api-test.py`): a 16:9 game that uses every picture, letter and effect of the package format with a dialog at each stop, and 4:3 and 9:16 ones; CI packs, checks and plays them (`tools/runs/api.txt`, `api.expected`).
 - `tools/hdrun --check` (the game's info, a state saved halfway and played again, a restart played again) and `--music off`.
 

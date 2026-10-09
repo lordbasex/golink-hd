@@ -9,6 +9,7 @@
 #include <string.h>
 #include "hd.h"
 #include "gfx.h"
+#include "sprite.h"
 #include "text.h"
 
 static int32_t cam_x, cam_y;
@@ -194,6 +195,67 @@ static void actor(const hd_image *im, int32_t x, int32_t y, int32_t flags, int32
    gfx_blit(&surf, im, x, y, &st);
 }
 
+/* Frame t of an animation (t in frames of 60 per second), looping or held on its last frame. */
+static const hd_image *anim_frame(const hd_anim *an, int32_t t, int loop)
+{
+   int32_t f = (t < 0 ? 0 : t) * an->fps / 60;
+   f = loop ? f % an->count : hd_min(f, an->count - 1);
+   return &an->frames[f];
+}
+
+/* A hero drawn from its package's sprites: its state picks the animation. */
+static void hero_sprite(const hd_state *s, const hd_player *p, int32_t i)
+{
+   const hd_skin *sk = &hd_skins[hd_skin_of[i]];
+   const hd_anim *an;
+   const hd_image *im;
+   int32_t t = s->frame, loop = 1, state;
+   if (s->phase == PH_CLEAR)
+   {
+      state = ANIM_WIN;
+      t = s->phase_t;
+   }
+   else if (p->hurt > HURT_FRAMES - 30 && sk->anim[ANIM_HURT].frames)
+   {
+      state = ANIM_HURT;
+      t = HURT_FRAMES - p->hurt;
+      loop = 0;
+   }
+   else if (!p->ground)
+      state = ANIM_JUMP;
+   else if (hd_abs(p->vx) >= FX_FRAC(1, 4))
+      state = ANIM_RUN;
+   else if (p->still >= BORED_AFTER && sk->anim[ANIM_BORED].frames)
+   {
+      /* the bored animation once, then idle a while, again and again */
+      const hd_anim *b = &sk->anim[ANIM_BORED];
+      int32_t len = b->count * 60 / b->fps;
+      t = (p->still - BORED_AFTER) % (len + 240);
+      state = t < len ? ANIM_BORED : ANIM_IDLE;
+      if (state == ANIM_IDLE)
+         t = s->frame;
+   }
+   else
+      state = ANIM_IDLE;
+   if (state != ANIM_HURT && p->hurt && ((p->hurt >> 2) & 1))
+      return; /* blinking */
+   an = hd_skin_anim(sk, state);
+   if (!an)
+      return;
+   if (state == ANIM_JUMP && an == &sk->anim[ANIM_JUMP])
+   {
+      /* rising to falling across the frames, leaving out the first and last (take-off and landing) when there are 4 or more */
+      int32_t first = an->count >= 4 ? 1 : 0, last = an->count >= 4 ? an->count - 2 : an->count - 1;
+      int32_t span = hd_phys.jump_speed + hd_phys.fall_max, at = hd_clamp(p->vy + hd_phys.jump_speed, 0, span - 1);
+      im = &an->frames[first + (int32_t)((int64_t)at * (last - first + 1) / span)];
+   }
+   else
+      im = anim_frame(an, t, loop);
+   actor(im, FX_INT(p->x) + PW / 2 - im->w / 2 - cam_x, FX_INT(p->y) + PH - (im->h - an->feet) - cam_y,
+         (p->facing < 0 ? BLIT_FLIP : 0) | (p->hurt > HURT_FLASH ? BLIT_WHITE : 0),
+         FX_INT(p->x) + PW / 2 - cam_x, FX_INT(p->y) + PH - cam_y, p->ground ? PW * 3 / 5 : PW * 2 / 5);
+}
+
 static void actors(const hd_state *s)
 {
    int32_t i;
@@ -213,6 +275,11 @@ static void actors(const hd_state *s)
       int32_t frame;
       if (!p->active || p->respawn)
          continue;
+      if (hd_skin_count)
+      {
+         hero_sprite(s, p, i);
+         continue;
+      }
       if (p->hurt && ((p->hurt >> 2) & 1))
          continue; /* blinking */
       if (!p->ground)

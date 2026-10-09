@@ -672,7 +672,7 @@ static void test_effects_package(void)
    snprintf(with_fx, sizeof with_fx, "%s, \"effects\": {\"darkness\": 999}}", level);
    n = make_zip(zip, files, 2);
    CHECK(hd_content_load(zip, n, &err) == 0);
-   files[0].text = "{\"format\": 3, \"title\": \"Later\", \"level\": \"level.json\"}";
+   files[0].text = "{\"format\": 4, \"title\": \"Later\", \"level\": \"level.json\"}";
    n = make_zip(zip, files, 2);
    CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "newer") != NULL);
    hd_content_builtin();
@@ -722,6 +722,57 @@ static void test_goal_height(void)
       CHECK(high ? s.phase != PH_CLEAR : s.phase == PH_CLEAR);
    }
    hd_content_builtin();
+}
+
+/* Format 3's physics: a bigger hero that stands on the floor and jumps as high as asked. */
+static void test_physics(void)
+{
+   static uint8_t zip[200000];
+   static char level[100000];
+   static hd_state s;
+   hd_input in[MAX_PLAYERS];
+   const char *err;
+   size_t n;
+   int32_t f, top, floor_y;
+   zfile files[2];
+   flat_level(level, sizeof level, 60, 30); /* ground on rows 27 to 29 */
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Big\", \"players\": 1, \"level\": \"level.json\","
+                   " \"physics\": {\"hitbox\": [36, 76], \"walk\": 300, \"jump\": 1000, \"gravity\": 50, \"fall_max\": 1200}}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  physics: %s\n", err);
+   CHECK(PW == 36 && PH == 76 && hd_phys.walk_max == FX(3) && hd_phys.jump_speed == FX(10) && hd_phys.run_max == FX(4));
+   floor_y = 27 * TILE;
+   hd_reset(&s);
+   top = 1 << 30;
+   for (f = 0; f < 200; f++)
+   {
+      memset(in, 0, sizeof in);
+      if (f == 10)
+         in[0].buttons = PAD_START;
+      if (f >= 60 && f < 80)
+         in[0].buttons = PAD_JUMP;
+      hd_step(&s, in);
+      if (f == 59)
+         CHECK(FX_INT(s.p[0].y) + PH == floor_y); /* standing on the floor */
+      top = hd_min(top, FX_INT(s.p[0].y));
+   }
+   /* v^2 / 2g with v = 10 px and g = 0.28 while held (the default hold gravity): about 178 px */
+   CHECK(floor_y - PH - top > 150);
+   CHECK(FX_INT(s.p[0].y) + PH == floor_y); /* and back on the floor */
+   /* out of range */
+   files[0].text = "{\"format\": 3, \"title\": \"Bad\", \"level\": \"level.json\", \"physics\": {\"hitbox\": [2, 500]}}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0);
+   files[0].text = "{\"format\": 3, \"title\": \"Bad\", \"level\": \"level.json\", \"physics\": {\"jump\": -5}}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0);
+   hd_content_builtin();
+   CHECK(PW == 10 && PH == 22); /* the built-in game's again */
 }
 
 static int32_t logged;
@@ -831,6 +882,7 @@ int main(void)
    test_showcase();
    test_effects_package();
    test_goal_height();
+   test_physics();
    test_api();
    if (failures)
    {

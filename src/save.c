@@ -139,6 +139,7 @@ static void sanitize(hd_state *s)
       p->facing = hd_clamp(p->facing, -1, 1);
       p->anim = hd_clamp(p->anim, 0, COUNT);
       p->landed = hd_clamp(p->landed, 0, COUNT);
+      p->still = hd_clamp(p->still, 0, 1 << 20);
       p->coins = hd_clamp(p->coins, 0, COUNT);
       p->coyote = hd_clamp(p->coyote, 0, 60);
       p->buffer = hd_clamp(p->buffer, 0, 60);

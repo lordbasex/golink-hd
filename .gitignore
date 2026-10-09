@@ -16,3 +16,7 @@ walk.out
 *.sha256
 tools/bench
 showcase.out
+# ANTÍDOTO's generated files: the package folder and the music (big WAVs, until packages carry compressed audio)
+examples/antidoto/game/
+examples/antidoto/source/music/
+examples/antidoto/source/blue_*.png

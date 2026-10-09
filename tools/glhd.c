@@ -232,8 +232,8 @@ static void le32(FILE *f, uint32_t v)
 /* The files a package folder's manifest names, in a fixed order: the
  * manifest, the level, then its pictures in the format's order. Names stay
  * inside the folder (no absolute paths, no ".."). */
-#define PACK_MAX 16
-static int pack_names(const char *dir, char names[PACK_MAX][256], int *count)
+#define PACK_MAX 256
+static int pack_names(const char *dir, char (*names)[256], int *count)
 {
    static const char *const pictures[] = { "hero", "enemy", "tiles", "coin", "checkpoint", "goal", "portrait", "lut" };
    char path[1024];
@@ -285,6 +285,29 @@ static int pack_names(const char *dir, char names[PACK_MAX][256], int *count)
       if (i == *count)
          snprintf(names[(*count)++], 256, "%s", j->str);
    }
+   /* format 3: every sprite's file */
+   {
+      const json *sp = hd_json_get(man, "sprites"), *hero = sp ? hd_json_get(sp, "hero") : NULL;
+      const json *skins = hero ? hd_json_get(hero, "skins") : NULL, *sk, *an;
+      for (sk = skins ? skins->child : NULL; ok && sk; sk = sk->next)
+         for (an = sk->child; ok && an; an = an->next)
+         {
+            const json *file = hd_json_get(an, "file");
+            if (!file || file->type != JSON_STRING)
+               continue;
+            for (i = 0; i < *count && strcmp(names[i], file->str); i++)
+               ;
+            if (i < *count)
+               continue;
+            if (*count >= PACK_MAX)
+            {
+               fprintf(stderr, "%s names more than %d files\n", path, PACK_MAX);
+               ok = 0;
+               break;
+            }
+            snprintf(names[(*count)++], 256, "%s", file->str);
+         }
+   }
    for (i = 0; ok && i < *count; i++)
       if (!names[i][0] || names[i][0] == '/' || names[i][0] == '\\' || strstr(names[i], "..") || strchr(names[i], ':'))
       {
@@ -299,9 +322,10 @@ static int pack_names(const char *dir, char names[PACK_MAX][256], int *count)
  * order (same bytes every time). */
 static int pack(const char *dir, const char *out)
 {
-   char names[PACK_MAX][256];
+   static char names[PACK_MAX][256];
    int N = 0;
-   uint32_t offs[PACK_MAX], crcs[PACK_MAX], sizes[PACK_MAX], at = 0, cd_at, cd_size;
+   static uint32_t offs[PACK_MAX], crcs[PACK_MAX], sizes[PACK_MAX];
+   uint32_t at = 0, cd_at, cd_size;
    FILE *f;
    int i;
    if (!pack_names(dir, names, &N))

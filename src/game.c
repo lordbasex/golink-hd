@@ -10,25 +10,49 @@
 #include "gfx.h"
 #include "text.h"
 
-/* Movement, in 16.16 pixels per frame (and per frame squared). */
-#define WALK_MAX FX_FRAC(5, 2)
-#define RUN_MAX FX(4)
-#define ACCEL_GROUND FX_FRAC(30, 100)
-#define ACCEL_AIR FX_FRAC(18, 100)
-#define FRICTION_GROUND FX_FRAC(25, 100)
-#define FRICTION_AIR FX_FRAC(5, 100)
-#define GRAVITY FX_FRAC(45, 100)
-#define GRAVITY_HOLD FX_FRAC(28, 100) /* while jump is held on the way up */
-#define FALL_MAX FX(7)
-#define JUMP_SPEED FX_FRAC(64, 10)
-#define JUMP_CUT FX(-2)
-#define BOUNCE FX_FRAC(-45, 10)
-#define BOUNCE_HELD FX(-7)
+/* Movement, in 16.16 pixels per frame (and per frame squared): hd_phys. */
+#define WALK_MAX (hd_phys.walk_max)
+#define RUN_MAX (hd_phys.run_max)
+#define ACCEL_GROUND (hd_phys.accel_ground)
+#define ACCEL_AIR (hd_phys.accel_air)
+#define FRICTION_GROUND (hd_phys.friction_ground)
+#define FRICTION_AIR (hd_phys.friction_air)
+#define GRAVITY (hd_phys.gravity)
+#define GRAVITY_HOLD (hd_phys.gravity_hold) /* while jump is held on the way up */
+#define FALL_MAX (hd_phys.fall_max)
+#define JUMP_SPEED (hd_phys.jump_speed)
+#define JUMP_CUT (hd_phys.jump_cut)
+#define BOUNCE (hd_phys.bounce)
+#define BOUNCE_HELD (hd_phys.bounce_held)
+/* Enemies keep the built-in game's gravity and fall. */
+#define ENEMY_GRAVITY FX_FRAC(45, 100)
+#define ENEMY_FALL_MAX FX(7)
 #define ENEMY_SPEED FX_FRAC(6, 10)
 #define COYOTE 6
 #define BUFFER 6
 #define RESPAWN_FRAMES 45
 #define CLEAR_FRAMES 360
+
+hd_physics hd_phys;
+
+void hd_physics_default(void)
+{
+   hd_phys.pw = 10;
+   hd_phys.ph = 22;
+   hd_phys.walk_max = FX_FRAC(5, 2);
+   hd_phys.run_max = FX(4);
+   hd_phys.accel_ground = FX_FRAC(30, 100);
+   hd_phys.accel_air = FX_FRAC(18, 100);
+   hd_phys.friction_ground = FX_FRAC(25, 100);
+   hd_phys.friction_air = FX_FRAC(5, 100);
+   hd_phys.gravity = FX_FRAC(45, 100);
+   hd_phys.gravity_hold = FX_FRAC(28, 100);
+   hd_phys.fall_max = FX(7);
+   hd_phys.jump_speed = FX_FRAC(64, 10);
+   hd_phys.jump_cut = FX(-2);
+   hd_phys.bounce = FX_FRAC(-45, 10);
+   hd_phys.bounce_held = FX(-7);
+}
 
 static int initialized;
 
@@ -411,6 +435,10 @@ static void player_step(hd_state *s, int32_t i)
    }
 
    p->anim += p->ground ? hd_abs(p->vx) >> 14 : 0;
+   if (p->ground && hd_abs(p->vx) < FX_FRAC(1, 4) && !(pad & (PAD_LEFT | PAD_RIGHT | PAD_JUMP | PAD_RUN | PAD_DOWN)) && !dir)
+      p->still = hd_min(p->still + 1, 1 << 20);
+   else
+      p->still = 0;
    touch_coins(s, p);
    touch_column(s, p);
 }
@@ -433,7 +461,7 @@ static void enemy_step(hd_state *s, hd_enemy *e)
          return;
    }
    e->anim++;
-   e->vy = hd_min(e->vy + GRAVITY, FALL_MAX);
+   e->vy = hd_min(e->vy + ENEMY_GRAVITY, ENEMY_FALL_MAX);
    e->x += e->vx;
    ex = FX_INT(e->x);
    ey = FX_INT(e->y);
