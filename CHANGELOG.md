@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-08
+
+The first public version; go-link 0.2.8 ships it inside the device.
+
 ### Changed
 - **Its own API instead of libretro's:** the engine is a library (`libgolinkhd`, shared or static) with a small, versioned API in `include/golink_hd.h` (`golinkhd_create`, `golinkhd_load`, `golinkhd_frame`, save states, settings); only `golinkhd_*` leaves the library. The libretro adapter, its header and its info file are gone; libretro's API, which the engine followed at first, is credited as the idea behind it. Opposite directions held together now cancel in the engine, for every host. `tools/hdrun` hosts the built library through the API (`--demo`, `--language`); the platform hashes are unchanged.
 
