@@ -328,7 +328,9 @@ static void actors(const hd_state *s)
          /* the package's enemy: feet on the hitbox's bottom, facing left like the built-in one */
          int32_t obj = e->alive == 2 && hd_objects[OBJ_ENEMY_SQUASHED].frames ? OBJ_ENEMY_SQUASHED : OBJ_ENEMY_WALK;
          const hd_anim *an = &hd_objects[obj];
-         const hd_image *im = anim_frame(an, e->anim, 1);
+         /* with a stride the frames follow where it is (it walks back and forth), else the time */
+         const hd_image *im = an->stride > 0 ? &an->frames[((int64_t)hd_abs(FX_INT(e->x)) * an->count / an->stride) % an->count]
+                                             : anim_frame(an, e->anim, 1);
          actor(im, FX_INT(e->x) + EW / 2 - im->w / 2 - cam_x, FX_INT(e->y) + EH - (im->h - an->feet) - cam_y, e->vx > 0 ? BLIT_FLIP : 0,
                FX_INT(e->x) + EW / 2 - cam_x, FX_INT(e->y) + EH - cam_y, e->alive == 1 ? EW * 3 / 5 : 0);
          continue;

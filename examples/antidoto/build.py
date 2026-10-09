@@ -141,7 +141,7 @@ def level():
     put(190, 21, "=====")
     put(212, 25, "F")
     return {"width": w, "height": h, "start": [4, 25], "rows": ["".join(r) for r in rows],
-            "effects": {"outline": "#120c0c", "shadows": True, "zoom": "auto", "grade": "sepia", "grade_amount": 40}}
+            "effects": {"shadows": True, "zoom": "auto", "grade": "sepia", "grade_amount": 40}}
 
 
 def main():
@@ -174,7 +174,7 @@ def main():
         "physics": {"hitbox": [28, 66], "enemy_hitbox": [34, 30], "walk": 240, "run": 380, "jump": 1050, "gravity": 50, "gravity_hold": 30, "fall_max": 1200},
         "sprites": {k: v for k, v in {
             "hero": {"players": SKINS, "skins": skins},
-            "enemy": {k: v for k, v in {"walk": thing("enemy_germ", 6, 8, {"from": 0, "frames": 4}),
+            "enemy": {k: v for k, v in {"walk": dict(thing("enemy_germ", 6, 8, {"from": 0, "frames": 4}) or {}, stride=60) or None,
                                          "squashed": thing("enemy_germ", 6, 8, {"from": 5, "frames": 1})}.items() if v} or None,
             "coin": thing("obj_vitamin", 4, 8),
             "checkpoint": {k: v for k, v in {"off": thing("obj_leukocyte", 4, 2, {"from": 0, "frames": 2}),

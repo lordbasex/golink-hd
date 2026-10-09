@@ -16,7 +16,9 @@ colored half of a capsule hero (its biggest strongly colored blob) in every
 frame and scales the strip so its median height is that many pixels, since
 an image AI draws each strip at its own size (take the "shell" printed for
 the idle strip), and is put in a cell of
-the widest frame's width, its bottom on the cell's bottom. It prints the cell
+the widest reach's width, its bottom on the cell's bottom and its body (the
+biggest strongly colored blob) on the cell's middle, so the body stays still
+while the limbs move. It prints the cell
 size and the frame count as JSON for the package's manifest.
 """
 import argparse
@@ -102,6 +104,20 @@ def shell_height(rgba: np.ndarray, runs: list) -> float:
     return float(np.median(heights)) if heights else 0.0
 
 
+def body_center(rgba: np.ndarray, x0: int, x1: int) -> float:
+    """The x of a frame's body: the center of its biggest strongly colored blob (a capsule's colored half, a virus's body)."""
+    rgb = rgba[:, x0:x1, :3].astype(np.float32) / 255.0
+    mx, mn = rgb.max(axis=2), rgb.min(axis=2)
+    sat = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1e-6), 0)
+    colored = (sat > 0.45) & (mx > 0.3) & (rgba[:, x0:x1, 3] > ALPHA_MIN)
+    labels, n = ndimage.label(colored)
+    if not n:
+        return (x1 - x0) / 2.0
+    sizes = ndimage.sum(colored, labels, range(1, n + 1))
+    _, bx = ndimage.find_objects(labels)[int(np.argmax(sizes))]
+    return (bx.start + bx.stop) / 2.0
+
+
 def merge(runs: list, want: int) -> list:
     """Joins the closest neighbours until there are `want` frames."""
     runs = list(runs)
@@ -149,8 +165,11 @@ def main() -> None:
     shell = shell_height(rgba, runs)
     if args.shell and shell:
         scale = args.shell / shell
-    widest = max(b[2] - b[0] for b in boxes)
-    cell_w = int(np.ceil(widest * scale)) + 2 * args.pad
+    # every frame is placed by its body's center (not its box's): arms and
+    # legs swing, the body does not jump left and right from frame to frame
+    centers = [x0 + body_center(rgba, x0, x1) for (x0, x1) in runs]
+    reach = max(max(c - b[0], b[2] - c) for c, b in zip(centers, boxes))
+    cell_w = int(np.ceil(2 * reach * scale)) + 2 * args.pad
     cell_h = int(np.ceil(tallest * scale)) + 2 * args.pad
     # frames whose feet sit lower than others (a jump drawn along its arc) are
     # put on the cell's bottom all the same: the engine moves the character
@@ -159,7 +178,8 @@ def main() -> None:
         part = img.crop((x0, y0, x1, y1))
         w, h = max(1, round((x1 - x0) * scale)), max(1, round((y1 - y0) * scale))
         part = part.resize((w, h), Image.LANCZOS)
-        sheet.alpha_composite(part, (i * cell_w + (cell_w - w) // 2, cell_h - args.pad - h))
+        left = round(cell_w / 2 - (centers[i] - x0) * scale)
+        sheet.alpha_composite(part, (i * cell_w + left, cell_h - args.pad - h))
     sheet.save(args.dst)
     print(json.dumps({"file": args.dst.split("/")[-1], "frame": [cell_w, cell_h], "frames": len(boxes), "scale": round(scale, 5), "shell": round(shell * scale, 2)}))
 
