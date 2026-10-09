@@ -15,7 +15,7 @@ expects:
 Every piece of a sheet is scaled by the same factor (its tallest piece gets
 the height asked), so the faces, gloves and shoes keep their sizes.
 
-  uv run --with pillow --with numpy --with scipy examples/antidoto/parts.py [HEIGHT_BODY HEIGHT_HAND HEIGHT_FOOT]
+  [RES=2|3] uv run --with pillow --with numpy --with scipy examples/antidoto/parts.py [HEIGHT_BODY HEIGHT_HAND HEIGHT_FOOT]
 """
 import json
 import os
@@ -26,6 +26,9 @@ from PIL import Image
 from scipy import ndimage
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# RES=2 (720p) or 3 (1080p): every piece that many times bigger, into sprites_x2/ or sprites_x3/
+RES = int(os.environ.get("RES", "1"))
+SPRITES = "sprites" if RES == 1 else f"sprites_x{RES}"
 ALPHA_MIN = 24
 PAD = 2
 
@@ -89,7 +92,7 @@ def cut(skin, hb, hh, hf):
     """One hero's three rig sheets; returns the manifest's "rig" parts."""
     made = {}
     src = lambda part: Image.open(os.path.join(HERE, "source", f"{skin}_parts_{part}.png")).convert("RGBA")
-    out = lambda part: os.path.join(HERE, "sprites", f"{skin}_{part}.png")
+    out = lambda part: os.path.join(HERE, SPRITES, f"{skin}_{part}.png")
 
     body = scaled(pieces(src("body"), 6), hb)
     w = max(p.width for p in body) + 2 * PAD
@@ -124,8 +127,8 @@ def cut(skin, hb, hh, hf):
 
 
 def main():
-    hb, hh, hf = (int(v) for v in (sys.argv[1:4] if len(sys.argv) > 3 else (52, 22, 18)))
-    os.makedirs(os.path.join(HERE, "sprites"), exist_ok=True)
+    hb, hh, hf = (int(v) * RES for v in (sys.argv[1:4] if len(sys.argv) > 3 else (52, 22, 18)))
+    os.makedirs(os.path.join(HERE, SPRITES), exist_ok=True)
     made = {}
     for skin in ("red", "blue"):
         if os.path.exists(os.path.join(HERE, "source", f"{skin}_parts_body.png")):

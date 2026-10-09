@@ -16,7 +16,7 @@ struct golinkhd_engine
 {
    golinkhd_config config;
    hd_state state;
-   uint32_t frame[HD_MAX_W * HD_MAX_H];
+   uint32_t frame[HD_OUT_MAX_W * HD_OUT_MAX_H];
    int16_t audio[HD_SAMPLES_PER_FRAME * 2];
    int32_t music, demo, has_package;
 };
@@ -130,8 +130,8 @@ void golinkhd_get_info(golinkhd_engine *e, golinkhd_info *out)
    (void)e;
    memset(out, 0, sizeof *out);
    out->title = hd_title;
-   out->width = HD_W;
-   out->height = HD_H;
+   out->width = HD_OUT_W;
+   out->height = HD_OUT_H;
    out->fps = HD_FPS;
    out->sample_rate = HD_RATE;
    out->players = hd_players;
@@ -168,9 +168,9 @@ void golinkhd_frame(golinkhd_engine *e, const golinkhd_pad *pads, int32_t count,
    hd_draw(&e->state, e->frame);
    hd_mix(&e->state, e->audio, e->music);
    out->pixels = e->frame;
-   out->width = HD_W;
-   out->height = HD_H;
-   out->pitch = HD_W;
+   out->width = HD_OUT_W;
+   out->height = HD_OUT_H;
+   out->pitch = HD_OUT_W;
    out->audio = e->audio;
    out->audio_frames = HD_SAMPLES_PER_FRAME;
 }

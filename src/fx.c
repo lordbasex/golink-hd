@@ -82,23 +82,38 @@ void fx_grade_build(int32_t preset, const uint32_t *strip)
    lut_ready = 1;
 }
 
+typedef struct
+{
+   hd_surface *s;
+   int32_t amount;
+} grade_job;
+
+static void grade_rows(void *ctx, int32_t y0, int32_t y1)
+{
+   const grade_job *j = (const grade_job *)ctx;
+   int32_t i, n = y1 * j->s->w;
+   for (i = y0 * j->s->w; i < n; i++)
+   {
+      uint32_t c = j->s->px[i];
+      uint32_t g = lut[(((c >> 18) & 63) * LUT_N + ((c >> 10) & 63)) * LUT_N + ((c >> 2) & 63)];
+      j->s->px[i] = j->amount >= 256 ? g : gfx_mix(c, g, j->amount);
+   }
+}
+
 void fx_grade(hd_surface *s, int32_t amount)
 {
-   int32_t i, n = s->w * s->h;
+   grade_job j;
    if (!lut_ready || amount <= 0)
       return;
-   for (i = 0; i < n; i++)
-   {
-      uint32_t c = s->px[i];
-      uint32_t g = lut[(((c >> 18) & 63) * LUT_N + ((c >> 10) & 63)) * LUT_N + ((c >> 2) & 63)];
-      s->px[i] = amount >= 256 ? g : gfx_mix(c, g, amount);
-   }
+   j.s = s;
+   j.amount = amount;
+   hd_rows(s->w, s->h, grade_rows, &j);
 }
 
 /* Separable box blur of radius r over a w x h buffer of 0xRRGGBB, in place. */
 static void box_blur(uint32_t *px, int32_t w, int32_t h, int32_t r)
 {
-   static uint32_t line[HD_MAX_W > HD_MAX_H ? HD_MAX_W : HD_MAX_H];
+   static uint32_t line[HD_OUT_MAX_W > HD_OUT_MAX_H ? HD_OUT_MAX_W : HD_OUT_MAX_H];
    int32_t x, y, k, n = 2 * r + 1;
    uint32_t recip = (65536u + (uint32_t)n / 2) / (uint32_t)n; /* a multiply instead of a divide per pixel */
    if (r <= 0)
@@ -126,8 +141,8 @@ static void box_blur(uint32_t *px, int32_t w, int32_t h, int32_t r)
    }
    /* down the columns, row by row: a running sum per column, so memory is read in order */
    {
-      static int32_t cr[HD_MAX_W > HD_MAX_H ? 2 * HD_MAX_W : 2 * HD_MAX_H], cg[HD_MAX_W > HD_MAX_H ? 2 * HD_MAX_W : 2 * HD_MAX_H], cb[HD_MAX_W > HD_MAX_H ? 2 * HD_MAX_W : 2 * HD_MAX_H];
-      static uint32_t tmp[(HD_MAX_W / 4) * (HD_MAX_H / 4) > HD_MAX_W * HD_MAX_H ? 1 : HD_MAX_W * HD_MAX_H];
+      static int32_t cr[HD_OUT_MAX_W > HD_OUT_MAX_H ? 2 * HD_OUT_MAX_W : 2 * HD_OUT_MAX_H], cg[HD_OUT_MAX_W > HD_OUT_MAX_H ? 2 * HD_OUT_MAX_W : 2 * HD_OUT_MAX_H], cb[HD_OUT_MAX_W > HD_OUT_MAX_H ? 2 * HD_OUT_MAX_W : 2 * HD_OUT_MAX_H];
+      static uint32_t tmp[(HD_OUT_MAX_W / 4) * (HD_OUT_MAX_H / 4) > HD_OUT_MAX_W * HD_OUT_MAX_H ? 1 : HD_OUT_MAX_W * HD_OUT_MAX_H];
       memcpy(tmp, px, (size_t)w * h * 4);
       for (x = 0; x < w; x++)
       {
@@ -163,7 +178,7 @@ void fx_blur(hd_surface *s, int32_t radius)
 /* Bloom: the bright parts, at a quarter of the size, blurred and added back. */
 void fx_bloom(hd_surface *s, int32_t threshold, int32_t strength)
 {
-   static uint32_t small[(HD_MAX_W / 4) * (HD_MAX_H / 4)];
+   static uint32_t small[(HD_OUT_MAX_W / 4) * (HD_OUT_MAX_H / 4)];
    int32_t sw = s->w / 4, sh = s->h / 4, x, y, i, j;
    for (y = 0; y < sh; y++)
       for (x = 0; x < sw; x++)
@@ -184,7 +199,7 @@ void fx_bloom(hd_surface *s, int32_t threshold, int32_t strength)
    box_blur(small, sw, sh, 2);
    /* back to full size, bilinear (two rows of glow kept per band of 4), added */
    {
-      static uint32_t row_a[HD_MAX_W], row_b[HD_MAX_W];
+      static uint32_t row_a[HD_OUT_MAX_W], row_b[HD_OUT_MAX_W];
       int32_t cached = -1;
       for (y = 0; y < s->h; y++)
       {
@@ -214,7 +229,7 @@ void fx_bloom(hd_surface *s, int32_t threshold, int32_t strength)
 
 void fx_waves(hd_surface *s, int32_t y0, int32_t y1, int32_t amplitude, int32_t wavelength, int32_t phase)
 {
-   static uint32_t line[HD_MAX_W];
+   static uint32_t line[HD_OUT_MAX_W];
    int32_t y, x;
    if (wavelength <= 0)
       return;
@@ -263,7 +278,7 @@ void fx_pixelate(hd_surface *s, int32_t block)
  */
 void fx_lights(hd_surface *s, int32_t darkness, const hd_light *lights, int32_t count)
 {
-   static uint16_t map[3][(HD_MAX_W / 2 + 1) * (HD_MAX_H / 2 + 1)];
+   static uint16_t map[3][(HD_OUT_MAX_W / 2 + 1) * (HD_OUT_MAX_H / 2 + 1)];
    int32_t mw = (s->w + 1) / 2, mh = (s->h + 1) / 2, n = mw * mh, i, k, x, y;
    uint16_t ambient = (uint16_t)(256 - hd_clamp(darkness, 0, 256));
    if (darkness <= 0 && count == 0)

@@ -80,6 +80,7 @@ typedef struct
    int32_t speed; /* hundredths of the camera's movement: 0 stays, 100 moves with the level */
    int32_t y;     /* its top, in level pixels (at speed 100) */
    int32_t front; /* drawn over the characters */
+   int32_t opaque; /* every pixel solid: rows are copied, and what lies under it need not be drawn */
 } hd_layer;
 
 #define MAX_LAYERS 8
@@ -106,6 +107,8 @@ const char *hd_textures_load(const hd_zip *zip, const json *textures);
 const char *hd_layers_load(const hd_zip *zip, const json *layers);
 /* Draws the back (front 0) or front (1) layers into a surface whose top-left is the camera at (cx, cy). */
 void hd_layers_draw(uint32_t *px, int32_t w, int32_t h, int32_t cx, int32_t cy, int32_t front);
+/* Whether the back layers alone cover every pixel of a w x h surface (then the sky need not be drawn). */
+int hd_layers_cover(int32_t h, int32_t cy);
 
 /* sound.c: format 3's "sounds" and "music" (WAV files). */
 extern const int16_t *hd_pkg_music; /* stereo, NULL: the built-in tune */

@@ -6,7 +6,7 @@
  *
  *   tools/hdrun LIBRARY [--content FILE.glhd] [--demo showcase] [--language en|es|pt]
  *                       [--music off] [--frames N] [--script FILE] [--shot F1,F2,...]
- *                       [--out DIR] [--check] [--every N] [--audio FILE.raw]
+ *                       [--out DIR] [--check] [--every N] [--audio FILE.raw] [--time]
  *
  * A script line is "FRAME PORT BUTTONS": from that frame on, the port (0-7)
  * holds those buttons (comma separated: up down left right a b x y start
@@ -24,8 +24,12 @@
  * run's sound as raw 48 kHz stereo 16-bit samples: with ffmpeg they make a
  * video (docs/howto/ai-art-and-audio.md).
  */
+#if !defined(_WIN32) && !defined(__APPLE__)
+#define _POSIX_C_SOURCE 200809L /* clock_gettime and dlopen in C99 */
+#endif
 #include <stdarg.h>
 #include <stdio.h>
+#include <time.h>
 #include <stdlib.h>
 #include <string.h>
 #include "golink_hd.h"
@@ -235,6 +239,26 @@ static int write_png(const char *path, const golinkhd_frame_out *fr)
 
 typedef struct { uint32_t video, audio; long samples; } hash_t;
 
+/* Milliseconds on a steady clock. */
+static double now_ms(void)
+{
+#if defined(_WIN32)
+   LARGE_INTEGER f, c;
+   QueryPerformanceFrequency(&f);
+   QueryPerformanceCounter(&c);
+   return (double)c.QuadPart * 1000.0 / (double)f.QuadPart;
+#else
+   struct timespec ts;
+   clock_gettime(CLOCK_MONOTONIC, &ts);
+   return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+#endif
+}
+
+/* --time: each frame's time, for the average and the worst */
+static int timing;
+static double time_sum, time_worst;
+static long time_frames;
+
 typedef struct
 {
    void (*frame)(golinkhd_engine *, const golinkhd_pad *, int32_t, golinkhd_frame_out *);
@@ -283,7 +307,18 @@ static void play(const host_t *h, long from, long to, hash_t *a, hash_t *b, int 
          held[script[next].port] = script[next].pad;
          next++;
       }
-      h->frame(h->e, held, PORTS, &fr);
+      if (timing)
+      {
+         /* the frame's time on the wall clock (the engine may draw on several cores) */
+         double t0 = now_ms(), ms;
+         h->frame(h->e, held, PORTS, &fr);
+         ms = now_ms() - t0;
+         time_sum += ms;
+         time_worst = ms > time_worst ? ms : time_worst;
+         time_frames++;
+      }
+      else
+         h->frame(h->e, held, PORTS, &fr);
       for (k = 0; k < 2; k++)
       {
          if (!hs[k])
@@ -335,7 +370,7 @@ int main(int argc, char **argv)
 
    if (argc < 2)
    {
-      fprintf(stderr, "usage: %s LIBRARY [--content FILE] [--demo showcase] [--language en|es|pt] [--music off] [--frames N] [--script FILE] [--shot F1,F2] [--out DIR] [--check]\n", argv[0]);
+      fprintf(stderr, "usage: %s LIBRARY [--content FILE] [--demo showcase] [--language en|es|pt] [--music off] [--frames N] [--script FILE] [--shot F1,F2] [--out DIR] [--check] [--every N] [--audio FILE.raw] [--time]\n", argv[0]);
       return 2;
    }
    memset(&host, 0, sizeof host);
@@ -364,6 +399,8 @@ int main(int argc, char **argv)
          music = strcmp(argv[++i], "off") != 0;
       else if (!strcmp(argv[i], "--check"))
          check = 1;
+      else if (!strcmp(argv[i], "--time"))
+         timing = 1;
       else if (!strcmp(argv[i], "--every") && i + 1 < argc)
          host.every = atol(argv[++i]);
       else if (!strcmp(argv[i], "--audio") && i + 1 < argc)
@@ -485,6 +522,8 @@ int main(int argc, char **argv)
       failed = !same(second, again) || !same(run, restarted);
       free(state);
    }
+   if (timing && time_frames)
+      printf("time %.2f ms average, %.2f ms worst a frame\n", time_sum / time_frames, time_worst);
    printf("frames %ld video %08x audio %08x samples %ld\n", frames, run.video, run.audio, run.samples);
    if (host.audio)
       fclose(host.audio);

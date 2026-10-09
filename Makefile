@@ -26,6 +26,9 @@ ifeq ($(platform),unix)
   fpic := -fPIC
   SHARED := -shared -Wl,--version-script=$(CORE_DIR)/link.T -Wl,--no-undefined
   DL := -ldl
+  # the big pictures' passes run on several cores (par.c)
+  CFLAGS += -pthread
+  LDFLAGS += -pthread
 else ifeq ($(platform),osx)
   TARGET := lib$(NAME).dylib
   fpic := -fPIC

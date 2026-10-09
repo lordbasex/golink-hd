@@ -35,6 +35,18 @@
 #define HD_W hd_w
 #define HD_H hd_h
 extern int32_t hd_w, hd_h;
+/*
+ * The drawing's scale (format 3's "resolution"): the game's rules stay on
+ * the logical screen above (its pixels, cells of 16), and the picture is
+ * drawn hd_res times bigger with pictures made for that size: 1 (360p, the
+ * default), 2 (720p, 1280 x 720) or 3 (1080p, 1920 x 1080).
+ */
+extern int32_t hd_res;
+#define HD_RES_MAX 3
+#define HD_OUT_W (hd_w * hd_res)
+#define HD_OUT_H (hd_h * hd_res)
+#define HD_OUT_MAX_W (HD_MAX_W * HD_RES_MAX)
+#define HD_OUT_MAX_H (HD_MAX_H * HD_RES_MAX)
 #define HD_FPS 60
 #define HD_RATE 48000
 #define HD_SAMPLES_PER_FRAME (HD_RATE / HD_FPS)
@@ -379,8 +391,8 @@ int hd_cell(int32_t tx, int32_t ty);
 /* draw.c */
 void hd_draw(const hd_state *s, uint32_t *fb);
 /* The zoom's buffer: the screen at 0.5x, the largest it draws. */
-#define ZOOM_MAX_W (2 * HD_MAX_W)
-#define ZOOM_MAX_H (2 * HD_MAX_H)
+#define ZOOM_MAX_W (2 * HD_OUT_MAX_W)
+#define ZOOM_MAX_H (2 * HD_OUT_MAX_H)
 /* An optional picture for dialogs (the package's "portrait"). */
 extern hd_image hd_portrait;
 

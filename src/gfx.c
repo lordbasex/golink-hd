@@ -50,7 +50,7 @@ int32_t hd_cos(int32_t angle)
 
 void gfx_scale(hd_surface *dst, const hd_surface *src)
 {
-   static int32_t col[HD_MAX_W];
+   static int32_t col[HD_OUT_MAX_W];
    int32_t x, y;
    for (x = 0; x < dst->w; x++)
       col[x] = hd_min(x * src->w / dst->w, src->w - 1);

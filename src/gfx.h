@@ -122,4 +122,12 @@ void gfx_mode7(hd_surface *s, const hd_image *floor, const hd_mode7 *m);
  */
 int gfx_mode7_project(const hd_mode7 *m, int32_t wx, int32_t wy, int32_t screen_w, int32_t *sx, int32_t *sy, int32_t *scale);
 
+/*
+ * par.c: a pass over rows 0..h of a w x h picture, cut into bands done on
+ * several cores when the picture is big (fn(ctx, y0, y1) for each band; a
+ * band must only write its own rows).
+ */
+typedef void (*hd_rows_fn)(void *ctx, int32_t y0, int32_t y1);
+void hd_rows(int32_t w, int32_t h, hd_rows_fn fn, void *ctx);
+
 #endif

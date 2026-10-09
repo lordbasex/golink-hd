@@ -380,6 +380,19 @@ UV=/path/to/uv python3 examples/antidoto/build.py
 tools/glhd pack examples/antidoto/game antidoto.glhd && tools/glhd check antidoto.glhd
 ```
 
+- HD. The user asked whether vector sprites (SVG) would look better. A test answered it: ChatGPT drew Rojo's body as SVG, and next to the PNG it was the same at the game's size and flatter in HD (no ink texture, grain or painted shading). What lost the detail was the 640 x 360 screen: the AI's pictures are about 2000 pixels wide and were cut down to 80. So the engine got `resolution` (720p, 1080p), and the same originals are cut again bigger:
+
+```bash
+export UV=/path/to/uv RES=2          # 3 for 1080p
+sh examples/antidoto/cut.sh
+uv run --with pillow --with numpy --with scipy examples/antidoto/parts.py
+for z in colon intestine stomach lungs heart brain; do uv run --with pillow --with numpy examples/antidoto/textures.py examples/antidoto/source/tiles_$z.png examples/antidoto/textures_x$RES; done
+python3 examples/antidoto/build.py   # into game_x2/ (or game_x3/)
+tools/hdrun ./libgolinkhd.dylib --content antidoto720.glhd --frames 720 --script run.txt --time
+```
+
+  The game is the same (the same sound hash at every size); only the picture changes. The package at 1080p weighs about 190 MB.
+
 ## Cleaning up
 
 When the game's audio is done, the generated files are copied off the M1 and `~/ai` (the models, the virtual environment and the outputs) is removed there, as the user asked.

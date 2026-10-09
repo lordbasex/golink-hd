@@ -2,6 +2,7 @@
 /* Text and dialog boxes (text.h). */
 #include <string.h>
 #include "text.h"
+#include "hd.h"
 
 /* 5 x 7 letters, one byte per row, bit 4 is the left column. */
 static const char font_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!-:/.x?,'()+=%\"&";
@@ -169,27 +170,29 @@ void text_center(hd_surface *s, const char *utf8, int32_t y, int32_t scale, uint
 
 int32_t text_dialog(hd_surface *s, const hd_image *portrait, const char *name, const char *utf8, int32_t shown, int32_t blink)
 {
-   int32_t bh = 92, by = s->h - bh - 8, bx = 8, bw = s->w - 16, tx = bx + 12, x, y;
+   /* every size at the drawing's scale (format 3's resolution) */
+   const int32_t k = hd_res;
+   int32_t bh = 92 * k, by = s->h - bh - 8 * k, bx = 8 * k, bw = s->w - 16 * k, tx = bx + 12 * k, x, y;
    int32_t per_line, total = text_glyphs(utf8), line = 0, col = 0, drawn = 0;
    const char *p = utf8;
    /* the box: see-through dark with a gold border */
    for (y = by; y < by + bh; y++)
       for (x = bx; x < bx + bw; x++)
       {
-         int edge = y < by + 2 || y >= by + bh - 2 || x < bx + 2 || x >= bx + bw - 2;
+         int edge = y < by + 2 * k || y >= by + bh - 2 * k || x < bx + 2 * k || x >= bx + bw - 2 * k;
          s->px[y * s->w + x] = edge ? 0xf8c838u : gfx_mix(s->px[y * s->w + x], 0x1a1020u, 220);
       }
    if (portrait)
    {
-      int32_t ps = hd_max(1, 72 / hd_max(1, hd_max(portrait->w, portrait->h)));
-      gfx_blit_rot(s, portrait, bx + 10, by + 10, 0, 0, 0, FX(ps), FX(ps), NULL);
-      tx = bx + 10 + portrait->w * ps + 12;
+      int32_t ps = hd_max(1, 72 * k / hd_max(1, hd_max(portrait->w, portrait->h)));
+      gfx_blit_rot(s, portrait, bx + 10 * k, by + 10 * k, 0, 0, 0, FX(ps), FX(ps), NULL);
+      tx = bx + 10 * k + portrait->w * ps + 12 * k;
    }
    if (name && *name)
    {
-      text_draw(s, name, tx, by + 8, 2, 0xf8c838u, 1, -1);
+      text_draw(s, name, tx, by + 8 * k, 2 * k, 0xf8c838u, 1, -1);
    }
-   per_line = (bx + bw - 12 - tx) / 12; /* letters of scale 2 */
+   per_line = (bx + bw - 12 * k - tx) / (12 * k); /* letters of scale 2 */
    /* word wrap: a word that does not fit the line starts the next one */
    while (*p && line < 4)
    {
@@ -210,8 +213,8 @@ int32_t text_dialog(hd_surface *s, const hd_image *portrait, const char *name, c
       for (i = 0; i < len && drawn < shown; i++, drawn++)
       {
          uint32_t cp = next_cp(&word);
-         glyph(s, cp, tx + (col + i) * 12 + 2, by + 30 + line * 16 + 2, 2, 0x1a1020u);
-         glyph(s, cp, tx + (col + i) * 12, by + 30 + line * 16, 2, 0xffffffu);
+         glyph(s, cp, tx + (col + i) * 12 * k + 2 * k, by + (30 + line * 16 + 2) * k, 2 * k, 0x1a1020u);
+         glyph(s, cp, tx + (col + i) * 12 * k, by + (30 + line * 16) * k, 2 * k, 0xffffffu);
       }
       if (drawn < shown && i < len)
          break;
@@ -228,6 +231,6 @@ int32_t text_dialog(hd_surface *s, const hd_image *portrait, const char *name, c
          break;
    }
    if (shown >= total && blink)
-      gfx_fill(s, bx + bw - 20, by + bh - 16, 8, 6, 0xf8c838u); /* "press a button" */
+      gfx_fill(s, bx + bw - 20 * k, by + bh - 16 * k, 8 * k, 6 * k, 0xf8c838u); /* "press a button" */
    return total;
 }

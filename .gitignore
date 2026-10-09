@@ -21,3 +21,6 @@ examples/antidoto/game/
 examples/antidoto/source/music/
 examples/antidoto/source/blue_*.png
 examples/antidoto/source/sfx/
+examples/antidoto/game_x*/
+examples/antidoto/sprites_x*/
+examples/antidoto/textures_x*/

@@ -12,7 +12,12 @@ import shutil
 import struct
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "game")
+# RES=2 (720p) or RES=3 (1080p): the pictures cut that many times bigger (cut.sh, parts.py and
+# textures.py with the same RES) and the package in game_x2/ or game_x3/; the game itself is the same
+RES = int(os.environ.get("RES", "1"))
+SPRITES = "sprites" if RES == 1 else f"sprites_x{RES}"
+TEXTURES = "textures" if RES == 1 else f"textures_x{RES}"
+OUT = os.path.join(HERE, "game" if RES == 1 else f"game_x{RES}")
 
 # animation -> (strip it comes from, frames, fps); the engine's states
 ANIMS = {
@@ -47,18 +52,19 @@ def rig(skin):
     """The skin's puppet from sprites/ (parts.py), or None."""
     files = {"body": f"{skin}_body.png", "hand": f"{skin}_hands.png", "foot": f"{skin}_feet.png"}
     worn = f"{skin}_body_worn.png"
-    if os.environ.get("NO_RIG") or not all(os.path.exists(os.path.join(HERE, "sprites", f)) for f in files.values()):
+    if os.environ.get("NO_RIG") or not all(os.path.exists(os.path.join(HERE, SPRITES, f)) for f in files.values()):
         return None
-    out = dict(RIG)
+    # the hoses' sizes are drawn at the pictures' scale; the stride is walked in the game's pixels
+    out = {k: v * RES if k != "stride" else v for k, v in RIG.items()}
     for part, name in files.items():
-        shutil.copy(os.path.join(HERE, "sprites", name), os.path.join(OUT, name))
+        shutil.copy(os.path.join(HERE, SPRITES, name), os.path.join(OUT, name))
         w, h = png_size(os.path.join(OUT, name))
         cells = 4 if part == "foot" else 6
         out[part] = {"file": name, "frame": [w // cells, h]}
         if part != "hand":
             out[part]["feet"] = 2
-    if os.path.exists(os.path.join(HERE, "sprites", worn)):
-        shutil.copy(os.path.join(HERE, "sprites", worn), os.path.join(OUT, worn))
+    if os.path.exists(os.path.join(HERE, SPRITES, worn)):
+        shutil.copy(os.path.join(HERE, SPRITES, worn), os.path.join(OUT, worn))
         w, h = png_size(os.path.join(OUT, worn))
         out["worn"] = {"file": worn, "frame": [w // 6, h], "feet": 2}
     return out
@@ -96,7 +102,7 @@ def layers(zone):
         subprocess.run([os.environ.get("UV", "uv"), "run", "-q", "--with", "pillow", "python", "-c",
                         "import sys; from PIL import Image; im = Image.open(sys.argv[1]);"
                         " im.resize((round(im.width * int(sys.argv[3]) / im.height), int(sys.argv[3])), Image.LANCZOS).save(sys.argv[2])",
-                        src, dst, str(height)], check=True)
+                        src, dst, str(height * RES)], check=True)
         out.append({"file": name + ".png", "speed": speed, "y": y})
     return out
 
@@ -106,7 +112,7 @@ def textures(zone):
     out = {}
     for kind in ("ground_top", "ground", "platform", "brick"):
         name = f"tex_{zone}_{kind}.png"
-        src = os.path.join(HERE, "textures", name)
+        src = os.path.join(HERE, TEXTURES, name)
         if os.path.exists(src):
             shutil.copy(src, os.path.join(OUT, name))
             out[kind] = name
@@ -115,7 +121,7 @@ def textures(zone):
 
 def thing(name, total, fps, part=None):
     """A level thing's animation from sprites/ (cut.sh), or None."""
-    src = os.path.join(HERE, "sprites", name + ".png")
+    src = os.path.join(HERE, SPRITES, name + ".png")
     if not os.path.exists(src):
         return None
     w, h = png_size(src)
@@ -315,7 +321,7 @@ def main():
     for skin in SKINS:
         anims = {}
         for name, (strip, frames, fps) in ANIMS.items():
-            src = os.path.join(HERE, "sprites", f"{skin}_{strip}.png")
+            src = os.path.join(HERE, SPRITES, f"{skin}_{strip}.png")
             if not os.path.exists(src):
                 continue
             w, h = png_size(src)
@@ -324,7 +330,7 @@ def main():
             if name == "run":
                 anims[name]["stride"] = STRIDE
         for name, (strip, frames, fps) in SHOTS.items():
-            src = os.path.join(HERE, "sprites", f"{skin}_{strip}.png")
+            src = os.path.join(HERE, SPRITES, f"{skin}_{strip}.png")
             if os.path.exists(src):
                 w, h = png_size(src)
                 shutil.copy(src, os.path.join(OUT, f"{skin}_{strip}.png"))
@@ -340,6 +346,7 @@ def main():
         "genre": "platformer",
         "players": 2,
         "screen": "16:9",
+        "resolution": {1: "360p", 2: "720p", 3: "1080p"}[RES],
         "sky": ["#3a1420", "#7a3a3a"],
         # a hero about 80 px tall: hitbox, and a jump of about 12 cells
         "weapon": WEAPON,

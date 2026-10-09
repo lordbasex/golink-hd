@@ -8,7 +8,7 @@ top, floor inside, floating platform, wall) into the engine's textures
   platform    the platform's upper band, 128 x 16
   brick       the floor's inside, darker, 48 x 48
 
-  uv run --with pillow --with numpy textures.py source/tiles_colon.png OUT_DIR
+  [RES=2|3] uv run --with pillow --with numpy textures.py source/tiles_colon.png OUT_DIR
 """
 import os
 import sys
@@ -59,11 +59,12 @@ def main():
     img = Image.open(src).convert("RGBA")
     b = tiles(img)
     os.makedirs(out, exist_ok=True)
+    k = int(os.environ.get("RES", "1"))  # 2 (720p) or 3 (1080p): every texture that many times bigger
     made = {
-        "ground_top": band(img, b[0], 0.22, (128, 16)),
-        "ground": inside(img, b[1], (96, 96)),
-        "platform": band(img, b[2], 0.22, (128, 16)),
-        "brick": ImageEnhance.Brightness(inside(img, b[1], (48, 48))).enhance(0.75),
+        "ground_top": band(img, b[0], 0.22, (128 * k, 16 * k)),
+        "ground": inside(img, b[1], (96 * k, 96 * k)),
+        "platform": band(img, b[2], 0.22, (128 * k, 16 * k)),
+        "brick": ImageEnhance.Brightness(inside(img, b[1], (48 * k, 48 * k))).enhance(0.75),
     }
     for kind, im in made.items():
         im.save(os.path.join(out, f"tex_{zone}_{kind}.png"))

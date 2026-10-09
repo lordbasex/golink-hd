@@ -75,7 +75,7 @@ static uint32_t run(hd_state *s, int32_t from, int32_t to, int32_t players, uint
    return h;
 }
 
-static uint32_t fb[HD_MAX_W * HD_MAX_H];
+static uint32_t fb[HD_OUT_MAX_W * HD_OUT_MAX_H];
 static int16_t audio[HD_SAMPLES_PER_FRAME * 2];
 
 static void test_art(void)
@@ -938,6 +938,60 @@ static void test_weapon(void)
 
 extern int32_t hd_stage_count; /* sprite.h (not included here: its names meet the bones') */
 
+/* format 3's resolution: the same game drawn 2 or 3 times bigger with pictures made for that size (the
+   API's frame grows, the rules do not change); a texture of the wrong size for it is refused. */
+static void test_resolution(void)
+{
+   static uint8_t zip[400000], png[200000];
+   static char level[100000], man[400];
+   static hd_state s, t;
+   hd_input in[MAX_PLAYERS];
+   const char *err;
+   size_t n;
+   int32_t f, k;
+   uint32_t first = 0;
+   zfile files[3] = {{0}};
+   flat_level(level, sizeof level, 60, 30);
+   files[1].name = "level.json";
+   files[1].text = level;
+   files[2].name = "ground.png";
+   files[2].text = (const char *)png;
+   for (k = 2; k <= 3; k++)
+   {
+      snprintf(man, sizeof man, "{\"format\": 3, \"title\": \"Big\", \"level\": \"level.json\", \"resolution\": \"%s\","
+               " \"textures\": {\"ground\": \"ground.png\"}, \"effects\": {}}", k == 2 ? "720p" : "1080p");
+      files[0].name = "manifest.json";
+      files[0].text = man;
+      files[2].len = tiny_png(png, 16 * k * 2, 16 * k);
+      n = make_zip(zip, files, 3);
+      CHECK(hd_content_load(zip, n, &err) == 1);
+      if (err)
+         printf("  resolution: %s\n", err);
+      CHECK(hd_res == k && HD_OUT_W == 640 * k && HD_OUT_H == 360 * k && HD_W == 640);
+      hd_reset(&s);
+      memset(in, 0, sizeof in);
+      in[0].buttons = PAD_START;
+      hd_step(&s, in);
+      for (f = 0; f < 120; f++)
+      {
+         in[0].buttons = PAD_RIGHT | (f % 40 < 10 ? PAD_JUMP : 0);
+         hd_step(&s, in);
+      }
+      if (k == 2)
+         t = s; /* the rules are the same at every size */
+      else
+         CHECK(memcmp(&s, &t, sizeof s) == 0);
+      hd_draw(&s, fb);
+      first = fb[0];
+      hd_draw(&s, fb);
+      CHECK(fb[0] == first && fb[(size_t)HD_OUT_W * HD_OUT_H - 1] != 0xdeadbeefu);
+      files[2].len = tiny_png(png, 16, 16); /* made for 360p */
+      n = make_zip(zip, files, 3);
+      CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "multiples of 16") != NULL && hd_res == 1);
+   }
+   hd_content_builtin();
+}
+
 /* A level of w x 30 cells: a floor, a coin row near the start and a goal near the end. */
 static void goal_level(char *out, size_t cap, int w)
 {
@@ -1370,6 +1424,7 @@ int main(void)
    test_health();
    test_super();
    test_stages();
+   test_resolution();
    test_path();
    test_bones();
    test_fx();

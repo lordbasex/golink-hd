@@ -377,6 +377,12 @@ const char *hd_layers_load(const hd_zip *zip, const json *layers)
          return "the layers and sprites are bigger than go-link HD keeps (64 million pixels)";
       }
       pixels_used += (int64_t)l->img.w * l->img.h;
+      {
+         int64_t k, n = (int64_t)l->img.w * l->img.h;
+         for (k = 0; k < n && (l->img.px[k] >> 24) == 255; k++)
+            ;
+         l->opaque = k == n;
+      }
       hd_layer_count = i + 1;
    }
    return NULL;
@@ -392,8 +398,31 @@ static uint32_t blend(uint32_t dst, uint32_t src)
    return (rb & 0xff00ffu) | (g & 0xff00u);
 }
 
-void hd_layers_draw(uint32_t *px, int32_t w, int32_t h, int32_t cx, int32_t cy, int32_t front)
+int hd_layers_cover(int32_t h, int32_t cy)
 {
+   int32_t i;
+   for (i = 0; i < hd_layer_count; i++)
+   {
+      const hd_layer *l = &hd_layers[i];
+      int32_t top = l->y * hd_res - (int32_t)((int64_t)cy * l->speed / 100);
+      if (!l->front && l->opaque && top <= 0 && top + l->img.h >= h)
+         return 1;
+   }
+   return 0;
+}
+
+typedef struct
+{
+   uint32_t *px;
+   int32_t w, h, cx, cy, front;
+} layers_job;
+
+/* The layers on rows y0..y1 of the surface. */
+static void layers_rows(void *ctx, int32_t y0, int32_t y1)
+{
+   const layers_job *j = (const layers_job *)ctx;
+   uint32_t *px = j->px;
+   int32_t w = j->w, h = y1, cx = j->cx, cy = j->cy, front = j->front;
    int32_t i, x, y;
    for (i = 0; i < hd_layer_count; i++)
    {
@@ -405,12 +434,25 @@ void hd_layers_draw(uint32_t *px, int32_t w, int32_t h, int32_t cx, int32_t cy, 
       ox = (int32_t)(((int64_t)cx * l->speed / 100) % lw);
       if (ox < 0)
          ox += lw;
-      top = l->y - (int32_t)((int64_t)cy * l->speed / 100);
-      for (y = hd_max(top, 0); y < hd_min(top + l->img.h, h); y++)
+      top = l->y * hd_res - (int32_t)((int64_t)cy * l->speed / 100); /* y in logical pixels, the picture at the drawing's scale */
+      for (y = hd_max(top, y0); y < hd_min(top + l->img.h, h); y++)
       {
          const uint32_t *src = l->img.px + (size_t)(y - top) * lw;
          uint32_t *dst = px + (size_t)y * w;
          int32_t sx = ox;
+         if (l->opaque)
+         {
+            /* solid: the row copied, a run at a time where the picture repeats */
+            for (x = 0; x < w;)
+            {
+               int32_t run = hd_min(w - x, lw - sx), k;
+               for (k = 0; k < run; k++)
+                  dst[x + k] = src[sx + k] & 0xffffffu;
+               x += run;
+               sx = 0;
+            }
+            continue;
+         }
          for (x = 0; x < w; x++)
          {
             uint32_t c = src[sx];
@@ -421,6 +463,18 @@ void hd_layers_draw(uint32_t *px, int32_t w, int32_t h, int32_t cx, int32_t cy, 
          }
       }
    }
+}
+
+void hd_layers_draw(uint32_t *px, int32_t w, int32_t h, int32_t cx, int32_t cy, int32_t front)
+{
+   layers_job j;
+   j.px = px;
+   j.w = w;
+   j.h = h;
+   j.cx = cx;
+   j.cy = cy;
+   j.front = front;
+   hd_rows(w, h, layers_rows, &j);
 }
 
 /*
@@ -465,11 +519,11 @@ const char *hd_textures_load(const hd_zip *zip, const json *tex)
          snprintf(msg, sizeof msg, "%s: %s", f->str, err);
          return msg;
       }
-      if (im->w % 16 || im->h % 16 || im->w > 1024 || im->h > 1024 || pixels_used + (int64_t)im->w * im->h > SPRITE_PIXELS_MAX)
+      if (im->w % (16 * hd_res) || im->h % (16 * hd_res) || im->w > 1024 * hd_res || im->h > 1024 * hd_res || pixels_used + (int64_t)im->w * im->h > SPRITE_PIXELS_MAX)
       {
          free(im->px);
          im->px = NULL;
-         snprintf(msg, sizeof msg, "%s: a texture's sides must be multiples of 16, up to 1024", f->str);
+         snprintf(msg, sizeof msg, "%s: a texture's sides must be multiples of 16, up to 1024 (times 2 at 720p, 3 at 1080p)", f->str);
          return msg;
       }
       pixels_used += (int64_t)im->w * im->h;
@@ -583,12 +637,12 @@ const char *hd_screen_load(const hd_zip *zip, const json *f, int32_t i)
          snprintf(msg, sizeof msg, "%s: a screen must be at least 16 x 16 pixels", f->str);
          return msg;
       }
-      hd_screens[i].px = fit(px, w, h, HD_W, HD_H);
+      hd_screens[i].px = fit(px, w, h, HD_OUT_W, HD_OUT_H);
       free(px);
       if (!hd_screens[i].px)
          return "not enough memory for the screens";
-      hd_screens[i].w = HD_W;
-      hd_screens[i].h = HD_H;
+      hd_screens[i].w = HD_OUT_W;
+      hd_screens[i].h = HD_OUT_H;
    }
    return NULL;
 }
