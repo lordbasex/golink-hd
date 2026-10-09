@@ -62,8 +62,18 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
 enum { OBJ_COIN = 0, OBJ_CHECK_OFF, OBJ_CHECK_ON, OBJ_GOAL, OBJ_ENEMY_WALK, OBJ_ENEMY_SQUASHED, OBJ_COUNT };
 extern hd_anim hd_objects[OBJ_COUNT];
 
-/* Format 3's "textures": a tile kind painted as a picture repeated over the level (sides multiples of 16). */
-extern hd_image hd_textures[TL_COUNT];
+/*
+ * Format 3's "textures": a tile kind painted as a picture repeated over the
+ * level (sides multiples of 16), and optionally its ends: the same picture
+ * cut for the cell where a run of that kind stops on the left or the right
+ * (a floor at a pit, a platform's tip), at TEX_LEFT(kind) and TEX_RIGHT(kind).
+ */
+/* a wall's own pictures past the tile kinds: its top band and its bottom row when it floats */
+enum { TX_BRICK_TOP = TL_COUNT, TX_BRICK_BOTTOM, TX_KINDS };
+#define TEX_COUNT (TX_KINDS * 3)
+#define TEX_LEFT(kind) (TX_KINDS + (kind))
+#define TEX_RIGHT(kind) (TX_KINDS * 2 + (kind))
+extern hd_image hd_textures[TEX_COUNT];
 
 /* The loaded skins and the one each player wears; hd_skin_count 0 means the built-in hero. */
 extern hd_skin hd_skins[MAX_SKINS];

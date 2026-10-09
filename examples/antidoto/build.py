@@ -110,7 +110,7 @@ def layers(zone):
 def textures(zone):
     """The zone's floor textures (made by textures.py into textures/)."""
     out = {}
-    for kind in ("ground_top", "ground", "platform", "brick"):
+    for kind in [k + side for k in ("ground_top", "ground", "platform", "brick", "brick_top", "brick_bottom") for side in ("", "_left", "_right")]:
         name = f"tex_{zone}_{kind}.png"
         src = os.path.join(HERE, TEXTURES, name)
         if os.path.exists(src):

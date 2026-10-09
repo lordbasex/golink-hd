@@ -21,7 +21,7 @@
 
 hd_skin hd_skins[MAX_SKINS];
 hd_anim hd_objects[OBJ_COUNT];
-hd_image hd_textures[TL_COUNT];
+hd_image hd_textures[TEX_COUNT];
 hd_image hd_screens[SCREEN_COUNT];
 int32_t hd_intro_frames;
 hd_layer hd_layers[MAX_LAYERS];
@@ -70,7 +70,7 @@ void hd_sprites_free(void)
          free(hd_objects[s].frames);
       }
    memset(hd_objects, 0, sizeof hd_objects);
-   for (s = 0; s < TL_COUNT; s++)
+   for (s = 0; s < TEX_COUNT; s++)
       free(hd_textures[s].px);
    for (s = 0; s < SCREEN_COUNT; s++)
       free(hd_screens[s].px);
@@ -518,23 +518,40 @@ void hd_layers_draw(uint32_t *px, int32_t w, int32_t h, int32_t cx, int32_t cy, 
  * the level and each cell of that kind shows its own 16 x 16 piece, so a
  * floor keeps a painting's detail on the level's grid. See-through pixels
  * stay see-through (a platform's edge).
+ *
+ * With a top band of their own ("ground_top", "brick_top") a floor and a
+ * wall are drawn in two layers: the inside ("ground", "brick") over every
+ * cell, and the band over the top cells, laid on it (its lower edge is part
+ * of its picture), so cells next to each other always meet whatever their
+ * height. "brick_bottom" (optional) is the wall's inside with each cell's
+ * bottom edged, for a wall nothing holds up.
+ *
+ * "ground_left", "ground_right", "ground_top_left", ... "brick_bottom_right":
+ * the same picture with each cell's piece cut as the end of a run (its
+ * outer side rounded off and inked), drawn in the cell where a floor or a
+ * platform stops; the same size as the kind's own texture, so the end
+ * leads into the next cell's piece.
  */
 const char *hd_textures_load(const hd_zip *zip, const json *tex)
 {
    static char msg[200];
-   static const char *const names[TL_COUNT] = { "ground_top", "ground", "brick", "platform" };
+   static const char *const kinds[TX_KINDS] = { "ground_top", "ground", "brick", "platform", "brick_top", "brick_bottom" };
+   static const char *const sides[3] = { "", "_left", "_right" };
    int32_t i;
    if (!tex)
       return NULL;
    if (tex->type != JSON_OBJECT)
       return "manifest.json's textures must be an object";
-   for (i = 0; i < TL_COUNT; i++)
+   for (i = 0; i < TEX_COUNT; i++)
    {
-      const json *f = hd_json_get(tex, names[i]);
+      char name[32];
+      const json *f;
       const char *err;
       uint8_t *png;
       size_t size;
       hd_image *im = &hd_textures[i];
+      snprintf(name, sizeof name, "%s%s", kinds[i % TX_KINDS], sides[i / TX_KINDS]);
+      f = hd_json_get(tex, name);
       if (!f)
          continue;
       if (f->type != JSON_STRING)
@@ -580,6 +597,20 @@ const char *hd_textures_load(const hd_zip *zip, const json *tex)
       }
       pixels_used += (int64_t)im->w * im->h;
    }
+   /* an end is its kind's picture cut: the same size, laid the same way */
+   for (i = TX_KINDS; i < TEX_COUNT; i++)
+   {
+      const hd_image *im = &hd_textures[i], *own = &hd_textures[i % TX_KINDS];
+      if (im->px && (!own->px || im->w != own->w || im->h != own->h))
+      {
+         snprintf(msg, sizeof msg, "the texture %s%s must be the same size as %s", kinds[i % TX_KINDS], sides[i / TX_KINDS], kinds[i % TX_KINDS]);
+         return msg;
+      }
+   }
+   /* a wall's bottom is its inside cut: the same size */
+   if (hd_textures[TX_BRICK_BOTTOM].px && (!hd_textures[TL_BRICK].px || hd_textures[TX_BRICK_BOTTOM].w != hd_textures[TL_BRICK].w ||
+                                           hd_textures[TX_BRICK_BOTTOM].h != hd_textures[TL_BRICK].h))
+      return "the texture brick_bottom must be the same size as brick";
    return NULL;
 }
 

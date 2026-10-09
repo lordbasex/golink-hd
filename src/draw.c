@@ -165,36 +165,94 @@ static void backdrop(void)
    }
 }
 
-/* A cell's 16 x 16 piece (16 hd_res times) of a texture laid over the level, see-through pixels skipped. */
-static void texture_cell(const hd_image *t, int32_t tx, int32_t ty, int32_t sx, int32_t sy)
+/*
+ * A cell's 16 x 16 piece (16 hd_res times) of textures laid over the level,
+ * see-through pixels skipped: its left half from t[0], its right half from
+ * t[1] (a run's end on each side; NULL draws nothing there). With cover[h],
+ * a top band laid over the cell next, a half is only drawn below the band's
+ * top in each column: what lies above a floor's surface stays empty. With
+ * above[h], only above that band's bottom: a wall's side over a step's band.
+ */
+static void texture_halves(const hd_image *const t[2], const hd_image *const cover[2], const hd_image *const above[2],
+                           int32_t tx, int32_t ty, int32_t sx, int32_t sy)
 {
-   int32_t ts = S(TILE), ox = (tx * ts) % t->w, oy = (ty * ts) % t->h, x, y;
-   if (ox < 0)
-      ox += t->w;
-   if (oy < 0)
-      oy += t->h;
-   for (y = hd_max(0, -sy); y < ts && sy + y < surf.h; y++)
+   int32_t ts = S(TILE), from[16 * HD_RES_MAX], until[16 * HD_RES_MAX], x, y, h;
+   for (x = 0; x < ts; x++)
    {
-      const uint32_t *src = t->px + (size_t)(oy + y) * t->w + ox;
-      uint32_t *dst = surf.px + (size_t)(sy + y) * surf.w + sx;
-      for (x = hd_max(0, -sx); x < ts && sx + x < surf.w; x++)
+      const hd_image *c = cover[x >= ts / 2], *u = above[x >= ts / 2];
+      from[x] = 0;
+      until[x] = ts;
+      if (c)
       {
-         uint32_t c = src[x], a = c >> 24;
-         if (a == 255)
-            dst[x] = c & 0xffffffu;
-         else if (a)
-            dst[x] = mix(dst[x], c & 0xffffffu, (int32_t)a);
+         /* the band's first half-solid pixel down this column */
+         int32_t cx = ((tx * ts) % c->w + c->w) % c->w + x, cy = ((ty * ts) % c->h + c->h) % c->h;
+         while (from[x] < ts && (c->px[(size_t)(cy + from[x]) * c->w + cx] >> 24) < 128)
+            from[x]++;
+      }
+      if (u)
+      {
+         /* and its last, up this column */
+         int32_t cx = ((tx * ts) % u->w + u->w) % u->w + x, cy = ((ty * ts) % u->h + u->h) % u->h;
+         while (until[x] > 0 && (u->px[(size_t)(cy + until[x] - 1) * u->w + cx] >> 24) < 128)
+            until[x]--;
+      }
+   }
+   for (h = 0; h < 2; h++)
+   {
+      const hd_image *im = t[h];
+      int32_t ox, oy, x0 = h ? ts / 2 : 0, x1 = h ? ts : ts / 2;
+      if (!im)
+         continue;
+      ox = ((tx * ts) % im->w + im->w) % im->w;
+      oy = ((ty * ts) % im->h + im->h) % im->h;
+      for (y = hd_max(0, -sy); y < ts && sy + y < surf.h; y++)
+      {
+         const uint32_t *src = im->px + (size_t)(oy + y) * im->w + ox;
+         uint32_t *dst = surf.px + (size_t)(sy + y) * surf.w + sx;
+         for (x = hd_max(x0, -sx); x < x1 && sx + x < surf.w; x++)
+         {
+            uint32_t c = src[x], a = c >> 24;
+            if (y < from[x] || y >= until[x])
+               continue;
+            if (a == 255)
+               dst[x] = c & 0xffffffu;
+            else if (a)
+               dst[x] = mix(dst[x], c & 0xffffffu, (int32_t)a);
+         }
       }
    }
 }
 
-/* A tile: the package's texture when it has one, else the tile picture. */
-static void tile(int32_t kind, int32_t tx, int32_t ty, int32_t sx, int32_t sy)
+/* A texture kind's picture for a cell, or its end where the run stops on that side (NULL: the package has none). */
+static const hd_image *pick(int32_t kind, int open_left, int open_right)
 {
-   if (hd_textures[kind].px)
-      texture_cell(&hd_textures[kind], tx, ty, sx, sy);
+   if (kind >= TL_COUNT && !hd_textures[kind].px)
+      kind = TL_BRICK; /* a wall's own pictures are optional */
+   if (open_left && hd_textures[TEX_LEFT(kind)].px)
+      return &hd_textures[TEX_LEFT(kind)];
+   if (open_right && hd_textures[TEX_RIGHT(kind)].px)
+      return &hd_textures[TEX_RIGHT(kind)];
+   return hd_textures[kind].px ? &hd_textures[kind] : NULL;
+}
+
+/* A kind's texture in both halves of a cell, each with its side's end when the run stops there (a 1 cell run gets both). */
+static void texture_cell(int32_t kind, int32_t tx, int32_t ty, int32_t sx, int32_t sy, int open_left, int open_right,
+                         const hd_image *const cover[2])
+{
+   const hd_image *t[2];
+   static const hd_image *const none[2] = { NULL, NULL };
+   t[0] = pick(kind, open_left, 0);
+   t[1] = pick(kind, 0, open_right);
+   texture_halves(t, cover ? cover : none, none, tx, ty, sx, sy);
+}
+
+/* A tile: the package's texture when it has one (its ends where the run of its kind stops), else the tile picture. */
+static void tile(int32_t kind, int32_t tx, int32_t ty, int32_t sx, int32_t sy, int open_left, int open_right)
+{
+   if (pick(kind, 0, 0))
+      texture_cell(kind, tx, ty, sx, sy, open_left, open_right, NULL);
    else
-      blit(&hd_tiles[kind], sx, sy, BLIT_BIG);
+      blit(&hd_tiles[kind < TL_COUNT ? kind : TL_BRICK], sx, sy, BLIT_BIG);
 }
 
 /* Frame t of an animation (t in frames of 60 per second), looping or held on its last frame. */
@@ -214,6 +272,107 @@ static void object(int32_t obj, int32_t t, int32_t x, int32_t bottom)
    blit(im, x - im->w / 2, bottom - (im->h - an->feet), 0);
 }
 
+/*
+ * What a floor or wall cell is drawn as: a floor (its inside and band),
+ * also a wall standing on a floor (a step of it: the same pictures, laid
+ * the same way, so the two meet), or a wall that floats. 0 when not solid.
+ */
+enum { MAT_NONE = 0, MAT_FLOOR, MAT_WALL };
+
+static int32_t material(int32_t tx, int32_t ty)
+{
+   int32_t c = hd_cell(tx, ty), y = ty;
+   if (c == T_GROUND)
+      return MAT_FLOOR;
+   if (c != T_BRICK)
+      return MAT_NONE;
+   while (y < MAP_H - 1 && hd_cell(tx, y + 1) == T_BRICK)
+      y++;
+   return hd_cell(tx, y + 1) == T_GROUND || (y == MAP_H - 1 && hd_textures[TL_GROUND].px) ? MAT_FLOOR : MAT_WALL;
+}
+
+static int32_t band_of(int32_t mat)
+{
+   return mat == MAT_FLOOR ? TL_GROUND_TOP : TX_BRICK_TOP;
+}
+
+/* Whether (tx, ty) is a top cell drawn with a band: solid, nothing solid over it, and its material has a band picture. */
+static int is_top(int32_t tx, int32_t ty)
+{
+   int32_t m = material(tx, ty);
+   return m && !material(tx, ty - 1) && hd_textures[band_of(m)].px;
+}
+
+/*
+ * Whether a top cell's band of material `mat` goes on into (tx, ty): a top
+ * of the same material, or a higher wall (the band runs under its side).
+ */
+static int band_goes_on(int32_t mat, int32_t tx, int32_t ty)
+{
+   int32_t m = material(tx, ty);
+   return m && (material(tx, ty - 1) || m == mat);
+}
+
+/*
+ * A floor or wall cell. Without a top band of its own: one picture per
+ * cell, as the built-in tiles. With one: the inside (its ends where the
+ * cell is open, its bottom edge when nothing holds a wall up), then the
+ * band laid over the top cells. Beside a lower step (a top cell next to a
+ * cell that has more over it), the higher cell's side is an end above the
+ * step's surface: under it the inside and the step's band go on, and the
+ * side's ink is laid over them.
+ */
+static void solid_cell(int32_t t, int32_t tx, int32_t ty, int32_t sx, int32_t sy)
+{
+   int32_t mat = material(tx, ty), inner = mat == MAT_FLOOR ? TL_GROUND : TL_BRICK, band = band_of(mat), k;
+   int open[2], step[2], top = !material(tx, ty - 1);
+   const hd_image *cover[2] = { NULL, NULL };
+   open[0] = tx > 0 && !material(tx - 1, ty);
+   open[1] = tx < MAP_W - 1 && !material(tx + 1, ty);
+   if (!hd_textures[band].px)
+   {
+      tile(t == T_GROUND && hd_cell(tx, ty - 1) != T_GROUND ? TL_GROUND_TOP : t == T_GROUND ? TL_GROUND : TL_BRICK, tx, ty, sx, sy, open[0], open[1]);
+      return;
+   }
+   if (mat == MAT_WALL && ty < MAP_H - 1 && !material(tx, ty + 1))
+      inner = TX_BRICK_BOTTOM;
+   for (k = 0; k < 2; k++)
+   {
+      int32_t nx = tx + (k ? 1 : -1);
+      step[k] = !top && nx >= 0 && nx < MAP_W && is_top(nx, ty);
+   }
+   if (top)
+   {
+      cover[0] = pick(band, open[0], 0);
+      cover[1] = pick(band, 0, open[1]);
+   }
+   if (!pick(inner, 0, 0))
+      return;
+   {
+      static const hd_image *const none[2] = { NULL, NULL };
+      const hd_image *t2[2], *run[2] = { NULL, NULL };
+      for (k = 0; k < 2; k++)
+         if (step[k])
+         {
+            /*
+             * Beside a lower step: under its surface the inside goes on and
+             * its band runs in; the side (an end) is laid over them down to
+             * the band's bottom, so the wall stands on the step.
+             */
+            const hd_image *plain[2] = { NULL, NULL }, *band_here[2] = { NULL, NULL };
+            run[k] = band_here[k] = pick(band_of(material(tx + (k ? 1 : -1), ty)), 0, 0);
+            plain[k] = pick(inner, 0, 0);
+            texture_halves(plain, band_here, none, tx, ty, sx, sy);
+            texture_halves(band_here, none, none, tx, ty, sx, sy);
+         }
+      t2[0] = pick(inner, open[0] || step[0], 0);
+      t2[1] = pick(inner, 0, open[1] || step[1]);
+      texture_halves(t2, cover, run, tx, ty, sx, sy);
+   }
+   if (top)
+      texture_cell(band, tx, ty, sx, sy, tx > 0 && !band_goes_on(mat, tx - 1, ty), tx < MAP_W - 1 && !band_goes_on(mat, tx + 1, ty), NULL);
+}
+
 static void level(const hd_state *s)
 {
    int32_t tx0 = cam_x >> 4, ty0 = cam_y >> 4, tx, ty;
@@ -226,13 +385,11 @@ static void level(const hd_state *s)
          switch (t)
          {
          case T_GROUND:
-            tile(hd_cell(tx, ty - 1) == T_GROUND ? TL_GROUND : TL_GROUND_TOP, tx, ty, sx, sy);
-            break;
          case T_BRICK:
-            tile(TL_BRICK, tx, ty, sx, sy);
+            solid_cell(t, tx, ty, sx, sy);
             break;
          case T_PLATFORM:
-            tile(TL_PLATFORM, tx, ty, sx, sy);
+            tile(TL_PLATFORM, tx, ty, sx, sy, hd_cell(tx - 1, ty) != T_PLATFORM, hd_cell(tx + 1, ty) != T_PLATFORM);
             break;
          case T_COIN:
             if (got)

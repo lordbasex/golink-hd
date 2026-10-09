@@ -167,6 +167,13 @@ A skin's `shot` (facing right, looped) and `shot_hit` (the burst where it hits, 
 
 Each picture's sides are multiples of 16, up to 1024; a cell of that kind shows its own 16 × 16 piece of it (a ground top 16 pixels tall is the same band on every top cell). See-through pixels stay see-through.
 
+Optional pictures make the joins clean:
+
+- `ground_top` and `brick_top` are **bands laid over the inside**: a floor or a wall draws its inside (`ground`, `brick`) in every cell, laid over the whole level so cells always meet whatever their height, and the band over the cells with nothing solid above (its picture's lower edge is part of it). A wall standing on a floor is drawn as a step of the floor (the floor's pictures); a wall that floats takes `brick_bottom` (its inside with each cell's bottom edged) where nothing holds it up.
+- **Ends**: `<kind>_left` and `<kind>_right` (for `ground_top`, `ground`, `brick_top`, `brick`, `brick_bottom`, `platform`), the same size as the kind's picture with each cell's piece cut as the end of a run, are drawn where the run stops: a floor at a pit, a platform's tips, a band against a higher wall. Each half of a cell takes its own side's end, so a column one cell wide gets both. Beside a lower step, the higher cell's side is drawn above the step's band and the inside goes on under it.
+
+`examples/antidoto/textures.py` makes all of them from one tileset picture of an image AI: seamless (the extra strip past one edge laid over the opposite one along the cut where the two are most alike), the ends rounded off, inked and shaded.
+
 **`layers`**: painted pictures behind the level, or in front of it, repeated across it:
 
 ```json

@@ -796,12 +796,16 @@ static void test_physics(void)
 }
 
 /* A w x h PNG (RGBA, every pixel opaque grey) with stored deflate blocks; its size. */
+/* tiny_png's color, RGBA (half see-through gray by default) */
+static uint32_t tiny_rgba = 0x80808080u;
+
 static size_t tiny_png(uint8_t *out, uint32_t w, uint32_t h)
 {
    static uint8_t raw[1 << 16];
    uint8_t *p = out, *crc_from;
    uint32_t raw_len = (w * 4 + 1) * h, i, a = 1, b = 0;
-   memset(raw, 0x80, raw_len);
+   for (i = 0; i < raw_len; i++)
+      raw[i] = (uint8_t)(tiny_rgba >> (24 - 8 * ((i % (w * 4 + 1) + 3) % 4)));
    for (i = 0; i < h; i++)
       raw[i * (w * 4 + 1)] = 0;
    memcpy(p, "\x89PNG\r\n\x1a\n", 8);
@@ -994,7 +998,7 @@ static void test_resolution(void)
 
 /* picture.c and sprite.c (sprite.h is not included here: its names meet the bones') */
 extern int32_t hd_art;
-extern hd_image hd_textures[TL_COUNT];
+extern hd_image hd_textures[]; /* TL_COUNT kinds, then their left and right ends */
 void hd_pic_clean(uint32_t *px, int64_t n);
 uint32_t *hd_pic_shrink(const uint32_t *px, int32_t pitch, int32_t sw, int32_t sh, int32_t dw, int32_t dh);
 
@@ -1064,6 +1068,59 @@ static void test_art_scale(void)
    hd_res_host = 0;
    hd_content_builtin();
    CHECK(hd_res == 1 && hd_art == 1);
+}
+
+/* Format 3's texture ends: the cell where a floor stops at a pit is drawn from "ground_left" or
+   "ground_right" (laid like "ground"); an end of another size is refused. */
+static void test_texture_ends(void)
+{
+   static uint8_t zip[400000], png[3][20000];
+   static char level[20000];
+   static hd_state s;
+   const char *err;
+   size_t n, k;
+   int32_t x, y, seen[3] = { 0 };
+   const uint32_t colors[3] = { 0x204060ffu, 0xc02020ffu, 0x20c020ffu }; /* RGBA: ground, left end, right end */
+   zfile files[5] = {{0}};
+   /* floor from x 0 to 11, a pit 12..15, floor again: the left floor's right end and the right floor's left end */
+   n = (size_t)snprintf(level, sizeof level, "{\"width\": 60, \"height\": 30, \"start\": [2, 26], \"rows\": [");
+   for (y = 0; y < 30; y++)
+   {
+      level[n++] = '"';
+      for (x = 0; x < 60; x++)
+         level[n++] = y >= 27 && (x < 12 || x > 15) ? '#' : '.';
+      n += (size_t)snprintf(level + n, sizeof level - n, "\"%s", y < 29 ? "," : "]}");
+   }
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Ends\", \"level\": \"level.json\", \"textures\": {\"ground_top\": \"g.png\", \"ground\": \"g.png\","
+                   " \"ground_top_left\": \"l.png\", \"ground_left\": \"l.png\", \"ground_top_right\": \"r.png\", \"ground_right\": \"r.png\"}}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   for (k = 0; k < 3; k++)
+   {
+      tiny_rgba = colors[k];
+      files[2 + k].name = k == 0 ? "g.png" : k == 1 ? "l.png" : "r.png";
+      files[2 + k].text = (const char *)png[k];
+      files[2 + k].len = tiny_png(png[k], 32, 32);
+   }
+   tiny_rgba = 0x80808080u;
+   n = make_zip(zip, files, 5);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  texture ends: %s\n", err);
+   hd_reset(&s);
+   hd_draw(&s, fb);
+   for (k = 0; k < (size_t)HD_OUT_W * HD_OUT_H; k++)
+      for (x = 0; x < 3; x++)
+         if (fb[k] == colors[x] >> 8)
+            seen[x]++;
+   /* every floor cell column but the two ends is ground; each end column is its own color */
+   CHECK(seen[0] > 0 && seen[1] > 0 && seen[2] > 0 && seen[1] == seen[2] && seen[0] > seen[1] * 10);
+   /* an end of another size than its kind's */
+   files[3].len = tiny_png(png[1], 16, 16);
+   n = make_zip(zip, files, 5);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "same size") != NULL);
+   hd_content_builtin();
 }
 
 /* A level of w x 30 cells: a floor, a coin row near the start and a goal near the end. */
@@ -1500,6 +1557,7 @@ int main(void)
    test_stages();
    test_resolution();
    test_art_scale();
+   test_texture_ends();
    test_path();
    test_bones();
    test_fx();

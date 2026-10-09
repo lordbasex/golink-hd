@@ -26,7 +26,7 @@ typedef struct
    uint32_t sky_top, sky_bottom;
    hd_layer layers[MAX_LAYERS];
    int32_t layer_count;
-   hd_image textures[TL_COUNT];
+   hd_image textures[TEX_COUNT];
    hd_image intro;
    int16_t *music;
    int32_t music_frames, music_loop, music_vol;
@@ -127,7 +127,7 @@ void hd_stages_free(void)
       free(st->map);
       for (i = 0; i < st->layer_count; i++)
          free(st->layers[i].img.px);
-      for (i = 0; i < TL_COUNT; i++)
+      for (i = 0; i < TEX_COUNT; i++)
          free(st->textures[i].px);
       free(st->intro.px);
       free(st->music);
