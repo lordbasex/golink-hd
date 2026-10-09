@@ -118,10 +118,24 @@ static void sanitize(hd_state *s)
       q->vx = hd_clamp(q->vx, -SPEED, SPEED);
       q->vy = hd_clamp(q->vy, -SPEED, SPEED);
    }
+   s->shot_next = hd_clamp(s->shot_next, 0, MAX_SHOTS - 1);
+   for (i = 0; i < MAX_SHOTS; i++)
+   {
+      hd_shot *q = &s->shot[i];
+      q->life = hd_clamp(q->life, 0, 4000);
+      q->hit = hd_clamp(q->hit, 0, SHOT_HIT_FRAMES);
+      q->age = hd_clamp(q->age, 0, COUNT);
+      q->owner = hd_clamp(q->owner, 0, MAX_PLAYERS - 1);
+      q->x = hd_clamp(q->x, -FAR, FAR);
+      q->y = hd_clamp(q->y, -FAR, FAR);
+      q->vx = hd_clamp(q->vx, -SPEED, SPEED);
+   }
    for (i = 0; i < MAX_ENEMIES; i++)
    {
       hd_enemy *e = &s->e[i];
       e->alive = hd_clamp(e->alive, 0, 2);
+      e->hp = hd_clamp(e->hp, 0, 100);
+      e->flash = hd_clamp(e->flash, 0, 60);
       e->squash = hd_clamp(e->squash, 0, 600);
       e->anim = hd_clamp(e->anim, 0, COUNT);
       e->x = hd_clamp(e->x, -FAR, FAR);
@@ -151,6 +165,8 @@ static void sanitize(hd_state *s)
       p->check_y = hd_clamp(p->check_y, 0, MAP_H * TILE);
       p->respawn = hd_clamp(p->respawn, 0, 600);
       p->hurt = hd_clamp(p->hurt, 0, 600);
+      p->shot_wait = hd_clamp(p->shot_wait, 0, 120);
+      p->aim = hd_clamp(p->aim, 0, 200);
    }
 }
 

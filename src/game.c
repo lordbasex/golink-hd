@@ -35,6 +35,13 @@
 #define CLEAR_FRAMES 360
 
 hd_physics hd_phys;
+hd_weapon_config hd_weapon;
+
+void hd_weapon_default(void)
+{
+   memset(&hd_weapon, 0, sizeof hd_weapon);
+   hd_weapon.enemy_health = 1;
+}
 
 void hd_physics_default(void)
 {
@@ -140,9 +147,12 @@ static void reset_level(hd_state *s)
    memset(s->taken, 0, sizeof s->taken);
    memset(s->e, 0, sizeof s->e);
    memset(s->part, 0, sizeof s->part);
+   memset(s->shot, 0, sizeof s->shot);
+   s->shot_next = 0;
    for (i = 0; i < hd_enemy_count; i++)
    {
       s->e[i].alive = 1;
+      s->e[i].hp = hd_weapon.enemy_health;
       s->e[i].x = FX(hd_enemy_start[i][0]);
       s->e[i].y = FX(hd_enemy_start[i][1]);
       s->e[i].vx = -ENEMY_SPEED;
@@ -340,6 +350,35 @@ static void touch_coins(hd_state *s, hd_player *p)
          }
 }
 
+/* The weapon: held, it fires every hd_weapon.rate frames, straight ahead from the muzzle. */
+static void fire(hd_state *s, int32_t i)
+{
+   hd_player *p = &s->p[i];
+   hd_shot *q;
+   int32_t x, y;
+   if (p->shot_wait)
+      p->shot_wait--;
+   if (p->aim)
+      p->aim--;
+   if (!(p->pad & hd_weapon.button) || p->shot_wait)
+      return;
+   x = FX_INT(p->x) + PW / 2 + p->facing * hd_weapon.muzzle_x;
+   y = FX_INT(p->y) + PH + hd_weapon.muzzle_y;
+   q = &s->shot[s->shot_next];
+   s->shot_next = (s->shot_next + 1) % MAX_SHOTS;
+   memset(q, 0, sizeof *q);
+   q->life = hd_weapon.life;
+   q->x = FX(x);
+   q->y = FX(y);
+   q->vx = p->facing * hd_weapon.speed;
+   q->owner = i;
+   p->shot_wait = hd_weapon.rate;
+   p->aim = hd_weapon.rate + 14; /* the pose stays a little after the last shot */
+   p->still = 0;
+   particle(s, x, y, 0, 0, 5, 0xfffff0e0u, 2); /* the muzzle's flash */
+   hd_play(s, SFX_SHOOT, screen_x(s, x));
+}
+
 static void player_step(hd_state *s, int32_t i)
 {
    hd_player *p = &s->p[i];
@@ -348,7 +387,8 @@ static void player_step(hd_state *s, int32_t i)
    /* the left stick moves too, when the D-pad does not */
    if (!dir && hd_abs(p->lx) > STICK_DEAD)
       dir = p->lx > 0 ? 1 : -1;
-   int32_t max = (pad & PAD_RUN) ? RUN_MAX : WALK_MAX;
+   /* the run button runs, unless the weapon uses it */
+   int32_t max = (pad & PAD_RUN) && !(hd_weapon.on && hd_weapon.button == PAD_RUN) ? RUN_MAX : WALK_MAX;
    int32_t was_vy;
 
    if (p->respawn)
@@ -442,6 +482,9 @@ static void player_step(hd_state *s, int32_t i)
       return;
    }
 
+   if (hd_weapon.on)
+      fire(s, i);
+
    p->anim += p->ground ? hd_abs(p->vx) >> 14 : 0;
    if (p->ground && hd_abs(p->vx) < FX_FRAC(1, 4) && !(pad & (PAD_LEFT | PAD_RIGHT | PAD_JUMP | PAD_RUN | PAD_DOWN)) && !dir)
       p->still = hd_min(p->still + 1, 1 << 20);
@@ -468,6 +511,8 @@ static void enemy_step(hd_state *s, hd_enemy *e)
       else
          return;
    }
+   if (e->flash)
+      e->flash--;
    e->anim++;
    e->vy = hd_min(e->vy + ENEMY_GRAVITY, ENEMY_FALL_MAX);
    e->x += e->vx;
@@ -533,6 +578,60 @@ static void fights(hd_state *s)
          }
          else if (!p->hurt)
             hurt(s, p, ex + EW / 2);
+      }
+   }
+}
+
+/* Shots fly, stop at walls and hit enemies: a hit costs one of its hits, the last one pops it. */
+static void shots_step(hd_state *s)
+{
+   int32_t i, j;
+   for (i = 0; i < MAX_SHOTS; i++)
+   {
+      hd_shot *q = &s->shot[i];
+      int32_t x, y;
+      if (q->hit)
+      {
+         q->hit--;
+         continue;
+      }
+      if (!q->life)
+         continue;
+      q->life--;
+      q->age++;
+      q->x += q->vx;
+      x = FX_INT(q->x);
+      y = FX_INT(q->y);
+      if (solid(x >> 4, y >> 4) || y < 0)
+      {
+         q->hit = SHOT_HIT_FRAMES;
+         q->life = 0;
+         burst(s, x, y, 4, 0xffffe0d0u, FX(1), 2);
+         continue;
+      }
+      for (j = 0; j < MAX_ENEMIES; j++)
+      {
+         hd_enemy *e = &s->e[j];
+         int32_t ex = FX_INT(e->x), ey = FX_INT(e->y);
+         /* a shot's middle within the enemy's hitbox, with some grace (a shot is drawn about 16 pixels tall) */
+         if (e->alive != 1 || x < ex - 4 || x > ex + EW + 4 || y < ey - SHOT_GRACE || y > ey + EH + SHOT_GRACE)
+            continue;
+         q->hit = SHOT_HIT_FRAMES;
+         q->life = 0;
+         e->flash = 6;
+         if (--e->hp <= 0)
+         {
+            e->alive = 2;
+            e->squash = 30;
+            burst(s, ex + EW / 2, ey + EH / 2, 10, 0xffb070f0u, FX(2), 1);
+            hd_play(s, SFX_STOMP, screen_x(s, ex));
+         }
+         else
+         {
+            e->x += q->vx > 0 ? FX(2) : FX(-2); /* pushed back a little */
+            hd_play(s, SFX_HIT, screen_x(s, ex));
+         }
+         break;
       }
    }
 }
@@ -792,6 +891,7 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
    for (i = 0; i < MAX_ENEMIES; i++)
       if (s->e[i].alive)
          enemy_step(s, &s->e[i]);
+   shots_step(s);
    if (s->phase == PH_PLAY)
    {
       fights(s);

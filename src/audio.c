@@ -29,6 +29,8 @@ static int16_t s_join[HD_RATE * 30 / 100];
 static int16_t s_check[HD_RATE * 45 / 100];
 static int16_t s_clear[HD_RATE * 140 / 100];
 static int16_t s_pause[HD_RATE * 8 / 100];
+static int16_t s_shoot[HD_RATE * 9 / 100];
+static int16_t s_hit[HD_RATE * 6 / 100];
 static int16_t w_square[WAVE_LEN], w_triangle[WAVE_LEN];
 
 /* Frequency in millihertz of each MIDI note, from A4 = 440 Hz. */
@@ -111,6 +113,10 @@ void hd_audio_build(void)
    arpeggio(s_clear, N(s_clear), clear, N(clear), HD_RATE / 10, 4600);
    memset(s_pause, 0, sizeof s_pause);
    tone(s_pause, 0, N(s_pause), 1046502, 1046502, 4000, 0);
+   memset(s_shoot, 0, sizeof s_shoot);
+   tone(s_shoot, 0, N(s_shoot), 1400000, 500000, 3600, 0);
+   memset(s_hit, 0, sizeof s_hit);
+   tone(s_hit, 0, N(s_hit), 3000000, 1200000, 3800, 1);
 
    for (i = 0; i < WAVE_LEN; i++)
    {
@@ -126,6 +132,8 @@ void hd_audio_build(void)
    samples[SFX_CHECK] = (sample){ s_check, N(s_check), 0 };
    samples[SFX_CLEAR] = (sample){ s_clear, N(s_clear), 0 };
    samples[SFX_PAUSE] = (sample){ s_pause, N(s_pause), 0 };
+   samples[SFX_SHOOT] = (sample){ s_shoot, N(s_shoot), 0 };
+   samples[SFX_HIT] = (sample){ s_hit, N(s_hit), 0 };
    samples[WAVE_SQUARE] = (sample){ w_square, WAVE_LEN, 1 };
    samples[WAVE_TRIANGLE] = (sample){ w_triangle, WAVE_LEN, 1 };
 }

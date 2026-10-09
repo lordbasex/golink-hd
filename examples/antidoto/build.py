@@ -30,6 +30,11 @@ STRIDE = 110
 # the rubber-hose puppet (src/rig.c): parts cut by parts.py, arms and legs drawn by the engine;
 # a skin with a rig is posed on every frame instead of playing its sheets
 RIG = {"limb": 4, "leg": 24, "arm": 15, "stride": 84, "lift": 8, "bob": 3}
+# the finger pistol: Y or X fires antibodies (about 7 a second) from the fingertip of the puppet's
+# aiming pose; a germ takes 3
+WEAPON = {"button": "run", "rate": 8, "speed": 900, "range": 420, "muzzle": [30, -33], "enemy_health": 3}
+# a skin's shot and its burst (cut.sh): strip, frames, fps
+SHOTS = {"shot": ("shot", 4, 12), "shot_hit": ("shot_hit", 6, 20)}
 
 
 def rig(skin):
@@ -115,7 +120,8 @@ def screens(zone):
 
 # the engine's effects -> ANTÍDOTO's (made by make_sfx.py on the machine with the model, in source/sfx)
 SOUNDS = {"jump": "jump", "coin": "vitamin", "stomp": "germ_squash", "hurt": "hurt",
-          "join": "ready_go", "check": "checkpoint", "clear": "victory", "pause": "menu"}
+          "join": "ready_go", "check": "checkpoint", "clear": "victory", "pause": "menu",
+          "shoot": "shoot", "hit": "virus_pop"}
 SFX_PEAK = 20000       # every effect at the same loudness, under the music's
 SFX_QUIET = 600        # quieter than this at the start or the end is silence
 
@@ -180,6 +186,8 @@ def level():
     put(21, 19, "oooo")
     put(30, 16, "BBBB")
     put(30, 15, "oooo")
+    put(28, 25, "E")  # the first germs, on flat ground before the first gap: learn to shoot
+    put(35, 25, "E")
     put(55, 25, "E")
     put(66, 25, "E")
     put(74, 21, "=======")
@@ -218,6 +226,12 @@ def main():
             anims[name] = {"file": f"{skin}_{strip}.png", "frame": [w // frames, h], "fps": fps, "feet": 2}
             if name == "run":
                 anims[name]["stride"] = STRIDE
+        for name, (strip, frames, fps) in SHOTS.items():
+            src = os.path.join(HERE, "sprites", f"{skin}_{strip}.png")
+            if os.path.exists(src):
+                w, h = png_size(src)
+                shutil.copy(src, os.path.join(OUT, f"{skin}_{strip}.png"))
+                anims[name] = {"file": f"{skin}_{strip}.png", "frame": [w // frames, h], "fps": fps}
         skins[skin] = anims
         puppet = rig(skin)
         if puppet:
@@ -232,6 +246,7 @@ def main():
         "level": "level.json",
         "sky": ["#3a1420", "#7a3a3a"],
         # a hero about 80 px tall: hitbox, and a jump of about 12 cells
+        "weapon": WEAPON,
         "physics": {"hitbox": [28, 66], "enemy_hitbox": [34, 30], "walk": 180, "run": 280, "jump": 1050, "gravity": 50, "gravity_hold": 30, "fall_max": 1200},
         "sprites": {k: v for k, v in {
             "hero": {"players": SKINS, "skins": skins},

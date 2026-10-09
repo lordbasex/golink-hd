@@ -54,6 +54,7 @@ extern int32_t hd_w, hd_h;
 extern int32_t hd_players;
 #define MAX_ENEMIES 48
 #define MAX_PARTICLES 256
+#define MAX_SHOTS 48
 #define MAX_CHANNELS 32
 /* Channels 0 and 1 belong to the music, the rest to sound effects. */
 #define MUSIC_CHANNELS 2
@@ -114,6 +115,8 @@ enum
    SFX_CHECK,
    SFX_CLEAR,
    SFX_PAUSE,
+   SFX_SHOOT, /* a weapon fires (format 3's "weapon") */
+   SFX_HIT,   /* a shot hits an enemy that does not die */
    SFX_COUNT
 };
 /* Every sample the mixer knows: the effects and the music's two waves. */
@@ -133,6 +136,24 @@ typedef struct
 } hd_physics;
 extern hd_physics hd_phys;
 void hd_physics_default(void);
+
+/*
+ * A package's weapon (format 3's "weapon"; off in the built-in game): a
+ * button fires shots that fly straight ahead, stop at walls and hurt
+ * enemies, which take `enemy_health` hits.
+ */
+typedef struct
+{
+   int32_t on;
+   uint32_t button;        /* the pad bit that fires (held: it fires again every `rate` frames) */
+   int32_t rate;           /* frames between two shots */
+   int32_t speed;          /* 16.16 pixels a frame */
+   int32_t life;           /* frames a shot flies before it fades (its range over its speed) */
+   int32_t muzzle_x, muzzle_y; /* where shots start: pixels in front of the hitbox's middle, and from its feet (up is negative) */
+   int32_t enemy_health;   /* hits an enemy takes */
+} hd_weapon_config;
+extern hd_weapon_config hd_weapon;
+void hd_weapon_default(void);
 /* The player's hitbox (inside its 16 x 24 picture in the built-in game). */
 #define PW (hd_phys.pw)
 #define PH (hd_phys.ph)
@@ -157,6 +178,8 @@ typedef struct
    int32_t check_x, check_y; /* where it comes back, in pixels */
    int32_t landed;           /* frames since it touched the ground */
    int32_t still;            /* frames standing still with no button held (a sprite's bored animation) */
+   int32_t shot_wait;        /* frames before the weapon fires again */
+   int32_t aim;              /* frames left of the shooting pose */
 } hd_player;
 
 typedef struct
@@ -165,7 +188,21 @@ typedef struct
    int32_t x, y, vx, vy;
    int32_t squash, anim;
    int32_t awake;
+   int32_t hp;    /* hits it still takes (format 3's weapon) */
+   int32_t flash; /* frames it shows white after a hit */
 } hd_enemy;
+
+/* A weapon's shot: flying (hit 0) or bursting where it hit (hit > 0, frames left). */
+#define SHOT_HIT_FRAMES 18
+#define SHOT_GRACE 8 /* pixels above or below an enemy a shot still hits */
+typedef struct
+{
+   int32_t life; /* frames left flying; 0 with hit 0: unused */
+   int32_t x, y, vx; /* its middle, 16.16 */
+   int32_t owner;    /* the player who fired it */
+   int32_t hit;
+   int32_t age;
+} hd_shot;
 
 typedef struct
 {
@@ -213,6 +250,8 @@ typedef struct
    hd_player p[MAX_PLAYERS];
    hd_enemy e[MAX_ENEMIES];
    hd_particle part[MAX_PARTICLES];
+   hd_shot shot[MAX_SHOTS];
+   int32_t shot_next;
    hd_channel ch[MAX_CHANNELS];
    /* the sound's effects on the whole mix (underwater, caves) */
    int32_t lowpass;              /* 0 off; else 1..256, how much of each new sample passes */

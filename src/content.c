@@ -42,6 +42,7 @@ void hd_content_builtin(void)
    hd_sprites_free();
    hd_sounds_free(); /* the built-in effects and tune */
    hd_physics_default(); /* before the level: its start stands on the hitbox's height */
+   hd_weapon_default();
    hd_level_build();
    strcpy(hd_title, "GO-LINK HD DEMO");
    hd_w = 640;
@@ -299,6 +300,62 @@ static const char *load_physics(const json *ph)
 }
 
 /*
+ * The manifest's "weapon" (format 3): a button that fires shots straight
+ * ahead, every key optional but the object itself:
+ *   {"button": "run", "rate": 10, "speed": 700, "range": 400, "muzzle": [12, -14], "enemy_health": 1}
+ * button is "run" (the second action, which then no longer runs), "a",
+ * "b", "x", "y", "l" or "r"; rate the frames between shots (2 to 120);
+ * speed in hundredths of a pixel a frame (100 to 4000); range in pixels
+ * (16 to 4000); muzzle where shots start, in pixels in front of the
+ * hitbox's middle and from its feet (up is negative); enemy_health the
+ * hits an enemy takes (1 to 100).
+ */
+static const char *load_weapon(const json *w)
+{
+   static const struct { const char *name; uint32_t bit; } buttons[] = {
+      { "run", PAD_RUN }, { "a", PAD_A }, { "b", PAD_B }, { "x", PAD_X }, { "y", PAD_Y }, { "l", PAD_L }, { "r", PAD_R },
+   };
+   const json *b, *m;
+   int bad = 0;
+   int32_t range;
+   size_t i;
+   if (!w)
+      return NULL;
+   if (w->type != JSON_OBJECT)
+      return "manifest.json's weapon must be an object";
+   hd_weapon.on = 1;
+   hd_weapon.button = PAD_RUN;
+   if ((b = hd_json_get(w, "button")))
+   {
+      hd_weapon.button = 0;
+      for (i = 0; b->type == JSON_STRING && i < sizeof buttons / sizeof buttons[0]; i++)
+         if (!strcmp(b->str, buttons[i].name))
+            hd_weapon.button = buttons[i].bit;
+      if (!hd_weapon.button)
+         return "the weapon's button must be \"run\", \"a\", \"b\", \"x\", \"y\", \"l\" or \"r\"";
+   }
+   hd_weapon.rate = num(w, "rate", 2, 120, 10, &bad);
+   hd_weapon.speed = FX_FRAC(num(w, "speed", 100, 4000, 700, &bad), 100);
+   range = num(w, "range", 16, 4000, 400, &bad);
+   hd_weapon.enemy_health = num(w, "enemy_health", 1, 100, 1, &bad);
+   if (bad)
+      return "the weapon has a value out of range or that is not a whole number";
+   /* frames to fly the range: range / (speed / 100) */
+   hd_weapon.life = hd_max(1, (int32_t)((int64_t)FX(range) / hd_weapon.speed));
+   hd_weapon.muzzle_x = PW / 2 + 4;
+   hd_weapon.muzzle_y = -PH / 2;
+   if ((m = hd_json_get(w, "muzzle")))
+   {
+      if (m->type != JSON_ARRAY || m->count != 2 || hd_json_at(m, 0)->type != JSON_INT || hd_json_at(m, 1)->type != JSON_INT ||
+          hd_json_at(m, 0)->num < -256 || hd_json_at(m, 0)->num > 256 || hd_json_at(m, 1)->num < -256 || hd_json_at(m, 1)->num > 256)
+         return "the weapon's muzzle must be [x, y], -256 to 256 pixels each";
+      hd_weapon.muzzle_x = (int32_t)hd_json_at(m, 0)->num;
+      hd_weapon.muzzle_y = (int32_t)hd_json_at(m, 1)->num;
+   }
+   return NULL;
+}
+
+/*
  * A level's "effects" (format 2): light and darkness, color grading, bloom,
  * waves, the camera's zoom, outlines and shadows, the sound, and dialogs.
  */
@@ -546,6 +603,8 @@ static const char *load_package(const uint8_t *data, size_t size)
    }
 
    err = load_physics(hd_json_get(man, "physics"));
+   if (!err)
+      err = load_weapon(hd_json_get(man, "weapon"));
    if (err)
    {
       hd_json_free(man);

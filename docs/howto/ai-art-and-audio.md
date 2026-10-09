@@ -343,6 +343,16 @@ UV=/path/to/uv python3 examples/antidoto/build.py   # adds "rig" to both skins
 
 - "With the arms up, how would it look jumping while shooting with the finger? I don't think the arms up is a good idea" (the user). In the air the near arm now goes forward at the hip, ready to shoot, and the far one back for balance; the engine also has the aiming pose for when shooting arrives: the near arm straight forward at the hip with the finger pistol pointing level (where the shots go), in any state, walking, standing or jumping, while the rest of the puppet keeps moving. Every arm stays below the mouth.
 
+- Shooting (the order agreed with the user: the shot first, then health and the worn shell). The engine got `weapon`; ChatGPT drew the antibody and its burst:
+
+```
+Next image (same 1930s rubber-hose style, thick black ink outline, transparent background, everything separated with empty space between pieces, nothing overlapping):
+red_shot.png:     a sheet of ROJO's bullet: a small glossy RED Y-shaped ANTIBODY (like the letter Y, two short arms and a stem, rounded tips, a white shine, a soft red glow around it), flying to the RIGHT (the stem behind, the two arms in front), 4 frames in ONE horizontal row, same size and same position in every cell: it spins a little and pulses, with 2 or 3 tiny speed lines behind it. Small and readable: the whole Y fits a square.
+red_shot_hit.png: a sheet of the antibody's IMPACT when it hits a virus: 6 frames in ONE horizontal row, same size, centered in every cell: 1 a small red flash star, 2 a bigger star burst with tiny red Y fragments, 3 a round cartoon POP cloud with sparkles, 4 the cloud breaking into puffs, 5 small puffs and stars fading, 6 the last tiny sparkles. Red, white and pale pink only.
+```
+
+The queue made the first image but stopped before downloading the second, so it was fetched from the page by hand (the newest big `img`, its `src` as a blob, an anchor with `download`). Azul's are recolored, `cut.sh` cuts them (the antibody 18 pixels tall, the burst 40), and `build.py` adds `"weapon": {"button": "run", "rate": 8, "speed": 900, "range": 420, "muzzle": [30, -33], "enemy_health": 3}`. The first test showed the antibodies flying over the germs (the muzzle at the hand was higher than a germ is tall): the aiming hand went lower and a shot hits 8 pixels above or below an enemy. A short script that walks into a pit is not an engine bug: watch where the hero goes before blaming the code.
+
 ## Cleaning up
 
 When the game's audio is done, the generated files are copied off the M1 and `~/ai` (the models, the virtual environment and the outputs) is removed there, as the user asked.

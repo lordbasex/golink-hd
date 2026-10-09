@@ -122,7 +122,7 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
    int32_t phase = 0, bob = 0, squash = FX_ONE, stretch = FX_ONE, face = FACE_NORMAL;
    int32_t hip_y, body_bottom, shoulder_y, hand_pose[2] = { HAND_FIST, HAND_FIST };
    /* aiming: the near arm straight forward at the hip with the finger pistol, in any state (set by shooting) */
-   int32_t aim = 0;
+   int32_t aim = p->aim > 0;
    int32_t foot_x[2], foot_y[2], foot_pose[2], hand_x[2], hand_y[2], knee[2], elbow[2];
    int32_t t = st->frame + i * 37;
 
@@ -240,7 +240,7 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
       if (aim && k == 0)
       {
          hand_x[0] = sh_x + FWD(rig->arm * 9 / 10);
-         hand_y[0] = shoulder_y + rig->arm * 3 / 5;
+         hand_y[0] = shoulder_y + rig->arm * 4 / 5;
          hand_pose[0] = HAND_GUN;
          elbow[0] = FWD(0);
       }

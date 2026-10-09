@@ -340,12 +340,13 @@ static void actors(const hd_state *s)
          /* with a stride the frames follow where it is (it walks back and forth), else the time */
          const hd_image *im = an->stride > 0 ? &an->frames[((int64_t)hd_abs(FX_INT(e->x)) * an->count / an->stride) % an->count]
                                              : anim_frame(an, e->anim, 1);
-         actor(im, FX_INT(e->x) + EW / 2 - im->w / 2 - cam_x, FX_INT(e->y) + EH - (im->h - an->feet) - cam_y, e->vx > 0 ? BLIT_FLIP : 0,
+         actor(im, FX_INT(e->x) + EW / 2 - im->w / 2 - cam_x, FX_INT(e->y) + EH - (im->h - an->feet) - cam_y,
+               (e->vx > 0 ? BLIT_FLIP : 0) | (e->flash ? BLIT_WHITE : 0),
                FX_INT(e->x) + EW / 2 - cam_x, FX_INT(e->y) + EH - cam_y, e->alive == 1 ? EW * 3 / 5 : 0);
          continue;
       }
       frame = e->alive == 2 ? ENEMY_SQUASHED : ((e->anim >> 3) & 1);
-      actor(&hd_enemy_img[frame], FX_INT(e->x) - 1 - cam_x, FX_INT(e->y) - 4 - cam_y, e->vx > 0 ? BLIT_FLIP : 0,
+      actor(&hd_enemy_img[frame], FX_INT(e->x) - 1 - cam_x, FX_INT(e->y) - 4 - cam_y, (e->vx > 0 ? BLIT_FLIP : 0) | (e->flash ? BLIT_WHITE : 0),
             FX_INT(e->x) + EW / 2 - cam_x, FX_INT(e->y) + EH - cam_y, e->alive == 1 ? 7 : 0);
    }
    for (i = MAX_PLAYERS - 1; i >= 0; i--)
@@ -370,6 +371,47 @@ static void actors(const hd_state *s)
       actor(&hd_hero[i][frame], FX_INT(p->x) - 3 - cam_x, FX_INT(p->y) - 2 - cam_y,
             (p->facing < 0 ? BLIT_FLIP : 0) | (p->hurt > HURT_FLASH ? BLIT_WHITE : 0),
             FX_INT(p->x) + PW / 2 - cam_x, FX_INT(p->y) + PH - cam_y, p->ground ? 6 : 4);
+   }
+}
+
+/* The weapon's shots: the shooter's skin's "shot" and "shot_hit" pictures, else a glowing pellet and a ring. */
+static void shots(const hd_state *s)
+{
+   int32_t i;
+   for (i = 0; i < MAX_SHOTS; i++)
+   {
+      const hd_shot *q = &s->shot[i];
+      const hd_skin *sk = hd_skin_count ? &hd_skins[hd_skin_of[q->owner]] : NULL;
+      int32_t x = FX_INT(q->x) - cam_x, y = FX_INT(q->y) - cam_y;
+      uint32_t c = hd_player_color[q->owner] & 0xffffffu;
+      if (q->hit)
+      {
+         int32_t done = SHOT_HIT_FRAMES - q->hit, r;
+         if (sk && sk->anim[ANIM_SHOT_HIT].frames)
+         {
+            const hd_anim *an = &sk->anim[ANIM_SHOT_HIT];
+            const hd_image *im = &an->frames[hd_min(done * an->count / SHOT_HIT_FRAMES, an->count - 1)];
+            blit(im, x - im->w / 2, y - im->h / 2, q->vx < 0 ? BLIT_FLIP : 0);
+            continue;
+         }
+         /* a ring growing and thinning */
+         r = 2 + done / 2;
+         rect(x - r, y - r, 2 * r, 1, c);
+         rect(x - r, y + r, 2 * r, 1, c);
+         rect(x - r, y - r, 1, 2 * r, c);
+         rect(x + r, y - r, 1, 2 * r + 1, c);
+      }
+      else if (q->life)
+      {
+         if (sk && sk->anim[ANIM_SHOT].frames)
+         {
+            const hd_image *im = anim_frame(&sk->anim[ANIM_SHOT], q->age, 1);
+            blit(im, x - im->w / 2, y - im->h / 2, q->vx < 0 ? BLIT_FLIP : 0);
+            continue;
+         }
+         rect(x - 3, y - 2, 6, 4, c);
+         rect(x - 2, y - 1, 4, 2, 0xffffffu);
+      }
    }
 }
 
@@ -529,6 +571,7 @@ void hd_draw_world(const hd_state *s, hd_surface *target, int32_t cx, int32_t cy
       backdrop();
    level(s);
    actors(s);
+   shots(s);
    particles(s);
    if (hd_layer_count)
       hd_layers_draw(surf.px, surf.w, surf.h, cam_x, cam_y, 1);

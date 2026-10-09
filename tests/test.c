@@ -863,6 +863,79 @@ static void test_screens(void)
    hd_content_builtin();
 }
 
+/* A weapon (format 3): held, it fires; shots hurt an enemy that takes two hits; the fire button no
+   longer runs; a save state taken with shots in the air plays on exactly; bad weapons are refused. */
+static void test_weapon(void)
+{
+   static uint8_t zip[300000], save[HD_SAVE_SIZE];
+   static char level[100000];
+   static hd_state s, again;
+   hd_input in[MAX_PLAYERS];
+   const char *err;
+   size_t n;
+   int32_t f, flying = 0, popped = 0, fastest = 0, row;
+   char *at;
+   zfile files[2] = {{0}};
+   flat_level(level, sizeof level, 60, 30);
+   /* an enemy on the floor 18 cells ahead of the start: row 26 is the 27th quoted row */
+   for (at = level, row = 0; row < 27 * 2 - 1; at++)
+      if (*at == '"')
+         row++;
+   at[20] = 'E';
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Shots\", \"level\": \"level.json\","
+                   " \"weapon\": {\"rate\": 5, \"speed\": 600, \"range\": 300, \"enemy_health\": 2}}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  weapon: %s\n", err);
+   CHECK(hd_weapon.on && hd_weapon.button == PAD_RUN && hd_weapon.life == 50);
+   hd_reset(&s);
+   memset(in, 0, sizeof in);
+   in[0].buttons = PAD_START;
+   hd_step(&s, in);
+   CHECK(s.phase == PH_PLAY && s.p[0].active);
+   CHECK(s.e[0].alive == 1 && s.e[0].hp == 2);
+   for (f = 0; f < 200; f++)
+   {
+      int32_t k, live = 0;
+      in[0].buttons = PAD_RUN | (f < 100 ? PAD_RIGHT : 0);
+      hd_step(&s, in);
+      for (k = 0; k < MAX_SHOTS; k++)
+         live += s.shot[k].life > 0;
+      flying = hd_max(flying, live);
+      fastest = hd_max(fastest, hd_abs(s.p[0].vx));
+      if (s.e[0].alive == 2)
+         popped = 1;
+      if (f == 3)
+      {
+         /* a shot in the air: the same game from a save state */
+         int32_t g;
+         hd_save(&s, save);
+         again = s;
+         for (g = 0; g < 40; g++)
+            hd_step(&again, in);
+         CHECK(hd_load(&s, save, HD_SAVE_SIZE) == 1);
+      }
+      if (f == 3 + 40)
+         CHECK(memcmp(&s, &again, sizeof s) == 0);
+   }
+   CHECK(flying >= 3);       /* held, it fires again and again */
+   CHECK(popped);            /* two hits pop the enemy */
+   CHECK(fastest <= hd_phys.walk_max); /* the fire button does not run */
+   CHECK(s.p[0].respawn == 0 && s.p[0].hurt == 0);
+   files[0].text = "{\"format\": 3, \"title\": \"Shots\", \"level\": \"level.json\", \"weapon\": {\"button\": \"start\"}}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "button") != NULL);
+   CHECK(!hd_weapon.on);
+   files[0].text = "{\"format\": 3, \"title\": \"Shots\", \"level\": \"level.json\", \"weapon\": {\"rate\": 1}}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "out of range") != NULL);
+   hd_content_builtin();
+}
+
 /* A rubber-hose puppet: loads, refuses bad sizes, and draws in every pose, facing both ways and at the
    screen's edges, without leaving the screen's memory. */
 static void test_rig(void)
@@ -1056,6 +1129,7 @@ int main(void)
    test_players_screens_sticks();
    test_trig();
    test_rig();
+   test_weapon();
    test_path();
    test_bones();
    test_fx();

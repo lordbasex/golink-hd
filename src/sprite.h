@@ -20,6 +20,8 @@ enum
    ANIM_HURT,     /* just hit (played once) */
    ANIM_BORED,    /* standing still for a long while (played now and then) */
    ANIM_WIN,      /* the stage is cleared */
+   ANIM_SHOT,     /* the skin's shot flying (format 3's weapon; facing right) */
+   ANIM_SHOT_HIT, /* its burst where it hits (played once) */
    ANIM_COUNT
 };
 
