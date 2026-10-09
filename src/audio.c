@@ -250,7 +250,7 @@ void hd_mix(hd_state *s, int16_t *out, int music_on)
             acc[2 * n + 1] += hd_pkg_music[2 * pos + 1] * hd_pkg_music_vol >> 8;
          }
          if (++pos >= hd_pkg_music_frames)
-            pos = hd_pkg_music_loop;
+            pos = hd_clamp(hd_pkg_music_loop, 0, hd_pkg_music_frames - 1);
       }
       s->music_pos = pos;
    }

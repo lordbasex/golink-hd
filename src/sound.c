@@ -168,7 +168,7 @@ const char *hd_sounds_load(const hd_zip *zip, const json *sounds, const json *mu
       const json *f = hd_json_get(music, "file"), *vol = hd_json_get(music, "volume"), *loop = hd_json_get(music, "loop_from");
       if (music->type != JSON_OBJECT || !f || f->type != JSON_STRING)
          return "manifest.json's music needs a \"file\"";
-      if ((vol && (vol->type != JSON_INT || vol->num < 0 || vol->num > 256)) || (loop && (loop->type != JSON_INT || loop->num < 0)))
+      if ((vol && (vol->type != JSON_INT || vol->num < 0 || vol->num > 256)) || (loop && (loop->type != JSON_INT || loop->num < 0 || loop->num > (int64_t)MUSIC_SECONDS_MAX * 1000)))
          return "the music's volume must be 0 to 256 and its loop_from a number of milliseconds";
       music_data = load_wav(zip, f->str, MUSIC_SECONDS_MAX, &frames, msg, sizeof msg);
       if (!music_data)
@@ -179,7 +179,9 @@ const char *hd_sounds_load(const hd_zip *zip, const json *sounds, const json *mu
       hd_pkg_music = music_data;
       hd_pkg_music_frames = frames;
       hd_pkg_music_vol = vol ? (int32_t)vol->num : 200;
-      hd_pkg_music_loop = loop ? (int32_t)hd_min((int32_t)((int64_t)loop->num * HD_RATE / 1000), frames - 1) : 0;
+      /* loop_from is at most MUSIC_SECONDS_MAX seconds: the product fits, and the result stays inside the song */
+      hd_pkg_music_loop = loop ? (int32_t)(loop->num * HD_RATE / 1000) : 0;
+      hd_pkg_music_loop = hd_clamp(hd_pkg_music_loop, 0, frames - 1);
    }
    return NULL;
 }

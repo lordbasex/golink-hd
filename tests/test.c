@@ -771,6 +771,13 @@ static void test_physics(void)
    files[0].text = "{\"format\": 3, \"title\": \"Bad\", \"level\": \"level.json\", \"physics\": {\"jump\": -5}}";
    n = make_zip(zip, files, 2);
    CHECK(hd_content_load(zip, n, &err) == 0);
+   /* the music's loop point is checked before anything is read: a huge one is refused, never wrapped around */
+   files[0].text = "{\"format\": 3, \"title\": \"Loop\", \"level\": \"level.json\", \"music\": {\"file\": \"m.wav\", \"loop_from\": 999999999999999}}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "loop_from") != NULL);
+   files[0].text = "{\"format\": 3, \"title\": \"Loop\", \"level\": \"level.json\", \"music\": {\"file\": \"m.wav\", \"loop_from\": 600001}}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "loop_from") != NULL);
    hd_content_builtin();
    CHECK(PW == 10 && PH == 22); /* the built-in game's again */
 }
