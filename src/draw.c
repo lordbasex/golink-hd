@@ -181,11 +181,20 @@ static void tile(int32_t kind, int32_t tx, int32_t ty, int32_t sx, int32_t sy)
       blit(&hd_tiles[kind], sx, sy, 0);
 }
 
+/* Frame t of an animation (t in frames of 60 per second), looping or held on its last frame. */
+static const hd_image *anim_frame(const hd_anim *an, int32_t t, int loop)
+{
+   /* 64 bits: the state's counters go up to 2^30, times up to 60 frames a second */
+   int64_t f = (int64_t)(t < 0 ? 0 : t) * an->fps / 60;
+   f = loop ? f % an->count : (f < an->count - 1 ? f : an->count - 1);
+   return &an->frames[f];
+}
+
 /* An object's animation frame standing on (x, bottom) and centered on x. */
 static void object(int32_t obj, int32_t t, int32_t x, int32_t bottom)
 {
+   const hd_image *im = anim_frame(&hd_objects[obj], t, 1);
    const hd_anim *an = &hd_objects[obj];
-   const hd_image *im = &an->frames[((t < 0 ? 0 : t) * an->fps / 60) % an->count];
    blit(im, x - im->w / 2, bottom - (im->h - an->feet), 0);
 }
 
@@ -245,13 +254,6 @@ static void actor(const hd_image *im, int32_t x, int32_t y, int32_t flags, int32
    gfx_blit(&surf, im, x, y, &st);
 }
 
-/* Frame t of an animation (t in frames of 60 per second), looping or held on its last frame. */
-static const hd_image *anim_frame(const hd_anim *an, int32_t t, int loop)
-{
-   int32_t f = (t < 0 ? 0 : t) * an->fps / 60;
-   f = loop ? f % an->count : hd_min(f, an->count - 1);
-   return &an->frames[f];
-}
 
 /* A hero drawn from its package's sprites: its state picks the animation. */
 static void hero_sprite(const hd_state *s, const hd_player *p, int32_t i)
@@ -320,7 +322,7 @@ static void actors(const hd_state *s)
          /* the package's enemy: feet on the hitbox's bottom, facing left like the built-in one */
          int32_t obj = e->alive == 2 && hd_objects[OBJ_ENEMY_SQUASHED].frames ? OBJ_ENEMY_SQUASHED : OBJ_ENEMY_WALK;
          const hd_anim *an = &hd_objects[obj];
-         const hd_image *im = &an->frames[(e->anim * an->fps / 60) % an->count];
+         const hd_image *im = anim_frame(an, e->anim, 1);
          actor(im, FX_INT(e->x) + EW / 2 - im->w / 2 - cam_x, FX_INT(e->y) + EH - (im->h - an->feet) - cam_y, e->vx > 0 ? BLIT_FLIP : 0,
                FX_INT(e->x) + EW / 2 - cam_x, FX_INT(e->y) + EH - cam_y, e->alive == 1 ? EW * 3 / 5 : 0);
          continue;

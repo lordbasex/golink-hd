@@ -851,6 +851,39 @@ static void test_screens(void)
    hd_content_builtin();
 }
 
+/* A sprite drawn when the state's counters are at their highest (2^30): the frame stays inside the animation. */
+static void test_sprite_counters(void)
+{
+   static uint8_t zip[300000], png[70000];
+   static char level[100000];
+   static hd_state s;
+   const char *err;
+   size_t n;
+   int32_t i;
+   zfile files[3] = {{0}};
+   flat_level(level, sizeof level, 60, 30);
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Big counters\", \"level\": \"level.json\","
+                   " \"sprites\": {\"hero\": {\"players\": [\"a\"], \"skins\": {\"a\": {\"idle\": {\"file\": \"a.png\", \"frame\": [16, 24], \"fps\": 60}}}},"
+                   " \"coin\": {\"file\": \"a.png\", \"frame\": [16, 24], \"fps\": 60}, \"enemy\": {\"walk\": {\"file\": \"a.png\", \"frame\": [16, 24], \"fps\": 60}}}}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   files[2].name = "a.png";
+   files[2].text = (const char *)png;
+   files[2].len = tiny_png(png, 48, 24); /* 3 frames */
+   n = make_zip(zip, files, 3);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   hd_reset(&s);
+   s.phase = PH_PLAY;
+   s.p[0].active = 1;
+   s.p[0].ground = 1;
+   s.frame = 1 << 30;
+   for (i = 0; i < MAX_ENEMIES; i++)
+      s.e[i].anim = 1 << 30;
+   hd_draw(&s, fb); /* with 32-bit math the frame index was negative: out of bounds */
+   hd_content_builtin();
+}
+
 static int32_t logged;
 
 static void count_log(void *user, int32_t level, const char *msg)
@@ -960,6 +993,7 @@ int main(void)
    test_goal_height();
    test_physics();
    test_screens();
+   test_sprite_counters();
    test_api();
    if (failures)
    {
