@@ -138,6 +138,14 @@ Back to front in the list's order, up to 8. `speed` is the share of the camera's
 
 `sounds` replaces the built-in effects it names (`jump`, `coin`, `stomp`, `hurt`, `join`, `check`, `clear`, `pause`; up to 10 seconds each, mixed to mono, placed left or right by the game). `music` plays over and over instead of the built-in tune, in stereo (up to 10 minutes), at `volume` 0 to 256 (200 by default), starting again at `loop_from` milliseconds; its position is in the save state, so a loaded state goes on exactly where it was, and `golinkhd_set_music` turns it off like the built-in tune.
 
+**`screens`**: pictures over the whole screen, scaled to it (keeping their shape, cropped from the middle):
+
+```json
+"screens": {"title": "start.png", "intro": "level1.png", "ending": "end.png", "intro_seconds": 6}
+```
+
+`title` shows before the game, with PRESS START blinking; `intro` is the level's card after start, for `intro_seconds` (1 to 30, 5 by default) or until someone **holds jump** for three quarters of a second (a ring of dots fills while it is held, and "hold A to skip" is written in the game's language); whoever presses start or jump on the title or the intro joins when it ends. `ending` covers the second half of the stage clear.
+
 `tools/sprites.py` cuts an image AI's strip (frames in a row on a transparent background) into such a sheet; [docs/howto/ai-art-and-audio.md](docs/howto/ai-art-and-audio.md) shows the whole path, from the prompts to the package, for [ANTÍDOTO](examples/antidoto).
 
 ### The API test games

@@ -578,6 +578,8 @@ static const char *load_package(const uint8_t *data, size_t size)
    if (!err)
       err = hd_textures_load(&zip, hd_json_get(man, "textures"));
    if (!err)
+      err = hd_screens_load(&zip, hd_json_get(man, "screens"));
+   if (!err)
       err = hd_sounds_load(&zip, hd_json_get(man, "sounds"), hd_json_get(man, "music"));
    hd_json_free(man);
    return err;

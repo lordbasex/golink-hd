@@ -65,6 +65,18 @@ typedef struct
 extern hd_layer hd_layers[MAX_LAYERS];
 extern int32_t hd_layer_count;
 
+/*
+ * Format 3's "screens": pictures over the whole screen, scaled to it when
+ * the package loads: "title" (before the game), "intro" (the level's card,
+ * after start: a few seconds, or until the jump button is held) and
+ * "ending" (after the stage is cleared).
+ */
+enum { SCREEN_TITLE = 0, SCREEN_INTRO, SCREEN_ENDING, SCREEN_COUNT };
+extern hd_image hd_screens[SCREEN_COUNT];
+extern int32_t hd_intro_frames; /* how long the intro shows by itself */
+#define SKIP_HOLD_FRAMES 45      /* holding jump this long skips the intro */
+const char *hd_screens_load(const hd_zip *zip, const json *screens);
+
 /* Reads "textures" (NULL is fine). */
 const char *hd_textures_load(const hd_zip *zip, const json *textures);
 /* Reads "layers" (NULL is fine). */

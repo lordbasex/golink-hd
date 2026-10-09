@@ -365,7 +365,7 @@ static int pack_names(const char *dir, char (*names)[256], int *count)
       }
    }
    /* format 3: every "file" in the sprites (the heroes', the enemy's, the level's things) and every texture */
-   ok = ok && add_files(hd_json_get(man, "sprites"), names, count, path) && add_values(hd_json_get(man, "textures"), names, count, path);
+   ok = ok && add_files(hd_json_get(man, "sprites"), names, count, path) && add_values(hd_json_get(man, "textures"), names, count, path) && add_values(hd_json_get(man, "screens"), names, count, path);
    for (i = 0; ok && i < *count; i++)
       if (!names[i][0] || names[i][0] == '/' || names[i][0] == '\\' || strstr(names[i], "..") || strchr(names[i], ':'))
       {

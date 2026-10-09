@@ -383,6 +383,44 @@ static void particles(const hd_state *s)
 /* A row of the 360 row screen, moved to the same place on a taller one. */
 #define ROW(y) ((y) * HD_H / 360)
 
+/* "Hold A to skip" in the game's language. */
+static const char *const skip_text[3] = { "HOLD A TO SKIP", "MANTÉN A PARA SALTAR", "SEGURE A PARA PULAR" };
+
+/*
+ * A package's whole-screen pictures (format 3's screens): the title (with
+ * PRESS START blinking), the level's intro (with a ring filling while jump
+ * is held) and the ending (the last part of the stage clear). Returns 1
+ * when one was drawn: nothing else goes on top.
+ */
+static int screen_picture(const hd_state *s)
+{
+   const hd_image *im = NULL;
+   if (s->phase == PH_TITLE && hd_screens[SCREEN_TITLE].px)
+      im = &hd_screens[SCREEN_TITLE];
+   else if (s->phase == PH_INTRO && hd_screens[SCREEN_INTRO].px)
+      im = &hd_screens[SCREEN_INTRO];
+   else if (s->phase == PH_CLEAR && s->phase_t >= 180 && hd_screens[SCREEN_ENDING].px)
+      im = &hd_screens[SCREEN_ENDING];
+   if (!im)
+      return 0;
+   memcpy(surf.px, im->px, (size_t)HD_W * HD_H * 4);
+   if (s->phase == PH_TITLE && ((s->frame >> 5) & 1))
+      center("PRESS START", HD_H - 40, 2, 0xffffffu);
+   if (s->phase == PH_INTRO)
+   {
+      /* a ring of 24 dots at the bottom right, lit as the hold goes on */
+      int32_t lit = s->skip_hold * 24 / SKIP_HOLD_FRAMES, k, cx = HD_W - 36, cy = HD_H - 36;
+      text(skip_text[hd_lang], HD_W - 64 - text_width(skip_text[hd_lang], 1), HD_H - 40, 1, 0xffffffu);
+      for (k = 0; k < 24; k++)
+      {
+         int32_t a = k * 4096 / 24;
+         int32_t dx = (int32_t)(((int64_t)hd_sin(a) * 18) >> 14), dy = -(int32_t)(((int64_t)hd_cos(a) * 18) >> 14);
+         rect(cx + dx - 2, cy + dy - 2, 4, 4, k < lit ? 0xf8c838u : 0x404040u);
+      }
+   }
+   return 1;
+}
+
 static void hud(const hd_state *s)
 {
    int32_t i;
@@ -549,6 +587,8 @@ void hd_draw(const hd_state *s, uint32_t *out)
    }
    effects(s, &screen, zoom);
    surf = screen;
+   if (screen_picture(s))
+      return;
    hud(s);
    if (s->dlg > 0 && s->dlg <= hd_fx.dialogs)
       text_dialog(&screen, hd_portrait.px ? &hd_portrait : NULL, hd_fx.dialog_name[s->dlg - 1],

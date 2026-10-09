@@ -74,6 +74,7 @@ static void sanitize(hd_state *s)
    s->frame = hd_clamp(s->frame, 0, COUNT);
    s->phase_t = hd_clamp(s->phase_t, 0, COUNT);
    s->music_tick = hd_clamp(s->music_tick, 0, COUNT);
+   s->skip_hold = hd_clamp(s->skip_hold, 0, 600);
    s->music_pos = hd_clamp(s->music_pos, 0, hd_pkg_music_frames > 0 ? hd_pkg_music_frames - 1 : 0);
    s->paused = s->paused ? 1 : 0;
    s->zoom = s->zoom ? hd_clamp(s->zoom, 128, 512) : 0;

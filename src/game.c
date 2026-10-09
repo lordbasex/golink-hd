@@ -9,6 +9,7 @@
 #include "hd.h"
 #include "gfx.h"
 #include "text.h"
+#include "sprite.h"
 
 /* Movement, in 16.16 pixels per frame (and per frame squared): hd_phys. */
 #define WALK_MAX (hd_phys.walk_max)
@@ -658,13 +659,51 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
          s->cam_x = 0;
       if (any & (PAD_START | PAD_JUMP))
       {
+         uint32_t who = 0;
+         for (i = 0; i < MAX_PLAYERS; i++)
+            if ((s->p[i].pad & ~s->p[i].prev) & (PAD_START | PAD_JUMP))
+               who |= 1u << i;
+         if (hd_screens[SCREEN_INTRO].px)
+         {
+            /* the level's card first */
+            s->phase = PH_INTRO;
+            s->phase_t = 0;
+            s->skip_hold = 0;
+            s->intro_join = who;
+         }
+         else
+         {
+            reset_level(s);
+            s->phase = PH_PLAY;
+            for (i = 0; i < MAX_PLAYERS; i++)
+               if (who & (1u << i))
+                  join(s, i);
+         }
+      }
+      particles_step(s);
+      return;
+   }
+   if (s->phase == PH_INTRO)
+   {
+      /* the intro: its seconds, or until someone holds jump long enough; pressing start or jump joins too */
+      int held = 0;
+      for (i = 0; i < MAX_PLAYERS; i++)
+      {
+         if ((s->p[i].pad & ~s->p[i].prev) & (PAD_START | PAD_JUMP))
+            s->intro_join |= 1u << i;
+         if (s->p[i].pad & PAD_JUMP)
+            held = 1;
+      }
+      s->skip_hold = held ? s->skip_hold + 1 : 0;
+      if (++s->phase_t >= hd_intro_frames || s->skip_hold >= SKIP_HOLD_FRAMES)
+      {
+         uint32_t who = s->intro_join;
          reset_level(s);
          s->phase = PH_PLAY;
          for (i = 0; i < MAX_PLAYERS; i++)
-            if ((s->p[i].pad & ~s->p[i].prev) & (PAD_START | PAD_JUMP))
+            if (who & (1u << i))
                join(s, i);
       }
-      particles_step(s);
       return;
    }
 

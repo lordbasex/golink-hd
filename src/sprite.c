@@ -21,6 +21,8 @@
 hd_skin hd_skins[MAX_SKINS];
 hd_anim hd_objects[OBJ_COUNT];
 hd_image hd_textures[TL_COUNT];
+hd_image hd_screens[SCREEN_COUNT];
+int32_t hd_intro_frames;
 hd_layer hd_layers[MAX_LAYERS];
 int32_t hd_layer_count;
 int32_t hd_skin_count;
@@ -59,6 +61,10 @@ void hd_sprites_free(void)
    memset(hd_objects, 0, sizeof hd_objects);
    for (s = 0; s < TL_COUNT; s++)
       free(hd_textures[s].px);
+   for (s = 0; s < SCREEN_COUNT; s++)
+      free(hd_screens[s].px);
+   memset(hd_screens, 0, sizeof hd_screens);
+   hd_intro_frames = 0;
    memset(hd_textures, 0, sizeof hd_textures);
    memset(hd_skins, 0, sizeof hd_skins);
    memset(hd_skin_of, 0, sizeof hd_skin_of);
@@ -399,6 +405,103 @@ const char *hd_textures_load(const hd_zip *zip, const json *tex)
          return msg;
       }
       pixels_used += (int64_t)im->w * im->h;
+   }
+   return NULL;
+}
+
+/* A picture scaled to w x h, cropped to that shape from its middle (bilinear, in integers: the same pixels everywhere). */
+static uint32_t *fit(const uint32_t *px, int32_t pw, int32_t ph, int32_t w, int32_t h)
+{
+   uint32_t *out = (uint32_t *)malloc((size_t)w * h * 4);
+   int32_t cw = pw, ch = ph, x0 = 0, y0 = 0, x, y;
+   if (!out)
+      return NULL;
+   /* the biggest part of the picture with the screen's shape */
+   if ((int64_t)pw * h > (int64_t)ph * w)
+   {
+      cw = (int32_t)((int64_t)ph * w / h);
+      x0 = (pw - cw) / 2;
+   }
+   else
+   {
+      ch = (int32_t)((int64_t)pw * h / w);
+      y0 = (ph - ch) / 2;
+   }
+   for (y = 0; y < h; y++)
+   {
+      int32_t sy = (int32_t)(((int64_t)y * 2 + 1) * ch * 128 / h) - 128; /* 1/256 pixels, centers aligned */
+      int32_t iy = hd_clamp(sy >> 8, 0, ch - 1), fy = sy < 0 ? 0 : sy & 255, iy2 = hd_min(iy + 1, ch - 1);
+      for (x = 0; x < w; x++)
+      {
+         int32_t sx = (int32_t)(((int64_t)x * 2 + 1) * cw * 128 / w) - 128;
+         int32_t ix = hd_clamp(sx >> 8, 0, cw - 1), fx = sx < 0 ? 0 : sx & 255, ix2 = hd_min(ix + 1, cw - 1);
+         const uint32_t *r1 = px + (size_t)(y0 + iy) * pw + x0, *r2 = px + (size_t)(y0 + iy2) * pw + x0;
+         uint32_t c = 0;
+         int32_t k;
+         for (k = 0; k < 32; k += 8)
+         {
+            int32_t a = (int32_t)(r1[ix] >> k & 255), b = (int32_t)(r1[ix2] >> k & 255);
+            int32_t cc = (int32_t)(r2[ix] >> k & 255), d = (int32_t)(r2[ix2] >> k & 255);
+            int32_t top = a * (256 - fx) + b * fx, bot = cc * (256 - fx) + d * fx;
+            c |= (uint32_t)((top * (256 - fy) + bot * fy) >> 16) << k;
+         }
+         out[(size_t)y * w + x] = c | 0xff000000u;
+      }
+   }
+   return out;
+}
+
+/*
+ *   "screens": {"title": "start.png", "intro": "level1.png", "ending": "end.png", "intro_seconds": 5}
+ */
+const char *hd_screens_load(const hd_zip *zip, const json *screens)
+{
+   static char msg[200];
+   static const char *const keys[SCREEN_COUNT] = { "title", "intro", "ending" };
+   const json *secs;
+   int32_t i;
+   hd_intro_frames = 5 * HD_FPS;
+   if (!screens)
+      return NULL;
+   if (screens->type != JSON_OBJECT)
+      return "manifest.json's screens must be an object";
+   if ((secs = hd_json_get(screens, "intro_seconds")))
+   {
+      if (secs->type != JSON_INT || secs->num < 1 || secs->num > 30)
+         return "the screens' intro_seconds must be 1 to 30";
+      hd_intro_frames = (int32_t)secs->num * HD_FPS;
+   }
+   for (i = 0; i < SCREEN_COUNT; i++)
+   {
+      const json *f = hd_json_get(screens, keys[i]);
+      const char *err;
+      uint8_t *png;
+      size_t size;
+      uint32_t *px;
+      int32_t w, h;
+      if (!f)
+         continue;
+      if (f->type != JSON_STRING)
+         return "each screen must be a file name";
+      png = hd_zip_read(zip, f->str, &size, &err);
+      if (!png)
+      {
+         snprintf(msg, sizeof msg, "%s: %s", f->str, err);
+         return msg;
+      }
+      px = hd_png_read(png, size, &w, &h, &err);
+      free(png);
+      if (!px)
+      {
+         snprintf(msg, sizeof msg, "%s: %s", f->str, err);
+         return msg;
+      }
+      hd_screens[i].px = fit(px, w, h, HD_W, HD_H);
+      free(px);
+      if (!hd_screens[i].px)
+         return "not enough memory for the screens";
+      hd_screens[i].w = HD_W;
+      hd_screens[i].h = HD_H;
    }
    return NULL;
 }

@@ -78,6 +78,19 @@ def thing(name, total, fps, part=None):
     return dict({"file": name + ".png", "frame": [w // total, h], "fps": fps, "feet": 2}, **(part or {}))
 
 
+def screens(zone):
+    """The title, the zone's intro card and the ending (resized by the engine to the screen)."""
+    out = {}
+    for key, name in (("title", "ui_start"), ("intro", f"ui_intro_{zone}"), ("ending", "ui_end")):
+        src = os.path.join(HERE, "source", name + ".png")
+        if os.path.exists(src):
+            shutil.copy(src, os.path.join(OUT, name + ".png"))
+            out[key] = name + ".png"
+    if out:
+        out["intro_seconds"] = 6
+    return out or None
+
+
 def music(track):
     """The zone's music from source/music (made by make_tracks.py on the machine with the model)."""
     src = os.path.join(HERE, "source", "music", track + ".wav")
@@ -165,6 +178,7 @@ def main():
             "goal": thing("obj_portal", 4, 6),
         }.items() if v},
         "textures": textures("colon"),
+        "screens": screens("colon"),
         "layers": layers("colon"),
         "music": music("colon"),
     }

@@ -102,7 +102,7 @@ enum
    T_ENEMY /* where an enemy starts; empty once the level is built */
 };
 
-enum { PH_TITLE = 0, PH_PLAY, PH_CLEAR };
+enum { PH_TITLE = 0, PH_PLAY, PH_CLEAR, PH_INTRO };
 
 enum
 {
@@ -202,6 +202,8 @@ typedef struct
    int32_t frame;
    uint32_t rng;
    int32_t phase, phase_t, paused, hitstop;
+   int32_t skip_hold;   /* frames the jump button has been held on a level's intro (format 3's screens) */
+   uint32_t intro_join; /* the players who pressed start on the title, joined when the intro ends */
    int32_t shake, shake_x, shake_y;
    int32_t cam_x, cam_y; /* 16.16, top-left of the screen in the level */
    int32_t music_row, music_tick;
