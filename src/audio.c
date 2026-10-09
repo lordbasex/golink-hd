@@ -33,6 +33,7 @@ static int16_t s_shoot[HD_RATE * 9 / 100];
 static int16_t s_hit[HD_RATE * 6 / 100];
 static int16_t s_ko[HD_RATE * 60 / 100];
 static int16_t s_super[HD_RATE * 50 / 100];
+static int16_t s_yawn[HD_RATE * 60 / 100];
 static int16_t w_square[WAVE_LEN], w_triangle[WAVE_LEN];
 
 /* Frequency in millihertz of each MIDI note, from A4 = 440 Hz. */
@@ -125,6 +126,8 @@ void hd_audio_build(void)
    memset(s_super, 0, sizeof s_super);
    tone(s_super, 0, N(s_super), 200000, 1600000, 4200, 0);
    tone(s_super, 0, N(s_super), 6000000, 2000000, 2600, 1);
+   memset(s_yawn, 0, sizeof s_yawn);
+   tone(s_yawn, 0, N(s_yawn), 330000, 180000, 2400, 0);
 
    for (i = 0; i < WAVE_LEN; i++)
    {
@@ -144,6 +147,7 @@ void hd_audio_build(void)
    samples[SFX_HIT] = (sample){ s_hit, N(s_hit), 0 };
    samples[SFX_KO] = (sample){ s_ko, N(s_ko), 0 };
    samples[SFX_SUPER] = (sample){ s_super, N(s_super), 0 };
+   samples[SFX_YAWN] = (sample){ s_yawn, N(s_yawn), 0 };
    samples[WAVE_SQUARE] = (sample){ w_square, WAVE_LEN, 1 };
    samples[WAVE_TRIANGLE] = (sample){ w_triangle, WAVE_LEN, 1 };
 }

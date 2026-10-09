@@ -131,6 +131,7 @@ enum
    SFX_HIT,   /* a shot hits an enemy that does not die */
    SFX_KO,    /* a player runs out of health (format 3's "health") */
    SFX_SUPER, /* a super attack (format 3's "super") */
+   SFX_YAWN,  /* a player standing still yawns (a puppet's yawn, a skin's bored animation) */
    SFX_COUNT
 };
 /* Every sample the mixer knows: the effects and the music's two waves. */

@@ -146,7 +146,7 @@ def screens():
 # the engine's effects -> ANTÍDOTO's (made by make_sfx.py on the machine with the model, in source/sfx)
 SOUNDS = {"jump": "jump", "coin": "vitamin", "stomp": "germ_squash", "hurt": "hurt",
           "join": "ready_go", "check": "checkpoint", "clear": "victory", "pause": "menu",
-          "shoot": "shoot", "hit": "virus_pop", "knockout": "knockout", "super": "super"}
+          "shoot": "shoot", "hit": "virus_pop", "knockout": "knockout", "super": "super", "yawn": "yawn"}
 SFX_PEAK = 13000       # every effect at the same loudness, well under the music's
 SFX_QUIET = 600        # quieter than this at the start or the end is silence
 

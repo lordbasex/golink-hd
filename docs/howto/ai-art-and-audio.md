@@ -393,6 +393,14 @@ tools/hdrun ./libgolinkhd.dylib --content antidoto720.glhd --frames 720 --script
 
   The game is the same (the same sound hash at every size); only the picture changes. The package at 1080p weighs about 190 MB.
 
+- The 24 effects were done on the M1 (MOSS-SoundEffect, 30 steps, from 7 to 35 minutes each); `build.py` gives the engine the ones it plays (jump, vitamin, germ squash, hurt, ready, checkpoint, victory, menu, shoot, virus pop, knockout, super, yawn), the rest wait for the bosses and the enemies to come.
+
 ## Cleaning up
 
 When the game's audio is done, the generated files are copied off the M1 and `~/ai` (the models, the virtual environment and the outputs) is removed there, as the user asked.
+
+Done on 2026-10-09, once the 13 tracks and the 24 effects were copied (into `examples/antidoto/source/music` and `source/sfx`, kept out of git): `~/ai` (12 GB: ACE-Step, MOSS-TTS, uv), `~/.cache/huggingface` (10 GB: the two models) and `~/.cache/uv` (2.3 GB) were removed, 22 GB freed. To make more audio later, the install steps above set it up again.
+
+```bash
+rm -rf ~/ai ~/.cache/huggingface ~/.cache/uv
+```

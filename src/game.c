@@ -595,7 +595,12 @@ static void player_step(hd_state *s, int32_t i)
 
    p->anim += p->ground ? hd_abs(p->vx) >> 14 : 0;
    if (p->ground && hd_abs(p->vx) < FX_FRAC(1, 4) && !(pad & (PAD_LEFT | PAD_RIGHT | PAD_JUMP | PAD_RUN | PAD_DOWN)) && !dir)
+   {
       p->still = hd_min(p->still + 1, 1 << 20);
+      /* a package's hero yawns when the bored look starts, and again with each one (as a puppet does: every 400 frames) */
+      if (hd_skin_count && p->still >= BORED_AFTER && (p->still - BORED_AFTER) % 400 == 0)
+         hd_play(s, SFX_YAWN, screen_x(s, FX_INT(p->x)));
+   }
    else
       p->still = 0;
    touch_coins(s, p);
