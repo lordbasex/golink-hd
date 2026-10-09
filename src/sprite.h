@@ -28,6 +28,7 @@ typedef struct
    int32_t count;    /* frames */
    int32_t fps;      /* frames per second, 1 to 60 */
    int32_t feet;     /* empty pixels under the feet in every frame */
+   int32_t stride;   /* pixels walked in one whole cycle (run): the frames follow the distance, not the time; 0 by time */
 } hd_anim;
 
 typedef struct

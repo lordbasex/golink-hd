@@ -301,6 +301,12 @@ static void hero_sprite(const hd_state *s, const hd_player *p, int32_t i)
       int32_t span = hd_phys.jump_speed + hd_phys.fall_max, at = hd_clamp(p->vy + hd_phys.jump_speed, 0, span - 1);
       im = &an->frames[first + (int32_t)((int64_t)at * (last - first + 1) / span)];
    }
+   else if (state == ANIM_RUN && an->stride > 0)
+   {
+      /* the steps follow the ground: p->anim grows by 4 a pixel walked */
+      int64_t f = (int64_t)p->anim * an->count / ((int64_t)an->stride * 4);
+      im = &an->frames[f % an->count];
+   }
    else
       im = anim_frame(an, t, loop);
    actor(im, FX_INT(p->x) + PW / 2 - im->w / 2 - cam_x, FX_INT(p->y) + PH - (im->h - an->feet) - cam_y,

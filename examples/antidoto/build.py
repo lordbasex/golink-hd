@@ -24,6 +24,8 @@ ANIMS = {
     "win": ("win", 6, 8),
 }
 SKINS = ["red", "blue"]
+# pixels walked in one whole run cycle (8 frames): the steps follow the ground
+STRIDE = 130
 
 
 def png_size(path):
@@ -156,6 +158,8 @@ def main():
             w, h = png_size(src)
             shutil.copy(src, os.path.join(OUT, f"{skin}_{strip}.png"))
             anims[name] = {"file": f"{skin}_{strip}.png", "frame": [w // frames, h], "fps": fps, "feet": 2}
+            if name == "run":
+                anims[name]["stride"] = STRIDE
         skins[skin] = anims
     manifest = {
         "format": 3,
@@ -167,7 +171,7 @@ def main():
         "level": "level.json",
         "sky": ["#3a1420", "#7a3a3a"],
         # a hero about 80 px tall: hitbox, and a jump of about 12 cells
-        "physics": {"hitbox": [28, 66], "enemy_hitbox": [34, 30], "walk": 300, "run": 460, "jump": 1050, "gravity": 50, "gravity_hold": 30, "fall_max": 1200},
+        "physics": {"hitbox": [28, 66], "enemy_hitbox": [34, 30], "walk": 240, "run": 380, "jump": 1050, "gravity": 50, "gravity_hold": 30, "fall_max": 1200},
         "sprites": {k: v for k, v in {
             "hero": {"players": SKINS, "skins": skins},
             "enemy": {k: v for k, v in {"walk": thing("enemy_germ", 6, 8, {"from": 0, "frames": 4}),

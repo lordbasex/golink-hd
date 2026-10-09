@@ -1,10 +1,11 @@
 # Copyright (c) 2026 Federico Pereira <lord.basex@gmail.com>
 # Generates ANTÍDOTO's sound effects with MOSS-SoundEffect v2 (Apache 2.0),
 # one WAV per effect, skipping the ones already made, so it can run again
-# after a stop. Run it with the model's own environment, on Apple silicon
+# after a stop (run_sfx.sh starts it again until every effect is there). Run it with the model's own environment, on Apple silicon
 # (torch.compile off, and the model's float64 made float32, see
 # docs/howto/ai-art-and-audio.md):
 #   TORCHDYNAMO_DISABLE=1 ~/ai/MOSS-TTS/moss_soundeffect_v2/.venv/bin/python make_sfx.py [OUT_DIR]
+import gc
 import pathlib
 import sys
 import wave
@@ -72,6 +73,11 @@ def main():
         torch.manual_seed(1930 + i)
         audio = pipe(prompt=STYLE + what, seconds=seconds, num_inference_steps=STEPS, cfg_scale=4.0)
         save(audio, dst, RATE)
+        # the M1's memory fills up from one effect to the next without this
+        del audio
+        gc.collect()
+        if device == "mps":
+            torch.mps.empty_cache()
     print("done", flush=True)
 
 

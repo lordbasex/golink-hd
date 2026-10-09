@@ -308,6 +308,10 @@ ffmpeg -framerate 30 -pattern_type glob -i 'frames/frame-*.png' -f s16le -ar 480
 
 The first version (2026-10-09): Rojo and Azul running, jumping and yawning in the painted colon with its music; the floor, the enemies and the pickups are still the built-in game's.
 
+### Feedback from playing it
+
+- "The walk is so fast you cannot see the steps" (the user, on play.go-link.org): the run animation went by time (14 frames a second) whatever the speed, so the feet slid over the floor. The engine got `stride`: the run's frames follow the distance walked (one cycle of 8 frames every 130 pixels), and the hero was slowed down for its size (walk 2.4, run 3.8 pixels a frame instead of 3 and 4.6).
+
 ## Cleaning up
 
 When the game's audio is done, the generated files are copied off the M1 and `~/ai` (the models, the virtual environment and the outputs) is removed there, as the user asked.

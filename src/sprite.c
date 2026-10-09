@@ -6,6 +6,7 @@
  *      "players": ["red", "blue"],            a skin per player, repeated for the rest
  *      "skins": {"red": {
  *         "idle": {"file": "red_idle.png", "frame": [w, h], "fps": 10, "feet": 2},
+ *         "run": {"file": "red_run.png", "frame": [w, h], "stride": 120},
  *         "run": {...}, "jump": {...}, "hurt": {...}, "bored": {...}, "win": {...}}}}}
  *
  * Each animation is one PNG with its frames in a row, all w x h: the frame
@@ -117,6 +118,7 @@ static const char *load_anim(const hd_zip *zip, const json *def, hd_anim *an, co
    fh = (int32_t)hd_json_at(frame, 1)->num;
    an->fps = get_int(def, "fps", 1, 60, 10, &bad);
    an->feet = get_int(def, "feet", 0, 64, 0, &bad);
+   an->stride = get_int(def, "stride", 0, 4096, 0, &bad);
    if (bad || fw < 4 || fw > 512 || fh < 4 || fh > 512)
    {
       snprintf(msg, sizeof msg, "the sprite %s's %s: frames of 4 to 512 pixels, fps 1 to 60, feet 0 to 64", skin, name);
