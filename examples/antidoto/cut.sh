@@ -19,3 +19,9 @@ for who in red blue; do
     cut source/${who}_$name.png sprites/${who}_$name.png --height "$H" --frames "$frames" --shell "$shell"
   done
 done
+# the enemies and the level's things: their own heights
+for item in enemy_germ:6:44 enemy_spore:6:44 enemy_spitter:6:52 obj_vitamin:4:24 obj_leukocyte:4:64 obj_portal:4:120; do
+  name=${item%%:*}; rest=${item#*:}; frames=${rest%%:*}; height=${rest##*:}
+  [ -f source/$name.png ] || continue
+  cut source/$name.png sprites/$name.png --height "$height" --frames "$frames"
+done

@@ -149,6 +149,46 @@ static void backdrop(void)
    }
 }
 
+/* A cell's 16 x 16 piece of a texture laid over the level, see-through pixels skipped. */
+static void texture_cell(const hd_image *t, int32_t tx, int32_t ty, int32_t sx, int32_t sy)
+{
+   int32_t ox = (tx * TILE) % t->w, oy = (ty * TILE) % t->h, x, y;
+   if (ox < 0)
+      ox += t->w;
+   if (oy < 0)
+      oy += t->h;
+   for (y = hd_max(0, -sy); y < TILE && sy + y < surf.h; y++)
+   {
+      const uint32_t *src = t->px + (size_t)(oy + y) * t->w + ox;
+      uint32_t *dst = surf.px + (size_t)(sy + y) * surf.w + sx;
+      for (x = hd_max(0, -sx); x < TILE && sx + x < surf.w; x++)
+      {
+         uint32_t c = src[x], a = c >> 24;
+         if (a == 255)
+            dst[x] = c & 0xffffffu;
+         else if (a)
+            dst[x] = mix(dst[x], c & 0xffffffu, (int32_t)a);
+      }
+   }
+}
+
+/* A tile: the package's texture when it has one, else the tile picture. */
+static void tile(int32_t kind, int32_t tx, int32_t ty, int32_t sx, int32_t sy)
+{
+   if (hd_textures[kind].px)
+      texture_cell(&hd_textures[kind], tx, ty, sx, sy);
+   else
+      blit(&hd_tiles[kind], sx, sy, 0);
+}
+
+/* An object's animation frame standing on (x, bottom) and centered on x. */
+static void object(int32_t obj, int32_t t, int32_t x, int32_t bottom)
+{
+   const hd_anim *an = &hd_objects[obj];
+   const hd_image *im = &an->frames[((t < 0 ? 0 : t) * an->fps / 60) % an->count];
+   blit(im, x - im->w / 2, bottom - (im->h - an->feet), 0);
+}
+
 static void level(const hd_state *s)
 {
    int32_t tx0 = cam_x >> 4, ty0 = cam_y >> 4, tx, ty;
@@ -161,23 +201,33 @@ static void level(const hd_state *s)
          switch (t)
          {
          case T_GROUND:
-            blit(&hd_tiles[hd_cell(tx, ty - 1) == T_GROUND ? TL_GROUND : TL_GROUND_TOP], sx, sy, 0);
+            tile(hd_cell(tx, ty - 1) == T_GROUND ? TL_GROUND : TL_GROUND_TOP, tx, ty, sx, sy);
             break;
          case T_BRICK:
-            blit(&hd_tiles[TL_BRICK], sx, sy, 0);
+            tile(TL_BRICK, tx, ty, sx, sy);
             break;
          case T_PLATFORM:
-            blit(&hd_tiles[TL_PLATFORM], sx, sy, 0);
+            tile(TL_PLATFORM, tx, ty, sx, sy);
             break;
          case T_COIN:
-            if (!got)
+            if (got)
+               break;
+            if (hd_objects[OBJ_COIN].frames)
+               object(OBJ_COIN, s->frame + tx * 7, sx + TILE / 2, sy + TILE + ((((s->frame >> 4) + tx) & 1) ? 1 : 0));
+            else
                blit(&hd_coin[((s->frame + tx * 3) >> 3) & 3], sx, sy + ((((s->frame >> 4) + tx) & 1) ? 1 : 0), 0);
             break;
          case T_CHECK:
-            blit(&hd_check[got ? 1 : 0], sx, sy - 16, 0);
+            if (hd_objects[got ? OBJ_CHECK_ON : OBJ_CHECK_OFF].frames)
+               object(got ? OBJ_CHECK_ON : OBJ_CHECK_OFF, s->frame, sx + TILE / 2, sy + TILE);
+            else
+               blit(&hd_check[got ? 1 : 0], sx, sy - 16, 0);
             break;
          case T_FLAG:
-            blit(&hd_flag, sx, sy - 48, 0);
+            if (hd_objects[OBJ_GOAL].frames)
+               object(OBJ_GOAL, s->frame, sx + TILE / 2, sy + TILE);
+            else
+               blit(&hd_flag, sx, sy - 48, 0);
             break;
          }
       }
@@ -265,6 +315,16 @@ static void actors(const hd_state *s)
       int32_t frame;
       if (!e->alive)
          continue;
+      if (hd_objects[OBJ_ENEMY_WALK].frames)
+      {
+         /* the package's enemy: feet on the hitbox's bottom, facing left like the built-in one */
+         int32_t obj = e->alive == 2 && hd_objects[OBJ_ENEMY_SQUASHED].frames ? OBJ_ENEMY_SQUASHED : OBJ_ENEMY_WALK;
+         const hd_anim *an = &hd_objects[obj];
+         const hd_image *im = &an->frames[(e->anim * an->fps / 60) % an->count];
+         actor(im, FX_INT(e->x) + EW / 2 - im->w / 2 - cam_x, FX_INT(e->y) + EH - (im->h - an->feet) - cam_y, e->vx > 0 ? BLIT_FLIP : 0,
+               FX_INT(e->x) + EW / 2 - cam_x, FX_INT(e->y) + EH - cam_y, e->alive == 1 ? EW * 3 / 5 : 0);
+         continue;
+      }
       frame = e->alive == 2 ? ENEMY_SQUASHED : ((e->anim >> 3) & 1);
       actor(&hd_enemy_img[frame], FX_INT(e->x) - 1 - cam_x, FX_INT(e->y) - 4 - cam_y, e->vx > 0 ? BLIT_FLIP : 0,
             FX_INT(e->x) + EW / 2 - cam_x, FX_INT(e->y) + EH - cam_y, e->alive == 1 ? 7 : 0);

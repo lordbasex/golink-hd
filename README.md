@@ -85,6 +85,7 @@ Format 3 adds two keys to the manifest, both optional; a package of format 1 or 
 | Key | Built-in | Range |
 |---|---|---|
 | `hitbox` | `[10, 22]` | 4 to 128 wide, 4 to 192 tall |
+| `enemy_hitbox` | `[14, 12]` | 4 to 128 each |
 | `walk`, `run` | 250, 400 | 10 to 2000 |
 | `accel`, `air_accel` | 30, 18 | 1 to 500 |
 | `friction`, `air_friction` | 25, 5 | 1 to 500, 0 to 500 |
@@ -106,7 +107,17 @@ Format 3 adds two keys to the manifest, both optional; a package of format 1 or 
 - `players`: the skin of player 1, 2…; the list repeats for the rest (two skins: odd players wear the first, even the second).
 - Each animation is one PNG with its frames in a row, `frame` pixels each (4 to 512), so the frame count is the picture's width over the frame's; `fps` 1 to 60 (10 by default); `feet`, the empty pixels under the feet in every frame. The character's feet stand on the hitbox's bottom, centered on it, and it faces right (the engine mirrors it).
 - The states: `idle` (required), `run` (on the ground and moving), `jump` (in the air: the frames go from rising to falling with the speed, leaving out the first and the last, take-off and landing, when there are 4 or more), `hurt` (once, when hit), `bored` (after 6 seconds standing still with no button held: once, then idle for 4 seconds, again and again), `win` (the stage is cleared). A missing one shows `idle`.
+- `from` and `frames` use only part of a picture's frames (`{"file": "germ.png", "frame": [44, 48], "from": 0, "frames": 4}`), so one strip can give several animations.
+- The level's things have their own animations too, all optional: `coin` (any pickup), `checkpoint` with `off` and `on`, `goal`, and `enemy` with `walk` and `squashed` (it faces left, like the built-in one; its hitbox is the physics' `enemy_hitbox`). Each stands on its cell's bottom (an enemy on its hitbox's bottom), centered.
 - All the sprites together may hold 64 million pixels.
+
+**`textures`**: a tile kind painted as a picture laid over the whole level, so a floor keeps a painting's detail on the level's grid of 16 pixels:
+
+```json
+"textures": {"ground_top": "flesh_top.png", "ground": "flesh.png", "brick": "cell.png", "platform": "fold.png"}
+```
+
+Each picture's sides are multiples of 16, up to 1024; a cell of that kind shows its own 16 × 16 piece of it (a ground top 16 pixels tall is the same band on every top cell). See-through pixels stay see-through.
 
 **`layers`**: painted pictures behind the level, or in front of it, repeated across it:
 

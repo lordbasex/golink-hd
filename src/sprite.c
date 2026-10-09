@@ -19,6 +19,8 @@
 #include "sprite.h"
 
 hd_skin hd_skins[MAX_SKINS];
+hd_anim hd_objects[OBJ_COUNT];
+hd_image hd_textures[TL_COUNT];
 hd_layer hd_layers[MAX_LAYERS];
 int32_t hd_layer_count;
 int32_t hd_skin_count;
@@ -48,6 +50,16 @@ void hd_sprites_free(void)
       free(hd_layers[s].img.px);
    memset(hd_layers, 0, sizeof hd_layers);
    hd_layer_count = 0;
+   for (s = 0; s < OBJ_COUNT; s++)
+      if (hd_objects[s].frames)
+      {
+         free(hd_objects[s].frames[0].px);
+         free(hd_objects[s].frames);
+      }
+   memset(hd_objects, 0, sizeof hd_objects);
+   for (s = 0; s < TL_COUNT; s++)
+      free(hd_textures[s].px);
+   memset(hd_textures, 0, sizeof hd_textures);
    memset(hd_skins, 0, sizeof hd_skins);
    memset(hd_skin_of, 0, sizeof hd_skin_of);
    hd_skin_count = 0;
@@ -87,7 +99,7 @@ static const char *load_anim(const hd_zip *zip, const json *def, hd_anim *an, co
    uint8_t *png;
    size_t size;
    uint32_t *px, *block;
-   int32_t w, h, fw, fh, n, i, y;
+   int32_t w, h, fw, fh, n, i, y, first;
    int bad = 0;
    if (def->type != JSON_OBJECT || !file || file->type != JSON_STRING || !frame || frame->type != JSON_ARRAY || frame->count != 2 ||
        hd_json_at(frame, 0)->type != JSON_INT || hd_json_at(frame, 1)->type != JSON_INT)
@@ -123,13 +135,21 @@ static const char *load_anim(const hd_zip *zip, const json *def, hd_anim *an, co
       snprintf(msg, sizeof msg, "%s must be one row of 1 to 64 frames of %d x %d pixels", file->str, (int)fw, (int)fh);
       return msg;
    }
-   n = w / fw;
-   if (pixels_used + (int64_t)w * h > SPRITE_PIXELS_MAX)
+   /* "from" and "frames": only some of the picture's frames */
+   first = get_int(def, "from", 0, w / fw - 1, 0, &bad);
+   n = get_int(def, "frames", 1, 64, w / fw - first, &bad);
+   if (bad || first + n > w / fw)
+   {
+      free(px);
+      snprintf(msg, sizeof msg, "%s: \"from\" and \"frames\" must stay inside its %d frames", file->str, (int)(w / fw));
+      return msg;
+   }
+   if (pixels_used + (int64_t)n * fw * fh > SPRITE_PIXELS_MAX)
    {
       free(px);
       return "the sprites are bigger than go-link HD keeps (64 million pixels)";
    }
-   block = (uint32_t *)malloc((size_t)w * h * 4);
+   block = (uint32_t *)malloc((size_t)n * fw * fh * 4);
    an->frames = (hd_image *)calloc((size_t)n, sizeof *an->frames);
    if (!block || !an->frames)
    {
@@ -145,10 +165,10 @@ static const char *load_anim(const hd_zip *zip, const json *def, hd_anim *an, co
       an->frames[i].h = fh;
       an->frames[i].px = block + (size_t)i * fw * fh;
       for (y = 0; y < fh; y++)
-         memcpy(an->frames[i].px + y * fw, px + (size_t)y * w + i * fw, (size_t)fw * 4);
+         memcpy(an->frames[i].px + y * fw, px + (size_t)y * w + (size_t)(first + i) * fw, (size_t)fw * 4);
    }
    an->count = n;
-   pixels_used += (int64_t)w * h;
+   pixels_used += (int64_t)n * fw * fh;
    free(px);
    return NULL;
 }
@@ -163,6 +183,30 @@ const char *hd_sprites_load(const hd_zip *zip, const json *sprites)
       return NULL;
    if (sprites->type != JSON_OBJECT)
       return "manifest.json's sprites must be an object";
+   {
+      /* the level's things: an animation each, or two for the checkpoint and the enemy */
+      static const struct { const char *key, *sub; int32_t obj; } objs[] = {
+         { "coin", NULL, OBJ_COIN }, { "goal", NULL, OBJ_GOAL },
+         { "checkpoint", "off", OBJ_CHECK_OFF }, { "checkpoint", "on", OBJ_CHECK_ON },
+         { "enemy", "walk", OBJ_ENEMY_WALK }, { "enemy", "squashed", OBJ_ENEMY_SQUASHED },
+      };
+      size_t k;
+      for (k = 0; k < sizeof objs / sizeof objs[0]; k++)
+      {
+         const json *def = hd_json_get(sprites, objs[k].key);
+         const char *err;
+         if (def && objs[k].sub)
+            def = hd_json_get(def, objs[k].sub);
+         if (!def)
+            continue;
+         err = load_anim(zip, def, &hd_objects[objs[k].obj], objs[k].key, objs[k].sub ? objs[k].sub : "animation");
+         if (err)
+         {
+            hd_sprites_free();
+            return err;
+         }
+      }
+   }
    hero = hd_json_get(sprites, "hero");
    if (!hero)
       return NULL;
@@ -303,4 +347,58 @@ void hd_layers_draw(uint32_t *px, int32_t w, int32_t h, int32_t cx, int32_t cy, 
          }
       }
    }
+}
+
+/*
+ *   "textures": {"ground_top": "flesh_top.png", "ground": "flesh.png",
+ *                "brick": "cell.png", "platform": "valve.png"}
+ *
+ * Each picture's sides are multiples of 16 (16 to 1024): it is laid over
+ * the level and each cell of that kind shows its own 16 x 16 piece, so a
+ * floor keeps a painting's detail on the level's grid. See-through pixels
+ * stay see-through (a platform's edge).
+ */
+const char *hd_textures_load(const hd_zip *zip, const json *tex)
+{
+   static char msg[200];
+   static const char *const names[TL_COUNT] = { "ground_top", "ground", "brick", "platform" };
+   int32_t i;
+   if (!tex)
+      return NULL;
+   if (tex->type != JSON_OBJECT)
+      return "manifest.json's textures must be an object";
+   for (i = 0; i < TL_COUNT; i++)
+   {
+      const json *f = hd_json_get(tex, names[i]);
+      const char *err;
+      uint8_t *png;
+      size_t size;
+      hd_image *im = &hd_textures[i];
+      if (!f)
+         continue;
+      if (f->type != JSON_STRING)
+         return "each texture must be a file name";
+      png = hd_zip_read(zip, f->str, &size, &err);
+      if (!png)
+      {
+         snprintf(msg, sizeof msg, "%s: %s", f->str, err);
+         return msg;
+      }
+      im->px = hd_png_read(png, size, &im->w, &im->h, &err);
+      free(png);
+      if (!im->px)
+      {
+         snprintf(msg, sizeof msg, "%s: %s", f->str, err);
+         return msg;
+      }
+      if (im->w % 16 || im->h % 16 || im->w > 1024 || im->h > 1024 || pixels_used + (int64_t)im->w * im->h > SPRITE_PIXELS_MAX)
+      {
+         free(im->px);
+         im->px = NULL;
+         snprintf(msg, sizeof msg, "%s: a texture's sides must be multiples of 16, up to 1024", f->str);
+         return msg;
+      }
+      pixels_used += (int64_t)im->w * im->h;
+   }
+   return NULL;
 }

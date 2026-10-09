@@ -5,7 +5,8 @@
 ### Added
 - Package format 3: `physics` (the players' hitbox, speeds, gravity and jump) and `sprites` (the heroes' own pictures of any size: idle, run, jump, hurt, bored and win animations, a skin per player) and `layers` (painted pictures behind or in front of the level, repeated across it at their own speed), `sounds` and `music` (WAV effects in place of the built-in ones, and a stereo song played over and over, its position in the save state). Save states are version 5 (each player's frames standing still).
 - ANTÍDOTO (`examples/antidoto`), a game whose art and music are made with AI: the heroes' strips, `cut.sh` and `recolor.py` (Azul is Rojo recolored), `build.py` and `make_tracks.py`; `tools/sprites.py` cuts an image AI's strip into an engine sheet; `docs/howto/ai-art-and-audio.md` logs every prompt and command.
-- `tools/glhd pack` packs the sprites', layers' and sounds' files too.
+- Format 3 also has the enemy's hitbox, sprites for the level's things (pickup, checkpoint, goal, enemy), `from`/`frames` to use part of a strip, and `textures` (a tile kind painted as a picture laid over the level).
+- `tools/glhd pack` packs every file the manifest names: sprites, layers, textures and sounds.
 - `tools/hdrun --every N --audio FILE.raw`: every Nth frame as PNG and the run's sound, to make a video with ffmpeg.
 
 ### Added

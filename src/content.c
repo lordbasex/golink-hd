@@ -240,7 +240,7 @@ static int32_t num(const json *obj, const char *key, int32_t lo, int32_t hi, int
  * The manifest's "physics" (format 3): the players' hitbox in pixels and
  * their movement in hundredths of a pixel per frame (per frame squared for
  * accelerations), every key optional:
- *   {"hitbox": [w, h], "walk": 250, "run": 400, "accel": 30, "air_accel": 18,
+ *   {"hitbox": [w, h], "enemy_hitbox": [w, h], "walk": 250, "run": 400, "accel": 30, "air_accel": 18,
  *    "friction": 25, "air_friction": 5, "gravity": 45, "gravity_hold": 28,
  *    "fall_max": 700, "jump": 640, "jump_cut": 200, "bounce": 450, "bounce_held": 700}
  */
@@ -275,6 +275,14 @@ static const char *load_physics(const json *ph)
          return "the physics' hitbox must be [width, height]: 4 to 128 and 4 to 192 pixels";
       hd_phys.pw = (int32_t)hd_json_at(hb, 0)->num;
       hd_phys.ph = (int32_t)hd_json_at(hb, 1)->num;
+   }
+   if ((hb = hd_json_get(ph, "enemy_hitbox")))
+   {
+      if (hb->type != JSON_ARRAY || hb->count != 2 || hd_json_at(hb, 0)->type != JSON_INT || hd_json_at(hb, 1)->type != JSON_INT ||
+          hd_json_at(hb, 0)->num < 4 || hd_json_at(hb, 0)->num > 128 || hd_json_at(hb, 1)->num < 4 || hd_json_at(hb, 1)->num > 128)
+         return "the physics' enemy_hitbox must be [width, height]: 4 to 128 pixels each";
+      hd_phys.ew = (int32_t)hd_json_at(hb, 0)->num;
+      hd_phys.eh = (int32_t)hd_json_at(hb, 1)->num;
    }
    for (i = 0; i < sizeof speeds / sizeof speeds[0]; i++)
    {
@@ -567,6 +575,8 @@ static const char *load_package(const uint8_t *data, size_t size)
       err = hd_sprites_load(&zip, hd_json_get(man, "sprites"));
    if (!err)
       err = hd_layers_load(&zip, hd_json_get(man, "layers"));
+   if (!err)
+      err = hd_textures_load(&zip, hd_json_get(man, "textures"));
    if (!err)
       err = hd_sounds_load(&zip, hd_json_get(man, "sounds"), hd_json_get(man, "music"));
    hd_json_free(man);

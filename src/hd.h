@@ -127,6 +127,7 @@ enum
 typedef struct
 {
    int32_t pw, ph; /* the hitbox, in pixels */
+   int32_t ew, eh; /* an enemy's hitbox */
    int32_t walk_max, run_max, accel_ground, accel_air, friction_ground, friction_air;
    int32_t gravity, gravity_hold, fall_max, jump_speed, jump_cut, bounce, bounce_held;
 } hd_physics;
@@ -135,9 +136,9 @@ void hd_physics_default(void);
 /* The player's hitbox (inside its 16 x 24 picture in the built-in game). */
 #define PW (hd_phys.pw)
 #define PH (hd_phys.ph)
-/* An enemy's hitbox inside its 16 x 16 picture. */
-#define EW 14
-#define EH 12
+/* An enemy's hitbox (inside its 16 x 16 picture in the built-in game). */
+#define EW (hd_phys.ew)
+#define EH (hd_phys.eh)
 
 /* A hurt player blinks for HURT_FRAMES and flashes white while hurt > HURT_FLASH. */
 #define HURT_FRAMES 90

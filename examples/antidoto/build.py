@@ -55,6 +55,29 @@ def layers(zone):
     return out
 
 
+def textures(zone):
+    """The zone's floor textures (made by textures.py into textures/)."""
+    out = {}
+    for kind in ("ground_top", "ground", "platform", "brick"):
+        name = f"tex_{zone}_{kind}.png"
+        src = os.path.join(HERE, "textures", name)
+        if os.path.exists(src):
+            shutil.copy(src, os.path.join(OUT, name))
+            out[kind] = name
+    return out or None
+
+
+def thing(name, total, fps, part=None):
+    """A level thing's animation from sprites/ (cut.sh), or None."""
+    src = os.path.join(HERE, "sprites", name + ".png")
+    if not os.path.exists(src):
+        return None
+    w, h = png_size(src)
+    if not os.path.exists(os.path.join(OUT, name + ".png")):
+        shutil.copy(src, os.path.join(OUT, name + ".png"))
+    return dict({"file": name + ".png", "frame": [w // total, h], "fps": fps, "feet": 2}, **(part or {}))
+
+
 def music(track):
     """The zone's music from source/music (made by make_tracks.py on the machine with the model)."""
     src = os.path.join(HERE, "source", "music", track + ".wav")
@@ -131,8 +154,17 @@ def main():
         "level": "level.json",
         "sky": ["#3a1420", "#7a3a3a"],
         # a hero about 80 px tall: hitbox, and a jump of about 12 cells
-        "physics": {"hitbox": [28, 66], "walk": 300, "run": 460, "jump": 1050, "gravity": 50, "gravity_hold": 30, "fall_max": 1200},
-        "sprites": {"hero": {"players": SKINS, "skins": skins}},
+        "physics": {"hitbox": [28, 66], "enemy_hitbox": [34, 30], "walk": 300, "run": 460, "jump": 1050, "gravity": 50, "gravity_hold": 30, "fall_max": 1200},
+        "sprites": {k: v for k, v in {
+            "hero": {"players": SKINS, "skins": skins},
+            "enemy": {k: v for k, v in {"walk": thing("enemy_germ", 6, 8, {"from": 0, "frames": 4}),
+                                         "squashed": thing("enemy_germ", 6, 8, {"from": 5, "frames": 1})}.items() if v} or None,
+            "coin": thing("obj_vitamin", 4, 8),
+            "checkpoint": {k: v for k, v in {"off": thing("obj_leukocyte", 4, 2, {"from": 0, "frames": 2}),
+                                              "on": thing("obj_leukocyte", 4, 4, {"from": 2, "frames": 2})}.items() if v} or None,
+            "goal": thing("obj_portal", 4, 6),
+        }.items() if v},
+        "textures": textures("colon"),
         "layers": layers("colon"),
         "music": music("colon"),
     }

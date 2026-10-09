@@ -267,7 +267,31 @@ The effects the user asked for (the heroes' jump, shot, being hit and a yawn whe
 | Objects | Vitamin, checkpoint |
 | Interface | Menu select, "READY? GO!", "KNOCKOUT!" |
 
-Tool: [MOSS-SoundEffect v2](https://github.com/OpenMOSS/MOSS-TTS) (Apache 2.0, a 1.3B flow matching model, up to 30 s at 48 kHz, natural, biological and human action sounds), on the M1 after the music. Effects it cannot make well (a yawn may be one) are synthesized in code, like classic cartoon effects (slide whistles, pops, bonks).
+Tool: [MOSS-SoundEffect v2](https://github.com/OpenMOSS/MOSS-TTS) (Apache 2.0, a 1.3B flow matching model, up to 30 s at 48 kHz, natural, biological and human action sounds), on the M1 after the music. Effects it cannot make well are synthesized in code, like classic cartoon effects (slide whistles, pops, bonks).
+
+### Install on Apple silicon
+
+Its own README targets NVIDIA cards (`torch==2.9.0+cu128`); on the M1 it runs on Metal with the same torch version from PyPI, in its own environment:
+
+```bash
+cd ~/ai && git clone --depth 1 https://github.com/OpenMOSS/MOSS-TTS
+cd MOSS-TTS/moss_soundeffect_v2
+~/ai/bin/uv venv -p 3.12 .venv
+~/ai/bin/uv pip install -p .venv/bin/python -e . torch==2.9.0 torchaudio==2.9.0 torchvision==0.24.0
+```
+
+Three things stopped it on the M1, each fixed in turn:
+
+1. `InductorError: float64 is not supported by MPS`: the pipeline compiles the model with `torch.compile`; run it with `TORCHDYNAMO_DISABLE=1`.
+2. `Cannot convert a MPS Tensor to float64` and then `ComplexDouble … not supported`: the model computes its time embedding and rotary positions in double precision. In the M1's copy only, those become single precision (`sed -i '' 's/torch\.float64/torch.float32/g'` on `diffsynth/models/wan_video_dit.py` and `wan_audio_dit.py`, and `].double() / dim))` → `].float() / dim))` in both), which does not change the sound.
+3. `TorchCodec is required for save_with_torchcodec`: the pipeline's own `save_audio` needs another package, after a whole 9 minute generation; [`make_sfx.py`](../../examples/antidoto/make_sfx.py) writes the WAV itself with Python's `wave` module.
+
+On the M1 (16 GB) each diffusion step takes about 10 seconds, so the default 50 steps took 9 minutes for one effect; the script uses 30.
+
+```bash
+scp examples/antidoto/make_sfx.py lordbasex@192.168.1.85:ai/antidoto/
+ssh lordbasex@192.168.1.85 'cd ~/ai/antidoto && TORCHDYNAMO_DISABLE=1 nohup ~/ai/MOSS-TTS/moss_soundeffect_v2/.venv/bin/python make_sfx.py > sfx.log 2>&1 &'
+```
 
 ## Putting it together and watching it
 

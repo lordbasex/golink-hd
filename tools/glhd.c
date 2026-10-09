@@ -229,10 +229,56 @@ static void le32(FILE *f, uint32_t v)
    le16(f, v >> 16);
 }
 
+#define PACK_MAX 256
+
+static int add_name(char (*names)[256], int *count, const char *name, const char *path)
+{
+   int i;
+   for (i = 0; i < *count && strcmp(names[i], name); i++)
+      ;
+   if (i < *count)
+      return 1;
+   if (*count >= PACK_MAX)
+   {
+      fprintf(stderr, "%s names more than %d files\n", path, PACK_MAX);
+      return 0;
+   }
+   snprintf(names[(*count)++], 256, "%s", name);
+   return 1;
+}
+
+/* Every "file" value anywhere inside j. */
+static int add_files(const json *j, char (*names)[256], int *count, const char *path)
+{
+   const json *c;
+   if (!j)
+      return 1;
+   if (j->type == JSON_OBJECT)
+   {
+      const json *f = hd_json_get(j, "file");
+      if (f && f->type == JSON_STRING && !add_name(names, count, f->str, path))
+         return 0;
+   }
+   if (j->type == JSON_OBJECT || j->type == JSON_ARRAY)
+      for (c = j->child; c; c = c->next)
+         if (!add_files(c, names, count, path))
+            return 0;
+   return 1;
+}
+
+/* Every string value of an object. */
+static int add_values(const json *j, char (*names)[256], int *count, const char *path)
+{
+   const json *c;
+   for (c = j && j->type == JSON_OBJECT ? j->child : NULL; c; c = c->next)
+      if (c->type == JSON_STRING && !add_name(names, count, c->str, path))
+         return 0;
+   return 1;
+}
+
 /* The files a package folder's manifest names, in a fixed order: the
  * manifest, the level, then its pictures in the format's order. Names stay
  * inside the folder (no absolute paths, no ".."). */
-#define PACK_MAX 256
 static int pack_names(const char *dir, char (*names)[256], int *count)
 {
    static const char *const pictures[] = { "hero", "enemy", "tiles", "coin", "checkpoint", "goal", "portrait", "lut" };
@@ -318,29 +364,8 @@ static int pack_names(const char *dir, char (*names)[256], int *count)
             snprintf(names[(*count)++], 256, "%s", file->str);
       }
    }
-   /* format 3: every sprite's file */
-   {
-      const json *sp = hd_json_get(man, "sprites"), *hero = sp ? hd_json_get(sp, "hero") : NULL;
-      const json *skins = hero ? hd_json_get(hero, "skins") : NULL, *sk, *an;
-      for (sk = skins ? skins->child : NULL; ok && sk; sk = sk->next)
-         for (an = sk->child; ok && an; an = an->next)
-         {
-            const json *file = hd_json_get(an, "file");
-            if (!file || file->type != JSON_STRING)
-               continue;
-            for (i = 0; i < *count && strcmp(names[i], file->str); i++)
-               ;
-            if (i < *count)
-               continue;
-            if (*count >= PACK_MAX)
-            {
-               fprintf(stderr, "%s names more than %d files\n", path, PACK_MAX);
-               ok = 0;
-               break;
-            }
-            snprintf(names[(*count)++], 256, "%s", file->str);
-         }
-   }
+   /* format 3: every "file" in the sprites (the heroes', the enemy's, the level's things) and every texture */
+   ok = ok && add_files(hd_json_get(man, "sprites"), names, count, path) && add_values(hd_json_get(man, "textures"), names, count, path);
    for (i = 0; ok && i < *count; i++)
       if (!names[i][0] || names[i][0] == '/' || names[i][0] == '\\' || strstr(names[i], "..") || strchr(names[i], ':'))
       {

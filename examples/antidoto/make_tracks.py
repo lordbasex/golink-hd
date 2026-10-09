@@ -12,7 +12,7 @@ TRACKS = [
     ("lungs",     90, 140, "A major", "airy and breezy swing: flutes and clarinets floating, harp glissandos, soft muted brass, light cymbals like wind, hopeful and spacious, loopable"),
     ("brain",     90, 132, "C minor", "mysterious minor swing: eerie musical saw and theremin-like lead, celesta, walking bass, spooky muted trumpets, electric and strange, loopable"),
     ("boss",      90, 190, "G minor", "frantic hot jazz boss battle: frenetic big band, dramatic brass stabs, racing drums, wild clarinet and trumpet solos, intense and fun, loopable"),
-    ("final_boss",120, 176, "D minor", "epic final boss battle: thunderous full big band with timpani, dark brass, tense strings, a heroic theme fighting back, grand and dramatic, loopable"),
+    ("final_boss", 90, 176, "D minor", "epic final boss battle: thunderous full big band with timpani, dark brass, tense strings, a heroic theme fighting back, grand and dramatic, loopable"),
     ("victory",   12, 150, "C major", "short victory jingle: bright brass fanfare and a happy cymbal ending, ta-da"),
     ("game_over", 10,  80, "C minor", "short game over jingle: sad wah-wah trombone descending, a slow tuba and one last cymbal, comic and melancholic"),
 ]

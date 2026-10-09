@@ -37,6 +37,13 @@ typedef struct
 
 #define MAX_SKINS 8
 
+/* The level's things drawn from a package's sprites: "coin", "checkpoint" (off, on), "goal", "enemy" (walk, squashed). */
+enum { OBJ_COIN = 0, OBJ_CHECK_OFF, OBJ_CHECK_ON, OBJ_GOAL, OBJ_ENEMY_WALK, OBJ_ENEMY_SQUASHED, OBJ_COUNT };
+extern hd_anim hd_objects[OBJ_COUNT];
+
+/* Format 3's "textures": a tile kind painted as a picture repeated over the level (sides multiples of 16). */
+extern hd_image hd_textures[TL_COUNT];
+
 /* The loaded skins and the one each player wears; hd_skin_count 0 means the built-in hero. */
 extern hd_skin hd_skins[MAX_SKINS];
 extern int32_t hd_skin_count;
@@ -58,6 +65,8 @@ typedef struct
 extern hd_layer hd_layers[MAX_LAYERS];
 extern int32_t hd_layer_count;
 
+/* Reads "textures" (NULL is fine). */
+const char *hd_textures_load(const hd_zip *zip, const json *textures);
 /* Reads "layers" (NULL is fine). */
 const char *hd_layers_load(const hd_zip *zip, const json *layers);
 /* Draws the back (front 0) or front (1) layers into a surface whose top-left is the camera at (cx, cy). */

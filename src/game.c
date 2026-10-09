@@ -39,6 +39,8 @@ void hd_physics_default(void)
 {
    hd_phys.pw = 10;
    hd_phys.ph = 22;
+   hd_phys.ew = 14;
+   hd_phys.eh = 12;
    hd_phys.walk_max = FX_FRAC(5, 2);
    hd_phys.run_max = FX(4);
    hd_phys.accel_ground = FX_FRAC(30, 100);
