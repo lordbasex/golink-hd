@@ -299,7 +299,8 @@ static void test_sha256(void)
 }
 
 /* A zip of stored files, for packages made by the tests. */
-typedef struct { const char *name; const char *text; } zfile;
+/* A file of a test package: text, or len bytes when len is set. */
+typedef struct { const char *name; const char *text; size_t len; } zfile;
 
 static void le16(uint8_t **p, uint32_t v) { *(*p)++ = (uint8_t)v; *(*p)++ = (uint8_t)(v >> 8); }
 static void le32(uint8_t **p, uint32_t v) { le16(p, v & 0xffff); le16(p, v >> 16); }
@@ -311,7 +312,7 @@ static size_t make_zip(uint8_t *out, const zfile *files, int n)
    int i;
    for (i = 0; i < n; i++)
    {
-      uint32_t len = (uint32_t)strlen(files[i].text), nl = (uint32_t)strlen(files[i].name);
+      uint32_t len = (uint32_t)(files[i].len ? files[i].len : strlen(files[i].text)), nl = (uint32_t)strlen(files[i].name);
       offs[i] = (uint32_t)(p - out);
       le32(&p, 0x04034b50u); le16(&p, 20); le16(&p, 0); le16(&p, 0); le16(&p, 0); le16(&p, 0);
       le32(&p, hd_crc32((const uint8_t *)files[i].text, len)); le32(&p, len); le32(&p, len);
@@ -322,7 +323,7 @@ static size_t make_zip(uint8_t *out, const zfile *files, int n)
    cd = (uint32_t)(p - out);
    for (i = 0; i < n; i++)
    {
-      uint32_t len = (uint32_t)strlen(files[i].text), nl = (uint32_t)strlen(files[i].name);
+      uint32_t len = (uint32_t)(files[i].len ? files[i].len : strlen(files[i].text)), nl = (uint32_t)strlen(files[i].name);
       le32(&p, 0x02014b50u); le16(&p, 20); le16(&p, 20); le16(&p, 0); le16(&p, 0); le16(&p, 0); le16(&p, 0);
       le32(&p, hd_crc32((const uint8_t *)files[i].text, len)); le32(&p, len); le32(&p, len);
       le16(&p, nl); le16(&p, 0); le16(&p, 0); le16(&p, 0); le16(&p, 0); le32(&p, 0); le32(&p, offs[i]);
@@ -361,7 +362,7 @@ static void test_players_screens_sticks(void)
    const char *err;
    size_t n;
    int32_t f, i, x0;
-   zfile files[2];
+   zfile files[2] = {{0}};
 
    flat_level(level, sizeof level, 60, 24);
    files[0].name = "manifest.json";
@@ -619,7 +620,7 @@ static void test_effects_package(void)
    const char *err;
    size_t n;
    int32_t f, i, opened = 0, closed = 0, zoomed = 0;
-   zfile files[2];
+   zfile files[2] = {{0}};
    flat_level(level, sizeof level, 120, 48); /* tall enough to zoom out: the view never shows past the level */
    level[strlen(level) - 1] = 0; /* drop the closing brace to add the effects */
    snprintf(with_fx, sizeof with_fx, "%s, \"effects\": {\"darkness\": 200, \"player_light\": 90, \"lights\": [{\"x\": 10, \"y\": 18, \"radius\": 80, \"color\": \"#ff9040\", \"flicker\": 8}],"
@@ -695,7 +696,7 @@ static void test_goal_height(void)
    const char *err;
    size_t n;
    int32_t f, high;
-   zfile files[2];
+   zfile files[2] = {{0}};
    files[0].name = "manifest.json";
    files[0].text = "{\"format\": 2, \"title\": \"Tall\", \"players\": 1, \"screen\": \"9:16\", \"level\": \"level.json\"}";
    files[1].name = "level.json";
@@ -734,7 +735,7 @@ static void test_physics(void)
    const char *err;
    size_t n;
    int32_t f, top, floor_y;
-   zfile files[2];
+   zfile files[2] = {{0}};
    flat_level(level, sizeof level, 60, 30); /* ground on rows 27 to 29 */
    files[0].name = "manifest.json";
    files[0].text = "{\"format\": 3, \"title\": \"Big\", \"players\": 1, \"level\": \"level.json\","
@@ -780,6 +781,74 @@ static void test_physics(void)
    CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "loop_from") != NULL);
    hd_content_builtin();
    CHECK(PW == 10 && PH == 22); /* the built-in game's again */
+}
+
+/* A w x h PNG (RGBA, every pixel opaque grey) with stored deflate blocks; its size. */
+static size_t tiny_png(uint8_t *out, uint32_t w, uint32_t h)
+{
+   static uint8_t raw[1 << 16];
+   uint8_t *p = out, *crc_from;
+   uint32_t raw_len = (w * 4 + 1) * h, i, a = 1, b = 0;
+   memset(raw, 0x80, raw_len);
+   for (i = 0; i < h; i++)
+      raw[i * (w * 4 + 1)] = 0;
+   memcpy(p, "\x89PNG\r\n\x1a\n", 8);
+   p += 8;
+#define BE32(v) do { uint32_t v_ = (v); *p++ = (uint8_t)(v_ >> 24); *p++ = (uint8_t)(v_ >> 16); *p++ = (uint8_t)(v_ >> 8); *p++ = (uint8_t)v_; } while (0)
+   BE32(13);
+   crc_from = p;
+   memcpy(p, "IHDR", 4); p += 4;
+   BE32(w); BE32(h);
+   *p++ = 8; *p++ = 6; *p++ = 0; *p++ = 0; *p++ = 0;
+   BE32(hd_crc32(crc_from, (size_t)(p - crc_from)));
+   BE32(2 + 5 + raw_len + 4);
+   crc_from = p;
+   memcpy(p, "IDAT", 4); p += 4;
+   *p++ = 0x78; *p++ = 0x01;
+   *p++ = 1; *p++ = (uint8_t)raw_len; *p++ = (uint8_t)(raw_len >> 8); *p++ = (uint8_t)~raw_len; *p++ = (uint8_t)(~raw_len >> 8);
+   memcpy(p, raw, raw_len); p += raw_len;
+   for (i = 0; i < raw_len; i++)
+   {
+      a = (a + raw[i]) % 65521;
+      b = (b + a) % 65521;
+   }
+   BE32(b << 16 | a);
+   BE32(hd_crc32(crc_from, (size_t)(p - crc_from)));
+   BE32(0);
+   crc_from = p;
+   memcpy(p, "IEND", 4); p += 4;
+   BE32(hd_crc32(crc_from, 4));
+#undef BE32
+   return (size_t)(p - out);
+}
+
+/* Format 3's screens: a very thin picture is refused, never read out of bounds; a fitting one loads. */
+static void test_screens(void)
+{
+   static uint8_t zip[300000], png[70000];
+   static char level[100000];
+   const char *err;
+   size_t n;
+   zfile files[3] = {{0}};
+   flat_level(level, sizeof level, 60, 30);
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Thin\", \"level\": \"level.json\", \"screens\": {\"title\": \"t.png\"}}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   files[2].name = "t.png";
+   files[2].text = (const char *)png;
+   files[2].len = tiny_png(png, 1, 1000); /* 1 x 1000: a crop of zero columns before the fix */
+   n = make_zip(zip, files, 3);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "16 x 16") != NULL);
+   files[2].len = tiny_png(png, 16, 900); /* thin but allowed: cropped to one column at least */
+   n = make_zip(zip, files, 3);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  screens: %s\n", err);
+   files[2].len = tiny_png(png, 40, 30);
+   n = make_zip(zip, files, 3);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   hd_content_builtin();
 }
 
 static int32_t logged;
@@ -890,6 +959,7 @@ int main(void)
    test_effects_package();
    test_goal_height();
    test_physics();
+   test_screens();
    test_api();
    if (failures)
    {

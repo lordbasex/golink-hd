@@ -427,6 +427,11 @@ static uint32_t *fit(const uint32_t *px, int32_t pw, int32_t ph, int32_t w, int3
       ch = (int32_t)((int64_t)pw * h / w);
       y0 = (ph - ch) / 2;
    }
+   /* never an empty crop (a very thin picture): rows and columns stay inside it */
+   cw = hd_clamp(cw, 1, pw);
+   ch = hd_clamp(ch, 1, ph);
+   x0 = hd_clamp(x0, 0, pw - cw);
+   y0 = hd_clamp(y0, 0, ph - ch);
    for (y = 0; y < h; y++)
    {
       int32_t sy = (int32_t)(((int64_t)y * 2 + 1) * ch * 128 / h) - 128; /* 1/256 pixels, centers aligned */
@@ -494,6 +499,12 @@ const char *hd_screens_load(const hd_zip *zip, const json *screens)
       if (!px)
       {
          snprintf(msg, sizeof msg, "%s: %s", f->str, err);
+         return msg;
+      }
+      if (w < 16 || h < 16)
+      {
+         free(px);
+         snprintf(msg, sizeof msg, "%s: a screen must be at least 16 x 16 pixels", f->str);
          return msg;
       }
       hd_screens[i].px = fit(px, w, h, HD_W, HD_H);
