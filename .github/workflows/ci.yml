@@ -20,7 +20,7 @@ jobs:
       - name: Headless run
         run: |
           make tools
-          lib=$(ls libgolinkhd.so libgolinkhd.dylib 2>/dev/null)
+          lib=$(ls libgolinkhd.so libgolinkhd.dylib 2>/dev/null || true)
           # every platform must draw and sound exactly the same
           tools/hdrun ./$lib --frames 460 --script tools/runs/walk.txt > walk.out
           diff tools/runs/walk.expected walk.out
@@ -33,7 +33,7 @@ jobs:
         run: |
           # the demo exported, packed and played as a package
           tools/glhd export-demo demo && tools/glhd pack demo demo.glhd && tools/glhd check demo.glhd
-          lib=$(ls libgolinkhd.so libgolinkhd.dylib 2>/dev/null)
+          lib=$(ls libgolinkhd.so libgolinkhd.dylib 2>/dev/null || true)
           tools/hdrun ./$lib --content demo.glhd --frames 460 --script tools/runs/walk.txt
 
   windows:
