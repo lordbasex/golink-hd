@@ -113,6 +113,44 @@ def screens(zone):
     return out or None
 
 
+# the engine's effects -> ANTÍDOTO's (made by make_sfx.py on the machine with the model, in source/sfx)
+SOUNDS = {"jump": "jump", "coin": "vitamin", "stomp": "germ_squash", "hurt": "hurt",
+          "join": "ready_go", "check": "checkpoint", "clear": "victory", "pause": "menu"}
+SFX_PEAK = 20000       # every effect at the same loudness, under the music's
+SFX_QUIET = 600        # quieter than this at the start or the end is silence
+
+
+def sfx(name):
+    """An effect from source/sfx made ready for the game: the silence before and after cut, so it sounds
+    the moment the button is pressed, the same peak as the others, a short fade out."""
+    import array
+    import wave
+    src = os.path.join(HERE, "source", "sfx", name + ".wav")
+    if not os.path.exists(src):
+        return None
+    with wave.open(src) as w:
+        ch, rate = w.getnchannels(), w.getframerate()
+        pcm = array.array("h", w.readframes(w.getnframes()))
+    loud = [i for i, v in enumerate(pcm) if abs(v) > SFX_QUIET]
+    if not loud:
+        return None
+    pcm = pcm[loud[0] // ch * ch:(loud[-1] // ch + 1) * ch]
+    peak = max(abs(v) for v in pcm)
+    fade = rate * 15 // 1000 * ch
+    out = array.array("h", (int(v * SFX_PEAK / peak * min(1, (len(pcm) - i) / fade)) for i, v in enumerate(pcm)))
+    with wave.open(os.path.join(OUT, "sfx_" + name + ".wav"), "wb") as w:
+        w.setnchannels(ch)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(out.tobytes())
+    return "sfx_" + name + ".wav"
+
+
+def sounds():
+    out = {k: f for k, f in ((k, sfx(v)) for k, v in SOUNDS.items()) if f}
+    return out or None
+
+
 def music(track):
     """The zone's music from source/music (made by make_tracks.py on the machine with the model)."""
     src = os.path.join(HERE, "source", "music", track + ".wav")
@@ -208,6 +246,7 @@ def main():
         "screens": screens("colon"),
         "layers": layers("colon"),
         "music": music("colon"),
+        "sounds": sounds(),
     }
     manifest = {k: v for k, v in manifest.items() if v is not None}
     with open(os.path.join(OUT, "manifest.json"), "w", encoding="utf-8") as f:

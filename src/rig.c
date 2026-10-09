@@ -208,10 +208,12 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
       }
       else if (!p->ground)
       {
-         hand_x[k] = sh_x + FWD(k ? -rig->arm / 2 : rig->arm / 2);
-         hand_y[k] = shoulder_y - rig->arm * 3 / 4;
+         /* in the air: the arms thrown up and back (clear of the face), flapping a little on the way down */
+         int32_t flap = p->vy > 0 ? (int32_t)(((int64_t)hd_sin((t * 64 + k * 1024) & 4095) * 3) >> 14) : 0;
+         hand_x[k] = sh_x + FWD(-rig->arm * 3 / 5 - k * 3);
+         hand_y[k] = shoulder_y - rig->arm * 3 / 5 + flap;
          hand_pose = HAND_OPEN;
-         elbow[k] = FWD(k ? -rig->arm / 3 : rig->arm / 3);
+         elbow[k] = FWD(-rig->arm / 4);
       }
       else if (face == FACE_YAWN)
       {
