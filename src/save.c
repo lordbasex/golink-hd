@@ -167,6 +167,8 @@ static void sanitize(hd_state *s)
       p->hurt = hd_clamp(p->hurt, 0, 600);
       p->shot_wait = hd_clamp(p->shot_wait, 0, 120);
       p->aim = hd_clamp(p->aim, 0, 200);
+      p->hp = hd_clamp(p->hp, 0, 99);
+      p->ko = hd_clamp(p->ko, 0, 600);
    }
 }
 

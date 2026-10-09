@@ -353,6 +353,15 @@ red_shot_hit.png: a sheet of the antibody's IMPACT when it hits a virus: 6 frame
 
 The queue made the first image but stopped before downloading the second, so it was fetched from the page by hand (the newest big `img`, its `src` as a blob, an anchor with `download`). Azul's are recolored, `cut.sh` cuts them (the antibody 18 pixels tall, the burst 40), and `build.py` adds `"weapon": {"button": "run", "rate": 8, "speed": 900, "range": 420, "muzzle": [30, -33], "enemy_health": 3}`. The first test showed the antibodies flying over the germs (the muzzle at the hand was higher than a germ is tall): the aiming hand went lower and a shot hits 8 pixels above or below an enemy. A short script that walks into a pit is not an engine bug: watch where the hero goes before blaming the code.
 
+- Health and the worn shell (the user: "when the pill is badly hurt it should look tired, its shell wearing away until it dies dissolving"). The engine got `health`; the dissolve strip drawn at the start became the knockout, and ChatGPT drew the worn body for the puppet:
+
+```
+Next image (same 1930s rubber-hose style, thick black ink outline, transparent background, everything separated with empty space between pieces, nothing overlapping, no limbs drawn on the body):
+red_parts_body_worn.png: the SAME sheet as the puppet body of ROJO (the red and white capsule with its face, NO arms, NO legs, NO gloves, NO shoes, side view facing right, 6 versions in ONE horizontal row, exactly the same size, shape and position in their cells as before: 1 normal grin, 2 blinking, 3 shouting, 4 hurt shocked, 5 tired droopy eyes, 6 yawning), but now the capsule shell is WORN OUT after many hits: the glossy red faded and dull, scratches and scuffs, a few small cracks, a little chip missing at the edge, a bandage strip on one crack, a few tiny powder crumbs falling, sweat drops, the faces look exhausted. Same character, same proportions.
+```
+
+`parts.py` cuts it like the body (same height), and `build.py` adds `"health": {"hits": 3, "worn": 1, "knockout": 100}`, the `worn` sheet to the rig and the dissolve as the skin's `knockout`. The first try drew the dissolve two and a half times too big: the cutter scales a strip by the median height of the capsule's colored half, and in a dissolve the capsule breaks into crumbs, so the median was tiny. `--shell-frames 1` measures only the first frame, where the capsule is still whole.
+
 ## Cleaning up
 
 When the game's audio is done, the generated files are copied off the M1 and `~/ai` (the models, the virtual environment and the outputs) is removed there, as the user asked.

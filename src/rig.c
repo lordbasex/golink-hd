@@ -125,6 +125,8 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
    int32_t aim = p->aim > 0;
    int32_t foot_x[2], foot_y[2], foot_pose[2], hand_x[2], hand_y[2], knee[2], elbow[2];
    int32_t t = st->frame + i * 37;
+   /* little health left (format 3's health): the worn body and tired faces */
+   int32_t worn = hd_health.on && p->hp > 0 && p->hp <= hd_health.worn;
 
    /* the walk: one cycle every `stride` pixels walked (p->anim grows by 4 a pixel) */
    if (rig->stride > 0)
@@ -133,13 +135,15 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
    /* faces: a blink now and then, the state's own face otherwise */
    if (p->hurt > HURT_FRAMES - 30)
       face = FACE_HURT;
+   else if (worn && p->ground && !moving && (t % 200) >= 7)
+      face = FACE_TIRED; /* worn out: tired eyes standing (still blinking now and then) */
    else if (p->still >= BORED_AFTER && (p->still - BORED_AFTER) % 400 < 120)
       face = FACE_YAWN;
    else if (!p->ground && p->vy < 0)
       face = FACE_SHOUT;
    else if ((t % 200) < 7)
       face = FACE_BLINK;
-   body = part(&rig->body, face);
+   body = part(worn && rig->worn.frames ? &rig->worn : &rig->body, face);
 
    /* the body: bounce when walking, breathe when still, squash on landing, stretch in the air */
    if (moving)

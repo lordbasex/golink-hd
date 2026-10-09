@@ -36,11 +36,13 @@
 
 hd_physics hd_phys;
 hd_weapon_config hd_weapon;
+hd_health_config hd_health;
 
 void hd_weapon_default(void)
 {
    memset(&hd_weapon, 0, sizeof hd_weapon);
    hd_weapon.enemy_health = 1;
+   memset(&hd_health, 0, sizeof hd_health);
 }
 
 void hd_physics_default(void)
@@ -194,6 +196,7 @@ static void join(hd_state *s, int32_t i)
    p->facing = 1;
    p->check_x = x;
    p->check_y = y;
+   p->hp = hd_health.hits;
    place(p, x, y - 48);
    p->hurt = 60;
    hd_play(s, SFX_JOIN, screen_x(s, x));
@@ -285,8 +288,22 @@ static int move_y(hd_player *p)
 
 static void hurt(hd_state *s, hd_player *p, int32_t from_x)
 {
-   int32_t lost = hd_min(3, p->coins), i;
+   int32_t lost = hd_health.on ? 0 : hd_min(3, p->coins), i; /* with health, a hit costs health, not coins */
    int32_t cx = FX_INT(p->x) + PW / 2, cy = FX_INT(p->y) + 4;
+   if (hd_health.on && --p->hp <= 0)
+   {
+      /* knocked out: it stops where it is and dissolves, then comes back at the checkpoint */
+      p->hp = 0;
+      p->ko = hd_health.knockout;
+      p->vx = 0;
+      p->vy = 0;
+      p->hurt = 0;
+      p->jumping = 0;
+      s->shake = 16;
+      burst(s, cx, cy + PH / 2, 16, 0xfff0e8e0u, FX(2), 1);
+      hd_play(s, SFX_KO, screen_x(s, cx));
+      return;
+   }
    p->hurt = HURT_FRAMES;
    p->coins -= lost;
    p->vx = FX_INT(p->x) + PW / 2 < from_x ? FX(-3) : FX(3);
@@ -391,12 +408,21 @@ static void player_step(hd_state *s, int32_t i)
    int32_t max = (pad & PAD_RUN) && !(hd_weapon.on && hd_weapon.button == PAD_RUN) ? RUN_MAX : WALK_MAX;
    int32_t was_vy;
 
+   if (p->ko)
+   {
+      /* knocked out: nothing moves it; then it is gone for a moment and comes back */
+      if (--p->ko == 0)
+         p->respawn = RESPAWN_FRAMES;
+      return;
+   }
    if (p->respawn)
    {
       if (--p->respawn == 0)
       {
          place(p, p->check_x, p->check_y - 32);
          p->hurt = 60;
+         if (p->hp <= 0)
+            p->hp = hd_health.hits; /* back with all its health */
       }
       return;
    }
@@ -477,7 +503,10 @@ static void player_step(hd_state *s, int32_t i)
    if (FX_INT(p->y) > MAP_H * TILE + 48)
    {
       p->respawn = RESPAWN_FRAMES;
-      p->coins -= hd_min(3, p->coins);
+      if (hd_health.on)
+         p->hp--; /* a fall costs a hit; with none left it comes back with all of them */
+      else
+         p->coins -= hd_min(3, p->coins);
       hd_play(s, SFX_HURT, screen_x(s, FX_INT(p->x)));
       return;
    }
@@ -555,7 +584,7 @@ static void fights(hd_state *s)
    {
       hd_player *p = &s->p[i];
       int32_t px, py;
-      if (!p->active || p->respawn)
+      if (!p->active || p->respawn || p->ko)
          continue;
       px = FX_INT(p->x);
       py = FX_INT(p->y);

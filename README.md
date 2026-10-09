@@ -111,6 +111,14 @@ Format 3 adds two keys to the manifest, both optional; a package of format 1 or 
 
 A skin's `shot` (facing right, looped) and `shot_hit` (the burst where it hits, played once over 18 frames) draw its shots, centered on them; without them a shot is a small glowing pellet in the player's color. A puppet (`rig`) takes its aiming pose while it shoots: the near arm straight ahead at the hip, the finger pistol level.
 
+**`health`**: the players have hits instead of losing coins. An enemy's touch (or a fall) costs one; the last one knocks the player out: it stops where it is for `knockout` frames (the skin's `knockout` animation is played once over them, else it blinks), then comes back at the checkpoint with all its hits. The HUD shows HP next to the coins, red and blinking with `worn` or fewer left, when a puppet also shows its `worn` body (the rig's optional sheet of the same 6 faces worn out) with tired eyes standing still. Without `health` a hit costs coins (the built-in game).
+
+```json
+"health": {"hits": 3, "worn": 1, "knockout": 100}
+```
+
+`hits` 1 to 99 (3 by default), `worn` 0 to `hits` (1), `knockout` 10 to 600 frames (90).
+
 **`sprites`**: the heroes' own pictures, of any size, an animation per state and a skin per player:
 
 ```json
@@ -166,7 +174,7 @@ Back to front in the list's order, up to 8. `speed` is the share of the camera's
 "music": {"file": "colon.wav", "volume": 180, "loop_from": 0}
 ```
 
-`sounds` replaces the built-in effects it names (`jump`, `coin`, `stomp`, `hurt`, `join`, `check`, `clear`, `pause`, `shoot`, `hit` (a shot hits an enemy that does not pop); up to 10 seconds each, mixed to mono, placed left or right by the game). `music` plays over and over instead of the built-in tune, in stereo (up to 10 minutes), at `volume` 0 to 256 (200 by default), starting again at `loop_from` milliseconds; its position is in the save state, so a loaded state goes on exactly where it was, and `golinkhd_set_music` turns it off like the built-in tune.
+`sounds` replaces the built-in effects it names (`jump`, `coin`, `stomp`, `hurt`, `join`, `check`, `clear`, `pause`, `shoot`, `hit` (a shot hits an enemy that does not pop), `knockout`; up to 10 seconds each, mixed to mono, placed left or right by the game). `music` plays over and over instead of the built-in tune, in stereo (up to 10 minutes), at `volume` 0 to 256 (200 by default), starting again at `loop_from` milliseconds; its position is in the save state, so a loaded state goes on exactly where it was, and `golinkhd_set_music` turns it off like the built-in tune.
 
 **`screens`**: pictures over the whole screen, scaled to it (keeping their shape, cropped from the middle):
 

@@ -22,6 +22,7 @@ ANIMS = {
     "hurt": ("hurt", 4, 12),
     "bored": ("bored", 8, 6),
     "win": ("win", 6, 8),
+    "knockout": ("dissolve", 8, 10),  # played once over the knockout (its fps does not count)
 }
 SKINS = ["red", "blue"]
 # pixels walked in one whole walk cycle (12 frames, two steps): the steps follow the ground; at the
@@ -32,6 +33,8 @@ STRIDE = 110
 RIG = {"limb": 4, "leg": 24, "arm": 15, "stride": 84, "lift": 8, "bob": 3}
 # the finger pistol: Y or X fires antibodies (about 7 a second) from the fingertip of the puppet's
 # aiming pose; a germ takes 3
+# three hits; with the last one left the capsule looks worn out; at none it dissolves
+HEALTH = {"hits": 3, "worn": 1, "knockout": 100}
 WEAPON = {"button": "run", "rate": 8, "speed": 900, "range": 420, "muzzle": [30, -33], "enemy_health": 3}
 # a skin's shot and its burst (cut.sh): strip, frames, fps
 SHOTS = {"shot": ("shot", 4, 12), "shot_hit": ("shot_hit", 6, 20)}
@@ -40,6 +43,7 @@ SHOTS = {"shot": ("shot", 4, 12), "shot_hit": ("shot_hit", 6, 20)}
 def rig(skin):
     """The skin's puppet from sprites/ (parts.py), or None."""
     files = {"body": f"{skin}_body.png", "hand": f"{skin}_hands.png", "foot": f"{skin}_feet.png"}
+    worn = f"{skin}_body_worn.png"
     if os.environ.get("NO_RIG") or not all(os.path.exists(os.path.join(HERE, "sprites", f)) for f in files.values()):
         return None
     out = dict(RIG)
@@ -50,6 +54,10 @@ def rig(skin):
         out[part] = {"file": name, "frame": [w // cells, h]}
         if part != "hand":
             out[part]["feet"] = 2
+    if os.path.exists(os.path.join(HERE, "sprites", worn)):
+        shutil.copy(os.path.join(HERE, "sprites", worn), os.path.join(OUT, worn))
+        w, h = png_size(os.path.join(OUT, worn))
+        out["worn"] = {"file": worn, "frame": [w // 6, h], "feet": 2}
     return out
 
 
@@ -121,7 +129,7 @@ def screens(zone):
 # the engine's effects -> ANTÍDOTO's (made by make_sfx.py on the machine with the model, in source/sfx)
 SOUNDS = {"jump": "jump", "coin": "vitamin", "stomp": "germ_squash", "hurt": "hurt",
           "join": "ready_go", "check": "checkpoint", "clear": "victory", "pause": "menu",
-          "shoot": "shoot", "hit": "virus_pop"}
+          "shoot": "shoot", "hit": "virus_pop", "knockout": "knockout"}
 SFX_PEAK = 20000       # every effect at the same loudness, under the music's
 SFX_QUIET = 600        # quieter than this at the start or the end is silence
 
@@ -247,6 +255,7 @@ def main():
         "sky": ["#3a1420", "#7a3a3a"],
         # a hero about 80 px tall: hitbox, and a jump of about 12 cells
         "weapon": WEAPON,
+        "health": HEALTH,
         "physics": {"hitbox": [28, 66], "enemy_hitbox": [34, 30], "walk": 180, "run": 280, "jump": 1050, "gravity": 50, "gravity_hold": 30, "fall_max": 1200},
         "sprites": {k: v for k, v in {
             "hero": {"players": SKINS, "skins": skins},

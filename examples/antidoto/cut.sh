@@ -16,7 +16,9 @@ for who in red blue; do
   for anim in walk12:12 run:8 jump:6 shoot:6 shoot_up:6 bored:8 dash:6 tired_idle:6 tired_run:8 dissolve:8 duck:6 hurt:4 win:6 super:8; do
     name=${anim%%:*}; frames=${anim##*:}
     [ -f source/${who}_$name.png ] || continue
-    cut source/${who}_$name.png sprites/${who}_$name.png --height "$H" --frames "$frames" --shell "$shell"
+    # a dissolve breaks the capsule apart: its size is measured on the first, whole, frame
+    first=""; [ "$name" = dissolve ] && first="--shell-frames 1"
+    cut source/${who}_$name.png sprites/${who}_$name.png --height "$H" --frames "$frames" --shell "$shell" $first
   done
 done
 # the enemies and the level's things: their own heights

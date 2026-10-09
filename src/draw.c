@@ -259,6 +259,21 @@ static void actor(const hd_image *im, int32_t x, int32_t y, int32_t flags, int32
 static void hero_sprite(const hd_state *s, const hd_player *p, int32_t i)
 {
    const hd_skin *sk = &hd_skins[hd_skin_of[i]];
+   if (p->ko)
+   {
+      /* knocked out: the skin's "knockout" played once over it, else the hero blinking */
+      const hd_anim *ko = &sk->anim[ANIM_KO];
+      if (ko->frames)
+      {
+         int32_t done = hd_health.knockout - p->ko;
+         const hd_image *im = &ko->frames[hd_clamp((int32_t)((int64_t)done * ko->count / hd_max(1, hd_health.knockout)), 0, ko->count - 1)];
+         actor(im, FX_INT(p->x) + PW / 2 - im->w / 2 - cam_x, FX_INT(p->y) + PH - (im->h - ko->feet) - cam_y,
+               p->facing < 0 ? BLIT_FLIP : 0, FX_INT(p->x) + PW / 2 - cam_x, FX_INT(p->y) + PH - cam_y, PW * 3 / 5);
+         return;
+      }
+      if ((p->ko >> 2) & 1)
+         return;
+   }
    if (sk->has_rig)
    {
       if (p->hurt && p->hurt <= HURT_FRAMES - 30 && ((p->hurt >> 2) & 1))
@@ -360,7 +375,7 @@ static void actors(const hd_state *s)
          hero_sprite(s, p, i);
          continue;
       }
-      if (p->hurt && ((p->hurt >> 2) & 1))
+      if ((p->hurt && ((p->hurt >> 2) & 1)) || (p->ko && ((p->ko >> 2) & 1)))
          continue; /* blinking */
       if (!p->ground)
          frame = HERO_JUMP;
@@ -530,6 +545,15 @@ static void hud(const hd_state *s)
       buf[0] = 'x';
       number(buf + 1, p->coins);
       text(buf, x + 46, y, 2, 0xffffffu);
+      if (hd_health.on)
+      {
+         /* its health: HP and the hits left, red and blinking when worn */
+         int32_t worn = p->hp <= hd_health.worn;
+         strcpy(buf, "HP");
+         number(buf + 2, p->hp);
+         if (!worn || ((s->frame >> 4) & 1))
+            text(buf, x + 90, y, 2, worn ? 0xff4040u : 0xffffffu);
+      }
    }
    if (s->paused)
    {

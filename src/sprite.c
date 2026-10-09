@@ -29,7 +29,7 @@ int32_t hd_layer_count;
 int32_t hd_skin_count;
 int32_t hd_skin_of[MAX_PLAYERS];
 
-static const char *const anim_names[ANIM_COUNT] = { "idle", "run", "jump", "hurt", "bored", "win", "shot", "shot_hit" };
+static const char *const anim_names[ANIM_COUNT] = { "idle", "run", "jump", "hurt", "bored", "win", "shot", "shot_hit", "knockout" };
 
 /* Every picture of every skin together may hold this many pixels (256 MB). */
 #define SPRITE_PIXELS_MAX (64 * 1024 * 1024)
@@ -41,8 +41,8 @@ void hd_sprites_free(void)
    int32_t s, a;
    for (s = 0; s < MAX_SKINS; s++)
    {
-      hd_anim *parts[3] = { &hd_skins[s].rig.body, &hd_skins[s].rig.hand, &hd_skins[s].rig.foot };
-      for (a = 0; a < 3; a++)
+      hd_anim *parts[4] = { &hd_skins[s].rig.body, &hd_skins[s].rig.hand, &hd_skins[s].rig.foot, &hd_skins[s].rig.worn };
+      for (a = 0; a < 4; a++)
          if (parts[a]->frames)
          {
             free(parts[a]->frames[0].px);
@@ -213,6 +213,12 @@ static const char *load_rig(const hd_zip *zip, const json *rig, hd_rig *r, const
          return msg;
       }
       err = load_anim(zip, def, an[k], skin, parts[k]);
+      if (err)
+         return err;
+   }
+   if (hd_json_get(rig, "worn"))
+   {
+      const char *err = load_anim(zip, hd_json_get(rig, "worn"), &r->worn, skin, "worn");
       if (err)
          return err;
    }

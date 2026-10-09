@@ -6,7 +6,7 @@ every piece in an equal cell with the pivot the engine's rig (src/rig.c)
 expects:
 
   body  6 faces (normal, blink, shout, hurt, tired, yawn): bottom on the
-        cell's bottom, centered
+        cell's bottom, centered; body_worn (optional) the same faces worn out
   hand  6 gloves (open, fist, gun, wave, up, palm): the wrist's cuff on the
         cell's left edge, the cuff's middle on the cell's middle row
   foot  4 shoes (flat, toe down, heel down, in the air): bottom on the
@@ -95,6 +95,13 @@ def cut(skin, hb, hh, hf):
     w = max(p.width for p in body) + 2 * PAD
     sheet([(p, ((w - p.width) // 2, hb + PAD - p.height)) for p in body], (w, hb + PAD), out("body"))
     made["body"] = {"file": f"{skin}_body.png", "frame": [w, hb + PAD], "feet": PAD}
+
+    # the worn-out body (little health left), if drawn: the same faces, cut the same way
+    if os.path.exists(os.path.join(HERE, "source", f"{skin}_parts_body_worn.png")):
+        worn = scaled(pieces(src("body_worn"), 6), hb)
+        ww = max(p.width for p in worn) + 2 * PAD
+        sheet([(p, ((ww - p.width) // 2, hb + PAD - p.height)) for p in worn], (ww, hb + PAD), out("body_worn"))
+        made["worn"] = {"file": f"{skin}_body_worn.png", "frame": [ww, hb + PAD], "feet": PAD}
 
     hands = scaled(pieces(src("hands"), 6), hh)
     w = max(p.width for p in hands) + PAD

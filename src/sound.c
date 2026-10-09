@@ -3,7 +3,7 @@
  * Format 3's sounds and music: a package's own WAV files.
  *
  *   "sounds": {"jump": "jump.wav", "coin": "gem.wav", ...}
- *      the effects it replaces: jump, coin, stomp, hurt, join, check, clear, pause, shoot, hit
+ *      the effects it replaces: jump, coin, stomp, hurt, join, check, clear, pause, shoot, hit, knockout
  *   "music": {"file": "level.wav", "volume": 200, "loop_from": 0}
  *      played over and over instead of the built-in tune; loop_from (in
  *      milliseconds) is where it starts again after the end
@@ -27,7 +27,7 @@ static int16_t *music_data;
 #define SFX_SECONDS_MAX 10
 #define MUSIC_SECONDS_MAX 600
 
-static const char *const sfx_names[SFX_COUNT] = { "jump", "coin", "stomp", "hurt", "join", "check", "clear", "pause", "shoot", "hit" };
+static const char *const sfx_names[SFX_COUNT] = { "jump", "coin", "stomp", "hurt", "join", "check", "clear", "pause", "shoot", "hit", "knockout" };
 
 void hd_sounds_free(void)
 {

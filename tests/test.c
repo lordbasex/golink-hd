@@ -936,6 +936,69 @@ static void test_weapon(void)
    hd_content_builtin();
 }
 
+/* Health (format 3): an enemy's hits cost health, not coins; the last knocks the player out, who comes
+   back at the checkpoint with all of it; nothing hurts a knocked-out player; bad health is refused. */
+static void test_health(void)
+{
+   static uint8_t zip[300000];
+   static char level[100000];
+   static hd_state s;
+   hd_input in[MAX_PLAYERS];
+   const char *err;
+   size_t n;
+   int32_t f, row, lowest = 99, knocked = 0, back = 0;
+   char *at;
+   zfile files[2] = {{0}};
+   flat_level(level, sizeof level, 60, 30);
+   for (at = level, row = 0; row < 27 * 2 - 1; at++)
+      if (*at == '"')
+         row++;
+   at[8] = 'E'; /* close: it walks into the player standing at the start */
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Health\", \"level\": \"level.json\", \"health\": {\"hits\": 2, \"worn\": 1, \"knockout\": 20}}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  health: %s\n", err);
+   hd_reset(&s);
+   memset(in, 0, sizeof in);
+   in[0].buttons = PAD_START;
+   hd_step(&s, in);
+   in[0].buttons = 0;
+   CHECK(s.p[0].hp == 2);
+   s.p[0].coins = 5;
+   for (f = 0; f < 1500 && !back; f++)
+   {
+      /* the enemy comes back at the player whenever it can be hurt again */
+      if (!s.p[0].hurt && !s.p[0].ko && !s.p[0].respawn && s.p[0].ground)
+      {
+         s.e[0].alive = 1;
+         s.e[0].awake = 1;
+         s.e[0].x = s.p[0].x + FX(PW - 2);
+         s.e[0].y = s.p[0].y + FX(PH - EH);
+         s.e[0].vx = -FX(1);
+      }
+      hd_step(&s, in);
+      lowest = hd_min(lowest, s.p[0].hp);
+      if (s.p[0].ko)
+      {
+         knocked = 1;
+         CHECK(s.p[0].hp == 0 && s.p[0].vx == 0 && s.p[0].hurt == 0);
+      }
+      else if (knocked && !s.p[0].respawn && s.p[0].hp == 2)
+         back = 1;
+   }
+   CHECK(lowest == 0 && knocked && back);
+   CHECK(s.p[0].coins == 5); /* hits cost health, not coins */
+   files[0].text = "{\"format\": 3, \"title\": \"Health\", \"level\": \"level.json\", \"health\": {\"hits\": 2, \"worn\": 3}}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "health") != NULL);
+   CHECK(!hd_health.on);
+   hd_content_builtin();
+}
+
 /* A rubber-hose puppet: loads, refuses bad sizes, and draws in every pose, facing both ways and at the
    screen's edges, without leaving the screen's memory. */
 static void test_rig(void)
@@ -1130,6 +1193,7 @@ int main(void)
    test_trig();
    test_rig();
    test_weapon();
+   test_health();
    test_path();
    test_bones();
    test_fx();

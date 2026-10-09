@@ -356,6 +356,27 @@ static const char *load_weapon(const json *w)
 }
 
 /*
+ * The manifest's "health" (format 3): {"hits": 3, "worn": 1, "knockout": 90}:
+ * the hits a player takes (1 to 99), how many left look worn (0 to hits),
+ * the frames a knockout lasts (10 to 600).
+ */
+static const char *load_health(const json *h)
+{
+   int bad = 0;
+   if (!h)
+      return NULL;
+   if (h->type != JSON_OBJECT)
+      return "manifest.json's health must be an object";
+   hd_health.on = 1;
+   hd_health.hits = num(h, "hits", 1, 99, 3, &bad);
+   hd_health.worn = num(h, "worn", 0, 99, 1, &bad);
+   hd_health.knockout = num(h, "knockout", 10, 600, 90, &bad);
+   if (bad || hd_health.worn > hd_health.hits)
+      return "the health has a value out of range (hits 1-99, worn 0 to hits, knockout 10-600)";
+   return NULL;
+}
+
+/*
  * A level's "effects" (format 2): light and darkness, color grading, bloom,
  * waves, the camera's zoom, outlines and shadows, the sound, and dialogs.
  */
@@ -605,6 +626,8 @@ static const char *load_package(const uint8_t *data, size_t size)
    err = load_physics(hd_json_get(man, "physics"));
    if (!err)
       err = load_weapon(hd_json_get(man, "weapon"));
+   if (!err)
+      err = load_health(hd_json_get(man, "health"));
    if (err)
    {
       hd_json_free(man);

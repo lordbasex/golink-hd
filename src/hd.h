@@ -117,6 +117,7 @@ enum
    SFX_PAUSE,
    SFX_SHOOT, /* a weapon fires (format 3's "weapon") */
    SFX_HIT,   /* a shot hits an enemy that does not die */
+   SFX_KO,    /* a player runs out of health (format 3's "health") */
    SFX_COUNT
 };
 /* Every sample the mixer knows: the effects and the music's two waves. */
@@ -154,6 +155,18 @@ typedef struct
 } hd_weapon_config;
 extern hd_weapon_config hd_weapon;
 void hd_weapon_default(void);
+
+/*
+ * The players' health (format 3's "health"; off in the built-in game, where
+ * a hit costs coins): a hit costs one of `hits`, the last one knocks the
+ * player out (`knockout` frames, then back at the checkpoint with all of
+ * them); with `worn` or fewer left a puppet shows its worn body.
+ */
+typedef struct
+{
+   int32_t on, hits, worn, knockout;
+} hd_health_config;
+extern hd_health_config hd_health;
 /* The player's hitbox (inside its 16 x 24 picture in the built-in game). */
 #define PW (hd_phys.pw)
 #define PH (hd_phys.ph)
@@ -180,6 +193,8 @@ typedef struct
    int32_t still;            /* frames standing still with no button held (a sprite's bored animation) */
    int32_t shot_wait;        /* frames before the weapon fires again */
    int32_t aim;              /* frames left of the shooting pose */
+   int32_t hp;               /* hits it still takes (format 3's health) */
+   int32_t ko;               /* frames left of a knockout */
 } hd_player;
 
 typedef struct

@@ -22,6 +22,7 @@ enum
    ANIM_WIN,      /* the stage is cleared */
    ANIM_SHOT,     /* the skin's shot flying (format 3's weapon; facing right) */
    ANIM_SHOT_HIT, /* its burst where it hits (played once) */
+   ANIM_KO,       /* knocked out (format 3's health): played once over the knockout */
    ANIM_COUNT
 };
 
@@ -38,6 +39,7 @@ typedef struct
 typedef struct
 {
    hd_anim body, hand, foot; /* faces, gloves and shoes, each a row of pictures */
+   hd_anim worn;             /* optional: the body's faces worn out, shown with little health left */
    int32_t limb, leg, arm, stride, lift, bob;
 } hd_rig;
 

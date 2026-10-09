@@ -137,6 +137,7 @@ def main() -> None:
     ap.add_argument("--pad", type=int, default=2, help="empty pixels around each frame")
     ap.add_argument("--scale", type=float, default=0, help="game pixels per picture pixel (0: the tallest frame gets --height)")
     ap.add_argument("--shell", type=float, default=0, help="scale so the colored half measures this many game pixels (an image AI draws each strip at its own size)")
+    ap.add_argument("--shell-frames", type=int, default=0, help="measure the colored half only in the first N frames (a character that breaks apart, like a dissolve)")
     args = ap.parse_args()
 
     img = Image.open(args.src).convert("RGBA")
@@ -162,7 +163,7 @@ def main() -> None:
         boxes.append((x0 + int(cols[0]), int(rows[0]), x0 + int(cols[-1]) + 1, int(rows[-1]) + 1))
     tallest = max(b[3] - b[1] for b in boxes)
     scale = args.scale or args.height / tallest
-    shell = shell_height(rgba, runs)
+    shell = shell_height(rgba, runs[:args.shell_frames] if args.shell_frames else runs)
     if args.shell and shell:
         scale = args.shell / shell
     # every frame is placed by its body's center (not its box's): arms and
