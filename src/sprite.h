@@ -42,6 +42,27 @@ extern hd_skin hd_skins[MAX_SKINS];
 extern int32_t hd_skin_count;
 extern int32_t hd_skin_of[MAX_PLAYERS];
 
+/*
+ * Format 3's "layers": painted pictures behind (or in front of) the level,
+ * repeated across it, moving at their own share of the camera's speed.
+ */
+typedef struct
+{
+   hd_image img;
+   int32_t speed; /* hundredths of the camera's movement: 0 stays, 100 moves with the level */
+   int32_t y;     /* its top, in level pixels (at speed 100) */
+   int32_t front; /* drawn over the characters */
+} hd_layer;
+
+#define MAX_LAYERS 8
+extern hd_layer hd_layers[MAX_LAYERS];
+extern int32_t hd_layer_count;
+
+/* Reads "layers" (NULL is fine). */
+const char *hd_layers_load(const hd_zip *zip, const json *layers);
+/* Draws the back (front 0) or front (1) layers into a surface whose top-left is the camera at (cx, cy). */
+void hd_layers_draw(uint32_t *px, int32_t w, int32_t h, int32_t cx, int32_t cy, int32_t front);
+
 /* Frames standing still before the hero looks bored. */
 #define BORED_AFTER 360
 

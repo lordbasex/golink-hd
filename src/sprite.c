@@ -19,6 +19,8 @@
 #include "sprite.h"
 
 hd_skin hd_skins[MAX_SKINS];
+hd_layer hd_layers[MAX_LAYERS];
+int32_t hd_layer_count;
 int32_t hd_skin_count;
 int32_t hd_skin_of[MAX_PLAYERS];
 
@@ -42,6 +44,10 @@ void hd_sprites_free(void)
             free(an->frames);
          }
       }
+   for (s = 0; s < hd_layer_count; s++)
+      free(hd_layers[s].img.px);
+   memset(hd_layers, 0, sizeof hd_layers);
+   hd_layer_count = 0;
    memset(hd_skins, 0, sizeof hd_skins);
    memset(hd_skin_of, 0, sizeof hd_skin_of);
    hd_skin_count = 0;
@@ -197,4 +203,104 @@ const char *hd_sprites_load(const hd_zip *zip, const json *sprites)
    for (i = 0; i < MAX_PLAYERS; i++)
       hd_skin_of[i] = i % hd_skin_count;
    return NULL;
+}
+
+/*
+ *   "layers": [{"file": "far.png", "speed": 25, "y": 0},
+ *              {"file": "mid.png", "speed": 50, "y": 120},
+ *              {"file": "front.png", "speed": 130, "y": 0, "front": true}]
+ *
+ * Back to front, in the list's order. A layer repeats across the level; its
+ * picture may be opaque (a far sky) or see-through. They replace the
+ * built-in clouds and hills; the manifest's sky still fills what no layer
+ * covers.
+ */
+const char *hd_layers_load(const hd_zip *zip, const json *layers)
+{
+   static char msg[200];
+   const json *it;
+   int32_t i = 0;
+   if (!layers)
+      return NULL;
+   if (layers->type != JSON_ARRAY || layers->count > MAX_LAYERS)
+      return "manifest.json's layers must be a list of at most 8";
+   for (it = layers->child; it; it = it->next, i++)
+   {
+      hd_layer *l = &hd_layers[i];
+      const json *file = hd_json_get(it, "file"), *front = hd_json_get(it, "front");
+      const char *err;
+      uint8_t *png;
+      size_t size;
+      int bad = 0;
+      if (it->type != JSON_OBJECT || !file || file->type != JSON_STRING)
+         return "each layer needs a \"file\"";
+      l->speed = get_int(it, "speed", 0, 400, 50, &bad);
+      l->y = get_int(it, "y", -4096, 16384, 0, &bad);
+      l->front = front && front->type == JSON_BOOL && front->num;
+      if (bad)
+         return "a layer's speed must be 0 to 400 and its y -4096 to 16384";
+      png = hd_zip_read(zip, file->str, &size, &err);
+      if (!png)
+      {
+         snprintf(msg, sizeof msg, "%s: %s", file->str, err);
+         return msg;
+      }
+      l->img.px = hd_png_read(png, size, &l->img.w, &l->img.h, &err);
+      free(png);
+      if (!l->img.px)
+      {
+         snprintf(msg, sizeof msg, "%s: %s", file->str, err);
+         return msg;
+      }
+      if (pixels_used + (int64_t)l->img.w * l->img.h > SPRITE_PIXELS_MAX)
+      {
+         free(l->img.px);
+         l->img.px = NULL;
+         return "the layers and sprites are bigger than go-link HD keeps (64 million pixels)";
+      }
+      pixels_used += (int64_t)l->img.w * l->img.h;
+      hd_layer_count = i + 1;
+   }
+   return NULL;
+}
+
+static uint32_t blend(uint32_t dst, uint32_t src)
+{
+   uint32_t a = src >> 24, rb, g;
+   if (a == 255)
+      return src & 0xffffffu;
+   rb = ((src & 0xff00ffu) * a + (dst & 0xff00ffu) * (255 - a)) >> 8;
+   g = ((src & 0xff00u) * a + (dst & 0xff00u) * (255 - a)) >> 8;
+   return (rb & 0xff00ffu) | (g & 0xff00u);
+}
+
+void hd_layers_draw(uint32_t *px, int32_t w, int32_t h, int32_t cx, int32_t cy, int32_t front)
+{
+   int32_t i, x, y;
+   for (i = 0; i < hd_layer_count; i++)
+   {
+      const hd_layer *l = &hd_layers[i];
+      int32_t lw = l->img.w, ox, top;
+      if (l->front != front)
+         continue;
+      /* where the camera is, in the layer's own pixels */
+      ox = (int32_t)(((int64_t)cx * l->speed / 100) % lw);
+      if (ox < 0)
+         ox += lw;
+      top = l->y - (int32_t)((int64_t)cy * l->speed / 100);
+      for (y = hd_max(top, 0); y < hd_min(top + l->img.h, h); y++)
+      {
+         const uint32_t *src = l->img.px + (size_t)(y - top) * lw;
+         uint32_t *dst = px + (size_t)y * w;
+         int32_t sx = ox;
+         for (x = 0; x < w; x++)
+         {
+            uint32_t c = src[sx];
+            if (c >> 24)
+               dst[x] = blend(dst[x], c);
+            if (++sx == lw)
+               sx = 0;
+         }
+      }
+   }
 }

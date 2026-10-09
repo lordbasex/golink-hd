@@ -32,6 +32,29 @@ def png_size(path):
     return struct.unpack(">II", head[16:24])
 
 
+# zone -> its layers: (picture, height in the game, speed % of the camera, y)
+LAYERS = {
+    "colon": [("bg_colon_far", 400, 20, -20), ("bg_colon_mid", 300, 55, 200)],
+}
+
+
+def layers(zone):
+    """Resizes the zone's layer pictures to the game's size (Pillow through uv, see cut.sh) and lists them."""
+    import subprocess
+    out = []
+    for name, height, speed, y in LAYERS[zone]:
+        src = os.path.join(HERE, "source", name + ".png")
+        if not os.path.exists(src):
+            continue
+        dst = os.path.join(OUT, name + ".png")
+        subprocess.run([os.environ.get("UV", "uv"), "run", "-q", "--with", "pillow", "python", "-c",
+                        "import sys; from PIL import Image; im = Image.open(sys.argv[1]);"
+                        " im.resize((round(im.width * int(sys.argv[3]) / im.height), int(sys.argv[3])), Image.LANCZOS).save(sys.argv[2])",
+                        src, dst, str(height)], check=True)
+        out.append({"file": name + ".png", "speed": speed, "y": y})
+    return out
+
+
 def level():
     """A first stretch of the colon: ground, gaps, platforms at a big hero's reach, enemies, a checkpoint, the goal."""
     w, h = 220, 30
@@ -101,6 +124,7 @@ def main():
         # a hero about 80 px tall: hitbox, and a jump of about 12 cells
         "physics": {"hitbox": [28, 66], "walk": 300, "run": 460, "jump": 1050, "gravity": 50, "gravity_hold": 30, "fall_max": 1200},
         "sprites": {"hero": {"players": SKINS, "skins": skins}},
+        "layers": layers("colon"),
     }
     with open(os.path.join(OUT, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)

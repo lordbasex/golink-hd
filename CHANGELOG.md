@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Added
-- Package format 3: `physics` (the players' hitbox, speeds, gravity and jump) and `sprites` (the heroes' own pictures of any size: idle, run, jump, hurt, bored and win animations, a skin per player). Save states are version 5 (each player's frames standing still).
+- Package format 3: `physics` (the players' hitbox, speeds, gravity and jump) and `sprites` (the heroes' own pictures of any size: idle, run, jump, hurt, bored and win animations, a skin per player) and `layers` (painted pictures behind or in front of the level, repeated across it at their own speed). Save states are version 5 (each player's frames standing still).
 - ANTÍDOTO (`examples/antidoto`), a game whose art and music are made with AI: the heroes' strips, `cut.sh` and `recolor.py` (Azul is Rojo recolored), `build.py` and `make_tracks.py`; `tools/sprites.py` cuts an image AI's strip into an engine sheet; `docs/howto/ai-art-and-audio.md` logs every prompt and command.
 - `tools/glhd pack` packs the sprites' files too.
 

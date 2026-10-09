@@ -564,6 +564,8 @@ static const char *load_package(const uint8_t *data, size_t size)
       err = load_extras(&zip, pictures);
    if (!err)
       err = hd_sprites_load(&zip, hd_json_get(man, "sprites"));
+   if (!err)
+      err = hd_layers_load(&zip, hd_json_get(man, "layers"));
    hd_json_free(man);
    return err;
 }

@@ -285,6 +285,20 @@ static int pack_names(const char *dir, char (*names)[256], int *count)
       if (i == *count)
          snprintf(names[(*count)++], 256, "%s", j->str);
    }
+   /* format 3: every layer's file */
+   {
+      const json *ls = hd_json_get(man, "layers"), *it;
+      for (it = ls ? ls->child : NULL; ok && it; it = it->next)
+      {
+         const json *file = hd_json_get(it, "file");
+         if (!file || file->type != JSON_STRING)
+            continue;
+         for (i = 0; i < *count && strcmp(names[i], file->str); i++)
+            ;
+         if (i == *count && *count < PACK_MAX)
+            snprintf(names[(*count)++], 256, "%s", file->str);
+      }
+   }
    /* format 3: every sprite's file */
    {
       const json *sp = hd_json_get(man, "sprites"), *hero = sp ? hd_json_get(sp, "hero") : NULL;

@@ -108,6 +108,16 @@ Format 3 adds two keys to the manifest, both optional; a package of format 1 or 
 - The states: `idle` (required), `run` (on the ground and moving), `jump` (in the air: the frames go from rising to falling with the speed, leaving out the first and the last, take-off and landing, when there are 4 or more), `hurt` (once, when hit), `bored` (after 6 seconds standing still with no button held: once, then idle for 4 seconds, again and again), `win` (the stage is cleared). A missing one shows `idle`.
 - All the sprites together may hold 64 million pixels.
 
+**`layers`**: painted pictures behind the level, or in front of it, repeated across it:
+
+```json
+"layers": [{"file": "far.png", "speed": 20, "y": -20},
+           {"file": "mid.png", "speed": 55, "y": 200},
+           {"file": "near.png", "speed": 130, "y": 0, "front": true}]
+```
+
+Back to front in the list's order, up to 8. `speed` is the share of the camera's movement in hundredths (0 stays still, 100 moves with the level, more passes faster in front), 0 to 400; `y` is the picture's top in level pixels at speed 100 (it moves up and down at its speed too); `front` draws it over the characters. Pictures may be opaque or see-through; with layers, the built-in clouds and hills are not drawn and the manifest's sky fills what no layer covers. Layers and sprites share the 64 million pixels.
+
 `tools/sprites.py` cuts an image AI's strip (frames in a row on a transparent background) into such a sheet; [docs/howto/ai-art-and-audio.md](docs/howto/ai-art-and-audio.md) shows the whole path, from the prompts to the package, for [ANTÍDOTO](examples/antidoto).
 
 ### The API test games

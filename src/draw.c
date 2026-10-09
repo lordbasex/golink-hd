@@ -397,10 +397,24 @@ void hd_draw_world(const hd_state *s, hd_surface *target, int32_t cx, int32_t cy
    surf = *target;
    cam_x = cx;
    cam_y = cy;
-   backdrop();
+   if (hd_layer_count)
+   {
+      int32_t x, y;
+      for (y = 0; y < surf.h; y++)
+      {
+         uint32_t c = sky_at(y), *row = surf.px + y * surf.w;
+         for (x = 0; x < surf.w; x++)
+            row[x] = c;
+      }
+      hd_layers_draw(surf.px, surf.w, surf.h, cam_x, cam_y, 0);
+   }
+   else
+      backdrop();
    level(s);
    actors(s);
    particles(s);
+   if (hd_layer_count)
+      hd_layers_draw(surf.px, surf.w, surf.h, cam_x, cam_y, 1);
 }
 
 /* The level's effects (package format 2), on the finished world. */
