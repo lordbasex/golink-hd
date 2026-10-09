@@ -13,14 +13,14 @@ mkdir -p sprites
 for who in red blue; do
   [ -f source/${who}_idle.png ] || continue
   shell=$(cut source/${who}_idle.png sprites/${who}_idle.png --height "$H" --frames 6 | sed 's/.*"shell": \([0-9.]*\).*/\1/')
-  for anim in run:8 jump:6 shoot:6 shoot_up:6 bored:8 dash:6 tired_idle:6 tired_run:8 dissolve:8 duck:6 hurt:4 win:6 super:8; do
+  for anim in walk12:12 run:8 jump:6 shoot:6 shoot_up:6 bored:8 dash:6 tired_idle:6 tired_run:8 dissolve:8 duck:6 hurt:4 win:6 super:8; do
     name=${anim%%:*}; frames=${anim##*:}
     [ -f source/${who}_$name.png ] || continue
     cut source/${who}_$name.png sprites/${who}_$name.png --height "$H" --frames "$frames" --shell "$shell"
   done
 done
 # the enemies and the level's things: their own heights
-for item in enemy_germ:6:44 enemy_spore:6:44 enemy_spitter:6:52 obj_vitamin:4:24 obj_leukocyte:4:64 obj_portal:4:120; do
+for item in enemy_germ:6:44 enemy_germ_walk:8:44 enemy_spore:6:44 enemy_spitter:6:52 obj_vitamin:4:24 obj_leukocyte:4:64 obj_portal:4:120; do
   name=${item%%:*}; rest=${item#*:}; frames=${rest%%:*}; height=${rest##*:}
   [ -f source/$name.png ] || continue
   cut source/$name.png sprites/$name.png --height "$height" --frames "$frames"

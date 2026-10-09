@@ -312,6 +312,14 @@ The first version (2026-10-09): Rojo and Azul running, jumping and yawning in th
 
 - "The walk is so fast you cannot see the steps" (the user, on play.go-link.org): the run animation went by time (14 frames a second) whatever the speed, so the feet slid over the floor. The engine got `stride`: the run's frames follow the distance walked (one cycle of 8 frames every 130 pixels), and the hero was slowed down for its size (walk 2.4, run 3.8 pixels a frame instead of 3 and 4.6).
 
+- "It still looks the same, and the enemies too; make every object more natural" (the user, after the next video). Looking at the frames one by one showed four causes: the engine's outline drawn around art that has its own ink (a jagged dark halo, now off for this game); every frame was centered on its box, so the body jumped left and right as the limbs moved (the cutter now puts the body's center, its biggest strongly colored blob, in the middle of every cell); the 8-frame run strip was 8 similar poses, not a walk cycle; and the enemies animated by time. ChatGPT was asked again for a real cycle:
+
+```
+Next image, same rules, character in place: ROJO the red pill hero, a proper animator WALK CYCLE of 12 frames in ONE horizontal row, every frame the same size, the body at the SAME horizontal position in every frame (the character walks in place, like on a treadmill), feet on the same ground line. Classic cycle, two steps: 1 contact (right foot forward heel down, left foot back), 2 down (weight on the right leg, body lowest), 3 passing (left leg passing the right), 4 up (body highest, pushing off), 5 contact with the left foot forward, 6 down, 7 passing, 8 up, then 9-12 in-betweens that make the loop smooth back to frame 1. Arms swing opposite to the legs, rubber-hose bounce. Each frame clearly different from the next.
+```
+
+and the same for the germ (`a smooth ROLLING and HOPPING cycle of 8 frames … the body at the SAME horizontal position in every frame (moving in place) … squash when landing and stretch when hopping`). The lesson for any game: ask for a cycle by its animation poses and "in place", and judge it on a cut sheet before putting it in the game. The hero walks a cycle every 150 pixels, the germ every 70 (its frames follow where it is).
+
 ## Cleaning up
 
 When the game's audio is done, the generated files are copied off the M1 and `~/ai` (the models, the virtual environment and the outputs) is removed there, as the user asked.

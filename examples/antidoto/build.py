@@ -17,15 +17,15 @@ OUT = os.path.join(HERE, "game")
 # animation -> (strip it comes from, frames, fps); the engine's states
 ANIMS = {
     "idle": ("idle", 6, 8),
-    "run": ("run", 8, 14),
+    "run": ("walk12", 12, 14),
     "jump": ("jump", 6, 10),
     "hurt": ("hurt", 4, 12),
     "bored": ("bored", 8, 6),
     "win": ("win", 6, 8),
 }
 SKINS = ["red", "blue"]
-# pixels walked in one whole run cycle (8 frames): the steps follow the ground
-STRIDE = 130
+# pixels walked in one whole walk cycle (12 frames, two steps): the steps follow the ground
+STRIDE = 150
 
 
 def png_size(path):
@@ -174,7 +174,7 @@ def main():
         "physics": {"hitbox": [28, 66], "enemy_hitbox": [34, 30], "walk": 240, "run": 380, "jump": 1050, "gravity": 50, "gravity_hold": 30, "fall_max": 1200},
         "sprites": {k: v for k, v in {
             "hero": {"players": SKINS, "skins": skins},
-            "enemy": {k: v for k, v in {"walk": dict(thing("enemy_germ", 6, 8, {"from": 0, "frames": 4}) or {}, stride=60) or None,
+            "enemy": {k: v for k, v in {"walk": dict(thing("enemy_germ_walk", 8, 10) or {}, stride=70) or None,
                                          "squashed": thing("enemy_germ", 6, 8, {"from": 5, "frames": 1})}.items() if v} or None,
             "coin": thing("obj_vitamin", 4, 8),
             "checkpoint": {k: v for k, v in {"off": thing("obj_leukocyte", 4, 2, {"from": 0, "frames": 2}),
