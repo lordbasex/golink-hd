@@ -83,8 +83,15 @@ CREDITS = [
     "# ANTÍDOTO", "",
     "# IDEA, DISEÑO Y PROGRAMACIÓN", "Federico Pereira", "",
     "# MOTOR", "go-link HD", "motor propio en C, sin librerías externas", "",
+    "# PROGRAMACIÓN ASISTIDA", "Claude Code (Anthropic)", "",
+    "# ARTE", "dibujado con ChatGPT (OpenAI)", "",
+    "# MÚSICA", "compuesta con ACE-Step 1.5", "",
+    "# EFECTOS DE SONIDO", "hechos con MOSS-SoundEffect", "",
     "# SE JUEGA CON", "go-link", "Pion WebRTC", "libvpx (VP8)", "Opus", "Fyne", "",
-    "# GRACIAS", "a quienes probaron el juego", "y a ti por jugarlo", "",
+    "# LOGO DE GO-LINK", "Noelia Berná", "",
+    "# MI FAMILIA", "Lorena Barbosa", "Nicolás Pereira", "",
+    "# AGRADECIMIENTOS ESPECIALES", "Pablo Miranda", "Nicolas Gudino", "Germán Venturino", "Paul Estrella", "",
+    "# GRACIAS", "a todos los que me apoyan día a día", "a quienes probaron el juego", "y a ti por jugarlo", "",
     "# FIN", "",
 ]
 # the enemies of each zone past the germs, per stretch (0 to 1): S spores (in the air), P spitters, R bacteria
