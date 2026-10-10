@@ -28,6 +28,14 @@ shaded, the rest see-through. The engine draws them where a floor stops at a
 pit or a platform ends; being cut from the same picture, they lead into the
 next cell.
 
+Better still, a zone can have its floor drawn to repeat by the image AI:
+tex_<zone>_flesh.png (a square that repeats both ways) and tex_<zone>_top.png
+(a wide strip of the floor's top edge, its own inked lower edge, that repeats
+across) next to its tileset. Then nothing is cut or folded: ground is the
+flesh (128 x 128, its folds about as big as the backgrounds'), ground_top and
+platform the strip, each only resized as a repeating picture with the
+little step left at its edges spread over a few pixels.
+
   [RES=2|3] uv run --with pillow --with numpy textures.py source/tiles_colon.png OUT_DIR
 """
 import os
@@ -126,6 +134,62 @@ def wrap_resize(im, size, across, down):
     return big.crop((x, y, x + size[0], y + size[1]))
 
 
+SEAM = 12  # pixels each side of a drawn texture's edge that take up the step left there
+
+
+def close_seam(im, across, down):
+    """
+    A picture drawn to repeat, its edges made to meet exactly: the step
+    between its last column and its first (and last row and first) is spread
+    over SEAM pixels each side, half on each, so nothing is laid twice.
+    """
+    a = np.asarray(im).astype(np.float64)
+    a[..., :3] *= a[..., 3:] / 255
+    for axis, on in ((1, across), (0, down)):
+        if not on:
+            continue
+        b = np.moveaxis(a, axis, 1)
+        n = min(SEAM, b.shape[1] // 4)
+        step = (b[:, :1] - b[:, -1:]) / 2  # half the jump from the far edge to the near one
+        ramp = ((n - np.arange(n)) / (n + 1))[None, :, None]
+        b[:, :n] -= step * ramp
+        b[:, -n:] += step * ramp[:, ::-1]
+        a = np.moveaxis(b, 1, axis)
+    alpha = a[..., 3:]
+    a[..., :3] = np.where(alpha > 0, a[..., :3] * 255 / np.maximum(alpha, 1e-6), 0)
+    return Image.fromarray(np.clip(np.round(a), 0, 255).astype(np.uint8), "RGBA")
+
+
+def repeat_span(im, k=6):
+    """
+    Where a strip drawn to repeat really repeats. Image AIs often draw a
+    rhythm that comes back inside the picture but cut its two ends at
+    different places of it: the two columns furthest apart (more than half
+    the width) that are most alike, k columns compared at a time. The whole
+    width when its own ends are as alike.
+    """
+    a = np.asarray(im).astype(np.float64)
+    a[..., :3] *= a[..., 3:] / 255
+    w = a.shape[1]
+    whole = np.abs(a[:, :k] - a[:, w - k:]).mean()
+    best = (whole, 0, w)
+    for p in range(w // 2 + w // 20, w - k):
+        d = np.convolve(np.abs(a[:, :w - p] - a[:, p:]).mean(axis=(0, 2)), np.ones(k) / k, "valid")
+        x = int(d.argmin())
+        if d[x] < best[0] * 0.8:
+            best = (d[x], x + k // 2, p)
+    return best[1], best[1] + best[2]
+
+
+def drawn_band(im, cell):
+    """A drawn strip: its visible rows, one repeat of it, made to meet across, resized to a cell high (as many cells wide as keeps its shape)."""
+    rows = np.where((np.asarray(im)[..., 3] > 24).any(axis=1))[0]
+    im = im.crop((0, int(rows[0]), im.width, int(rows[-1]) + 1))
+    x0, x1 = repeat_span(im)
+    cells = max(2, round((x1 - x0) / im.height))
+    return wrap_resize(close_seam(im.crop((x0, 0, x1, im.height)), True, False), (cells * cell, cell), True, False)
+
+
 def surface(img, box, band_h):
     """Where a tile's top begins in its middle half (an AI tile often has tufts higher up at its ends), a little above it."""
     x0, y0, x1, y1 = box
@@ -212,11 +276,20 @@ def main():
     os.makedirs(out, exist_ok=True)
     k = int(os.environ.get("RES", "1"))  # 2 (720p) or 3 (1080p): every texture that many times bigger
     cell = 16 * k
-    made = {
-        "ground_top": underside(band(img, b[0], 0.22, (128 * k, 16 * k)), cell),
-        "ground": body(img, b[0], 0.22, (128 * k, 48 * k)),
-        "platform": underside(band(img, b[2], 0.22, (128 * k, 16 * k)), 16 * k),
-    }
+    flesh, top = (os.path.join(os.path.dirname(src), f"tex_{zone}_{part}.png") for part in ("flesh", "top"))
+    if os.path.exists(flesh) and os.path.exists(top):
+        strip = drawn_band(Image.open(top).convert("RGBA"), cell)
+        made = {
+            "ground_top": strip,
+            "ground": wrap_resize(close_seam(Image.open(flesh).convert("RGBA"), True, True), (128 * k, 128 * k), True, True),
+            "platform": strip,
+        }
+    else:
+        made = {
+            "ground_top": underside(band(img, b[0], 0.22, (128 * k, 16 * k)), cell),
+            "ground": body(img, b[0], 0.22, (128 * k, 48 * k)),
+            "platform": underside(band(img, b[2], 0.22, (128 * k, 16 * k)), 16 * k),
+        }
     dark = lambda im: ImageEnhance.Brightness(im).enhance(0.75)
     made["brick_top"], made["brick"] = dark(made["ground_top"]), dark(made["ground"])
     made["brick_bottom"] = underside(made["brick"], cell)
