@@ -1536,6 +1536,289 @@ static void test_api(void)
    hd_lang = 0;
 }
 
+/* The cell (x, y) of a level made by flat_level: the character after its row's opening quote. */
+static void set_cell(char *level, int x, int y, char c)
+{
+   char *at;
+   int row;
+   for (at = level, row = 0; row < 2 * y + 1; at++)
+      if (*at == '"')
+         row++;
+   at[x] = c;
+}
+
+static int32_t count_kind(const hd_state *s, int32_t kind)
+{
+   int32_t i, n = 0;
+   for (i = 0; i < MAX_ENEMIES; i++)
+      n += s->e[i].alive == 1 && s->e[i].kind == kind;
+   return n;
+}
+
+static int32_t live_bolts(const hd_state *s)
+{
+   int32_t i, n = 0;
+   for (i = 0; i < MAX_BOLTS; i++)
+      n += s->bolt[i].life > 0;
+   return n;
+}
+
+/* format 3's spore and spitter: the spitter lobs at a player in front of it, the spore flies at them, both die to shots. */
+static void test_enemy_kinds(void)
+{
+   static uint8_t zip[300000], save[HD_SAVE_SIZE];
+   static char level[100000];
+   static hd_state s, again;
+   hd_input in[MAX_PLAYERS];
+   const char *err;
+   size_t n;
+   int32_t f, spat = 0, hp0, spore_x0, spitter = -1, spore = -1, i;
+   zfile files[2] = {{0}};
+   flat_level(level, sizeof level, 60, 30);
+   set_cell(level, 12, 26, 'P');
+   set_cell(level, 24, 18, 'S');
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Kinds\", \"level\": \"level.json\", \"health\": {\"hits\": 50},"
+                   " \"weapon\": {\"rate\": 5, \"speed\": 600, \"range\": 300},"
+                   " \"enemies\": {\"spore\": {\"hitbox\": [12, 12], \"health\": 2, \"speed\": 60, \"range\": 400},"
+                   " \"spitter\": {\"hitbox\": [14, 14], \"health\": 3, \"rate\": 40, \"range\": 300}}}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  kinds: %s\n", err);
+   hd_reset(&s);
+   memset(in, 0, sizeof in);
+   in[0].buttons = PAD_START;
+   hd_step(&s, in);
+   for (i = 0; i < MAX_ENEMIES; i++)
+   {
+      if (s.e[i].alive && s.e[i].kind == EK_SPITTER)
+         spitter = i;
+      if (s.e[i].alive && s.e[i].kind == EK_SPORE)
+         spore = i;
+   }
+   CHECK(spitter >= 0 && spore >= 0);
+   if (spitter < 0 || spore < 0)
+      return;
+   CHECK(s.e[spitter].hp == 3 && s.e[spore].hp == 2);
+   hp0 = s.p[0].hp;
+   spore_x0 = FX_INT(s.e[spore].x);
+   in[0].buttons = 0;
+   for (f = 0; f < 240; f++)
+   {
+      hd_step(&s, in);
+      spat = hd_max(spat, live_bolts(&s));
+      if (f == 60)
+      {
+         /* a lob in the air: the same game from a save state */
+         int32_t g;
+         hd_save(&s, save);
+         again = s;
+         for (g = 0; g < 30; g++)
+            hd_step(&again, in);
+         CHECK(hd_load(&s, save, HD_SAVE_SIZE) == 1);
+      }
+      if (f == 60 + 30)
+         CHECK(memcmp(&s, &again, sizeof s) == 0);
+   }
+   CHECK(spat >= 1);                                  /* it spat */
+   CHECK(FX_INT(s.e[spore].x) < spore_x0 || s.e[spore].alive != 1); /* the spore came at the player */
+   CHECK(s.p[0].hp < hp0);                            /* and something hurt them */
+   /* shots: facing right, fired until the spitter pops */
+   for (f = 0; f < 400 && s.e[spitter].alive == 1; f++)
+   {
+      in[0].buttons = PAD_RUN | (f < 4 ? PAD_RIGHT : 0);
+      hd_step(&s, in);
+   }
+   CHECK(s.e[spitter].alive != 1);
+   /* a boss's cell needs a boss */
+   set_cell(level, 40, 26, 'X');
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "boss") != NULL);
+   hd_content_builtin();
+}
+
+/* A level's boss: it wakes on screen, lets its brood out and spits, gets angry at half its health, and the goal opens once it is beaten. */
+static void test_boss(void)
+{
+   static uint8_t zip[300000];
+   static char level[100000];
+   static hd_state s;
+   hd_input in[MAX_PLAYERS];
+   const char *err;
+   size_t n;
+   int32_t f, boss = -1, i, broods = 0, spat = 0, angry = 0, open_before;
+   zfile files[2] = {{0}};
+   flat_level(level, sizeof level, 60, 30);
+   set_cell(level, 30, 26, 'X');
+   set_cell(level, 55, 26, 'F');
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Boss\", \"level\": \"level.json\", \"health\": {\"hits\": 99},"
+                   " \"weapon\": {\"rate\": 4, \"speed\": 700, \"range\": 500},"
+                   " \"boss\": {\"name\": \"BIG\", \"hitbox\": [40, 40], \"health\": 30, \"attacks\": [\"brood\", \"spit\"],"
+                   " \"rest\": 20, \"brood\": 4, \"spit\": 3, \"minion\": {\"hitbox\": [8, 8]}}}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  boss: %s\n", err);
+   hd_reset(&s);
+   memset(in, 0, sizeof in);
+   in[0].buttons = PAD_START;
+   hd_step(&s, in);
+   for (i = 0; i < MAX_ENEMIES; i++)
+      if (s.e[i].alive && s.e[i].kind == EK_BOSS)
+         boss = i;
+   CHECK(boss >= 0);
+   if (boss < 0)
+      return;
+   open_before = hd_goal_open(&s);
+   in[0].buttons = 0;
+   for (f = 0; f < 200; f++)
+   {
+      hd_step(&s, in);
+      broods = hd_max(broods, count_kind(&s, EK_MINION));
+      spat = hd_max(spat, live_bolts(&s));
+   }
+   CHECK(s.boss == boss + 1 && s.boss_max == 30); /* awake, its bar full at 30 */
+   CHECK(broods >= 2);                            /* its brood came out */
+   CHECK(spat >= 2);                              /* and it spat a fan */
+   CHECK(!open_before && !hd_goal_open(&s));      /* the goal waits for it */
+   for (f = 0; f < 3000 && !s.boss_beaten; f++)
+   {
+      /* the player keeps firing at it, turning to it */
+      in[0].buttons = PAD_RUN | ((f & 31) < 2 ? (FX_INT(s.p[0].x) < FX_INT(s.e[boss].x) ? PAD_RIGHT : PAD_LEFT) : 0);
+      hd_step(&s, in);
+      angry |= s.boss_angry;
+   }
+   CHECK(angry);           /* at half its health it got angry */
+   CHECK(s.boss_beaten);   /* and it was beaten */
+   CHECK(hd_goal_open(&s));
+   CHECK(count_kind(&s, EK_MINION) == 0 && live_bolts(&s) == 0); /* its brood and shots went with it */
+   hd_content_builtin();
+}
+
+/* format 3's dash: forward at its speed with no gravity for its frames, then a wait; once in the air. */
+static void test_dash(void)
+{
+   static uint8_t zip[300000];
+   static char level[100000];
+   static hd_state s;
+   hd_input in[MAX_PLAYERS];
+   const char *err;
+   size_t n;
+   int32_t f, x0, y0;
+   zfile files[2] = {{0}};
+   flat_level(level, sizeof level, 60, 30);
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Dash\", \"level\": \"level.json\","
+                   " \"dash\": {\"button\": \"a\", \"speed\": 800, \"frames\": 10, \"cooldown\": 20}}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   CHECK(hd_dash.on && hd_dash.button == PAD_A && hd_dash.frames == 10);
+   hd_reset(&s);
+   memset(in, 0, sizeof in);
+   in[0].buttons = PAD_START;
+   hd_step(&s, in);
+   in[0].buttons = 0;
+   for (f = 0; f < 90; f++)
+      hd_step(&s, in);
+   CHECK(s.p[0].ground);
+   x0 = FX_INT(s.p[0].x);
+   in[0].buttons = PAD_A;
+   hd_step(&s, in);
+   CHECK(s.p[0].dash_t == 1);
+   for (f = 0; f < 10; f++)
+   {
+      hd_step(&s, in);
+      CHECK(s.p[0].vy == 0 || s.p[0].dash_t == 0);
+   }
+   CHECK(FX_INT(s.p[0].x) - x0 >= 75 && FX_INT(s.p[0].x) - x0 <= 82); /* 10 frames of 8 pixels */
+   CHECK(s.p[0].dash_t == 0 && s.p[0].dash_wait > 0);
+   in[0].buttons = 0;
+   hd_step(&s, in);
+   in[0].buttons = PAD_A;
+   hd_step(&s, in);
+   CHECK(s.p[0].dash_t == 0); /* still waiting */
+   in[0].buttons = 0;
+   for (f = 0; f < 30; f++)
+      hd_step(&s, in);
+   /* in the air: one dash, not two */
+   in[0].buttons = PAD_JUMP;
+   hd_step(&s, in);
+   hd_step(&s, in);
+   in[0].buttons = PAD_JUMP | PAD_A;
+   hd_step(&s, in);
+   CHECK(s.p[0].dash_t == 1 && s.p[0].dash_air);
+   y0 = FX_INT(s.p[0].y);
+   in[0].buttons = PAD_JUMP;
+   for (f = 0; f < 40; f++)
+      hd_step(&s, in);
+   in[0].buttons = PAD_JUMP | PAD_A;
+   hd_step(&s, in);
+   CHECK(s.p[0].ground || s.p[0].dash_t == 0);
+   (void)y0;
+   files[0].text = "{\"format\": 3, \"title\": \"Dash\", \"level\": \"level.json\", \"dash\": {\"frames\": 0}}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "dash") != NULL);
+   hd_content_builtin();
+}
+
+extern const int16_t *hd_pkg_music; /* sprite.h */
+extern int32_t hd_pkg_music_frames;
+
+/* Music in IMA ADPCM: the samples decoded exactly; blocks that are not the IMA's are refused. */
+static void test_adpcm(void)
+{
+   static uint8_t zip[300000], wav[1000];
+   static char level[100000];
+   const char *err;
+   size_t n;
+   uint8_t *p = wav;
+   int32_t b;
+   zfile files[3] = {{0}};
+   /* mono, 2 blocks of 36 bytes: 65 samples each; the first block's codes all 0 (each a small step up) */
+   memcpy(p, "RIFF", 4); p += 4; le32(&p, 4 + 28 + 8 + 72);
+   memcpy(p, "WAVEfmt ", 8); p += 8; le32(&p, 20);
+   le16(&p, 0x11); le16(&p, 1); le32(&p, 48000); le32(&p, 48000 * 36 / 65); le16(&p, 36); le16(&p, 4); le16(&p, 2); le16(&p, 65);
+   memcpy(p, "data", 4); p += 4; le32(&p, 72);
+   for (b = 0; b < 2; b++)
+   {
+      le16(&p, 1000); *p++ = 10; *p++ = 0;
+      memset(p, b ? 0x77 : 0, 32);
+      p += 32;
+   }
+   flat_level(level, sizeof level, 60, 30);
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Tune\", \"level\": \"level.json\", \"music\": {\"file\": \"tune.wav\"}}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   files[2].name = "tune.wav";
+   files[2].text = (const char *)wav;
+   files[2].len = (size_t)(p - wav);
+   n = make_zip(zip, files, 3);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  adpcm: %s\n", err);
+   CHECK(hd_pkg_music_frames == 130);
+   if (hd_pkg_music)
+   {
+      /* 1000, then + 19/8 (step 10), + 17/8 (step 9), + 16/8 (step 8): left and right the same */
+      CHECK(hd_pkg_music[0] == 1000 && hd_pkg_music[1] == 1000);
+      CHECK(hd_pkg_music[2] == 1002 && hd_pkg_music[4] == 1004 && hd_pkg_music[6] == 1006);
+      CHECK(hd_pkg_music[2 * 65] == 1000); /* the second block starts from its own header */
+   }
+   wav[38] = 64; /* samples per block that do not match the block */
+   n = make_zip(zip, files, 3);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "ADPCM") != NULL);
+   hd_content_builtin();
+}
+
 int main(void)
 {
    hd_static_init();
@@ -1567,6 +1850,10 @@ int main(void)
    test_physics();
    test_screens();
    test_sprite_counters();
+   test_enemy_kinds();
+   test_boss();
+   test_dash();
+   test_adpcm();
    test_api();
    if (failures)
    {

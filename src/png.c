@@ -62,7 +62,7 @@ uint32_t *hd_png_read(const uint8_t *data, size_t size, int32_t *out_w, int32_t 
          color = body[9];
          if (w == 0 || h == 0 || w > PACK_MAX_SIDE || h > PACK_MAX_SIDE)
          {
-            *err = "a picture is larger than 4096 pixels on a side";
+            *err = "a picture is larger than 8192 pixels on a side";
             return NULL;
          }
          if (body[10] != 0 || body[11] != 0 || body[12] != 0)

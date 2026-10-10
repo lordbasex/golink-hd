@@ -406,6 +406,8 @@ static void level(const hd_state *s)
                blit(&hd_check[got ? 1 : 0], sx, sy - S(16), BLIT_BIG);
             break;
          case T_FLAG:
+            if (!hd_goal_open(s))
+               break; /* it shows up when the level's boss is beaten */
             if (hd_objects[OBJ_GOAL].frames)
                object(OBJ_GOAL, s->frame, sx + S(TILE / 2), sy + S(TILE));
             else
@@ -450,6 +452,14 @@ static void hero_sprite(const hd_state *s, const hd_player *p, int32_t i)
       /* the super attack: the skin's "super" played once over it */
       const hd_anim *an = &sk->anim[ANIM_SUPER];
       const hd_image *im = &an->frames[hd_clamp((int32_t)((int64_t)p->super_t * an->count / hd_max(1, hd_weapon.super_frames)), 0, an->count - 1)];
+      actor(im, fx - im->w / 2, fy - (im->h - an->feet), p->facing < 0 ? BLIT_FLIP : 0, fx, fy, S(PW * 3 / 5));
+      return;
+   }
+   if (p->dash_t && sk->anim[ANIM_DASH].frames)
+   {
+      /* the dash: the skin's "dash" played once over it */
+      const hd_anim *an = &sk->anim[ANIM_DASH];
+      const hd_image *im = &an->frames[hd_clamp((int32_t)((int64_t)p->dash_t * an->count / hd_max(1, hd_dash.frames + 1)), 0, an->count - 1)];
       actor(im, fx - im->w / 2, fy - (im->h - an->feet), p->facing < 0 ? BLIT_FLIP : 0, fx, fy, S(PW * 3 / 5));
       return;
    }
@@ -516,6 +526,82 @@ static void hero_sprite(const hd_state *s, const hd_player *p, int32_t i)
          fx, fy, S(p->ground ? PW * 3 / 5 : PW * 2 / 5));
 }
 
+/*
+ * An enemy of format 3's kinds: a spore (fly, pop), a spitter (idle, spit
+ * over its attack, squashed), a boss (idle, windup, attack, hurt while it
+ * flashes, down), a minion (the boss's "minion"). Pictures face left; a
+ * missing one is a plain box of the hitbox's size.
+ */
+static void kind_actor(const hd_state *s, const hd_enemy *e)
+{
+   const hd_anim *an = NULL;
+   const hd_image *im;
+   int32_t w = hd_kinds[e->kind].w, h = hd_kinds[e->kind].h, t = e->anim, loop = 1, frame = -1;
+   int32_t fx = S(FX_INT(e->x) + w / 2 - cam_x), fy = S(FX_INT(e->y) + h - cam_y);
+   /* a boss is hit many times a second: its "hurt" picture shows it (white only without one) */
+   int32_t white = e->flash > 0 && (e->kind != EK_BOSS || !hd_boss_anim[BOSS_HURT].frames);
+   int32_t flags = (e->face > 0 ? BLIT_FLIP : 0) | (white ? BLIT_WHITE : 0), shadow = e->alive == 1 ? S(w * 3 / 5) : 0;
+   switch (e->kind)
+   {
+   case EK_SPORE:
+      shadow = 0; /* it flies */
+      if (e->alive == 2)
+      {
+         an = &hd_objects[OBJ_SPORE_POP];
+         t = 30 - e->squash;
+         loop = 0;
+      }
+      else
+         an = &hd_objects[OBJ_SPORE_FLY];
+      break;
+   case EK_SPITTER:
+      if (e->alive == 2)
+         an = &hd_objects[OBJ_SPITTER_SQUASHED];
+      else if (e->act >= 0 && hd_objects[OBJ_SPITTER_SPIT].frames)
+      {
+         an = &hd_objects[OBJ_SPITTER_SPIT];
+         frame = hd_min(e->act_t * an->count / SPIT_END, an->count - 1);
+      }
+      else
+         an = &hd_objects[OBJ_SPITTER_IDLE];
+      break;
+   case EK_MINION:
+      if (e->alive == 2)
+         return; /* it bursts (the particles) */
+      an = &hd_boss_anim[BOSS_MINION];
+      break;
+   default: /* EK_BOSS */
+      if (e->alive == 2)
+      {
+         an = &hd_boss_anim[BOSS_DOWN];
+         fx += ((e->squash >> 1) & 1) ? S(2) : -S(2); /* shaking */
+         flags &= ~BLIT_WHITE;
+      }
+      else if (e->act < 0 && e->flash > 7 && hd_boss_anim[BOSS_HURT].frames)
+         an = &hd_boss_anim[BOSS_HURT]; /* a flinch at each hit while it rests: its attacks always show */
+      else if (e->act >= 0 && e->act_t <= BOSS_WINDUP(s))
+         an = &hd_boss_anim[BOSS_WINDUP];
+      else if (e->act >= 0)
+         an = &hd_boss_anim[BOSS_ATTACK];
+      else
+         an = &hd_boss_anim[BOSS_IDLE];
+      if (!an->frames)
+         an = &hd_boss_anim[BOSS_IDLE];
+      break;
+   }
+   if (!an || !an->frames)
+   {
+      int32_t x = S(FX_INT(e->x) - cam_x), y = S(FX_INT(e->y) - cam_y);
+      if (e->alive != 1)
+         return;
+      rect(x, y, S(w), S(h), 0x2a1020u);
+      rect(x + S(1), y + S(1), S(w - 2), S(h - 2), e->flash ? 0xffffffu : e->kind == EK_BOSS ? 0xb03050u : 0x70b040u);
+      return;
+   }
+   im = frame >= 0 ? &an->frames[frame] : anim_frame(an, t, loop);
+   actor(im, fx - im->w / 2, fy - (im->h - an->feet), flags, fx, fy, shadow);
+}
+
 static void actors(const hd_state *s)
 {
    int32_t i;
@@ -525,6 +611,11 @@ static void actors(const hd_state *s)
       int32_t frame;
       if (!e->alive)
          continue;
+      if (e->kind != EK_WALKER)
+      {
+         kind_actor(s, e);
+         continue;
+      }
       if (hd_objects[OBJ_ENEMY_WALK].frames)
       {
          /* the package's enemy: feet on the hitbox's bottom, facing left like the built-in one */
@@ -617,6 +708,33 @@ static void shots(const hd_state *s)
          rect(x - S(3), y - S(2), S(6), S(4), c);
          rect(x - S(2), y - S(1), S(4), S(2), 0xffffffu);
       }
+   }
+}
+
+/* The enemies' shots: a spitter's "spit", a boss's own "shot" (else the spit), else a green glob. */
+static void bolts(const hd_state *s)
+{
+   int32_t i;
+   for (i = 0; i < MAX_BOLTS; i++)
+   {
+      const hd_bolt *b = &s->bolt[i];
+      const hd_anim *an;
+      int32_t x, y, r;
+      if (!b->life)
+         continue;
+      x = S(FX_INT(b->x) - cam_x);
+      y = S(FX_INT(b->y) - cam_y);
+      an = b->big && hd_boss_anim[BOSS_SHOT].frames ? &hd_boss_anim[BOSS_SHOT] : hd_objects[OBJ_SPIT].frames ? &hd_objects[OBJ_SPIT] : NULL;
+      if (an)
+      {
+         const hd_image *im = anim_frame(an, b->age, 1);
+         blit(im, x - im->w / 2, y - im->h / 2, b->vx > 0 ? BLIT_FLIP : 0); /* drawn flying left */
+         continue;
+      }
+      r = S(b->big ? 8 : 5);
+      rect(x - r - RES, y - r - RES, 2 * r + 2 * RES, 2 * r + 2 * RES, 0x203010u);
+      rect(x - r, y - r, 2 * r, 2 * r, 0x9ad040u);
+      rect(x - r / 2, y - r / 2, r / 2, r / 2, 0xe0ffa0u);
    }
 }
 
@@ -753,6 +871,17 @@ static void hud(const hd_state *s)
               full ? (((s->frame >> 3) & 1) ? 0xfff0a0u : 0xf8c838u) : hd_player_color[i] & 0xffffffu);
       }
    }
+   if (s->boss && s->boss <= MAX_ENEMIES && s->e[s->boss - 1].alive == 1 && s->phase == PH_PLAY)
+   {
+      /* the boss's health: its name over a bar at the bottom, the bar blinking once it is angry */
+      const hd_enemy *b = &s->e[s->boss - 1];
+      int32_t w = S(HD_W / 2), x = (HD_OUT_W - w) / 2, y = S(HD_H - 22);
+      uint32_t c = s->boss_angry && ((s->frame >> 3) & 1) ? 0xff9030u : 0xe02838u;
+      if (hd_boss.name[0])
+         center(hd_boss.name, y - S(16), S(2), 0xffffffu);
+      rect(x - S(2), y - S(2), w + S(4), S(10), 0x1a1020u);
+      rect(x, y, (int32_t)((int64_t)w * hd_max(0, b->hp) / hd_max(1, s->boss_max)), S(6), c);
+   }
    if (s->paused)
    {
       rect(0, S(HD_H / 2 - 30), HD_OUT_W, S(60), 0x1a1020u);
@@ -795,6 +924,7 @@ void hd_draw_world(const hd_state *s, hd_surface *target, int32_t cx, int32_t cy
    level(s);
    actors(s);
    shots(s);
+   bolts(s);
    particles(s);
    if (hd_layer_count)
       hd_layers_draw(surf.px, surf.w, surf.h, S(cam_x), S(cam_y), 1);

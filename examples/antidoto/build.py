@@ -29,6 +29,7 @@ ANIMS = {
     "win": ("win", 6, 8),
     "knockout": ("dissolve", 8, 10),  # played once over the knockout (its fps does not count)
     "super": ("super", 8, 10),        # played once over the super attack
+    "dash": ("dash", 6, 30),          # played once over the dash
 }
 SKINS = ["red", "blue"]
 # pixels walked in one whole walk cycle (12 frames, two steps): the steps follow the ground; at the
@@ -44,6 +45,25 @@ HEALTH = {"hits": 3, "worn": 1, "knockout": 100}
 WEAPON = {"button": "x", "rate": 8, "speed": 900, "range": 420, "muzzle": [30, -33], "enemy_health": 3,
           "super": {"button": "y", "charge": 6, "granules": 10, "spread": 70, "speed": 650, "range": 260,
                     "damage": 2, "frames": 48, "release": 22}}
+# A dashes: a quick rush forward (about 5 cells), through enemies, once in the air until landing
+DASH = {"button": "a", "speed": 750, "frames": 14, "cooldown": 30}
+# the zones' other enemies: a spore flies after the heroes, bobbing; a spitter stands and lobs green globs
+ENEMIES = {"spore": {"hitbox": [30, 28], "health": 2, "speed": 80, "bob": 10, "range": 260},
+           "spitter": {"hitbox": [40, 40], "health": 4, "rate": 100, "shot_speed": 380, "range": 340}}
+# zone -> its boss: name, health, attacks in turn, rest between them, spit fan, brood size, speed; harder up the body.
+# FAGO REX creeps like a spider: forward at the heroes and back, then lets its brood out, and again
+BOSSES = {
+    "colon": ("FAGO REX", 180, ["advance", "brood", "advance", "jump", "brood"], 50, 3, 6, 220),
+    "intestine": ("LOMBRIZ VÍRICA", 230, ["charge", "brood", "spit", "advance", "brood"], 50, 3, 6, 260),
+    "stomach": ("ÁCIDO BARÓN", 280, ["spit", "advance", "brood", "spit", "jump", "brood"], 45, 4, 7, 250),
+    "lungs": ("GRIPÓN", 330, ["spit", "brood", "spit", "advance", "brood"], 45, 5, 7, 240),
+    "heart": ("REY CÁPSIDE", 380, ["jump", "brood", "charge", "spit", "brood"], 40, 4, 8, 280),
+    "brain": ("NEUROVIRUS", 500, ["spit", "brood", "jump", "charge", "brood", "advance"], 35, 5, 9, 300),
+}
+# the enemies of each zone past the germs: (spores, spitters) per stretch, 0 to 1
+ZONE_ENEMIES = {"colon": (0, 0), "intestine": (0, 0.35), "stomach": (0.3, 0.35), "lungs": (0.6, 0),
+                "heart": (0.2, 0.4), "brain": (0.45, 0.45)}
+ARENA = 52  # the boss's arena: flat cells at the level's end, a checkpoint at its start
 # a skin's shot and its burst (cut.sh): strip, frames, fps
 SHOTS = {"shot": ("shot", 4, 12), "shot_hit": ("shot_hit", 6, 20), "granule": ("granule", 4, 12)}
 
@@ -146,7 +166,8 @@ def screens():
 # the engine's effects -> ANTÍDOTO's (made by make_sfx.py on the machine with the model, in source/sfx)
 SOUNDS = {"jump": "jump", "coin": "vitamin", "stomp": "germ_squash", "hurt": "hurt",
           "join": "ready_go", "check": "checkpoint", "clear": "victory", "pause": "menu",
-          "shoot": "shoot", "hit": "virus_pop", "knockout": "knockout", "super": "super", "yawn": "yawn"}
+          "shoot": "shoot", "hit": "virus_pop", "knockout": "knockout", "super": "super", "yawn": "yawn",
+          "spit": "spit", "dash": "dash", "roar": "boss_roar", "boss_hit": "boss_hit", "boss_down": "boss_defeat"}
 SFX_PEAK = 13000       # every effect at the same loudness, well under the music's
 SFX_QUIET = 600        # quieter than this at the start or the end is silence
 
@@ -183,12 +204,58 @@ def sounds():
 
 
 def music(track):
-    """The zone's music from source/music (made by make_tracks.py on the machine with the model)."""
+    """The zone's music from source/music (made by make_tracks.py on the machine with the model), made IMA
+    ADPCM by tools/glhd (a quarter of the size; WAV PCM made the package about 190 MB)."""
+    import subprocess
     src = os.path.join(HERE, "source", "music", track + ".wav")
     if not os.path.exists(src):
         return None
-    shutil.copy(src, os.path.join(OUT, track + ".wav"))
+    dst = os.path.join(OUT, track + ".wav")
+    if not os.path.exists(dst):
+        subprocess.run([os.path.join(HERE, "..", "..", "tools", "glhd"), "adpcm", src, dst], check=True, stdout=subprocess.DEVNULL)
     return {"file": track + ".wav", "volume": 180}
+
+
+def boss(zone):
+    """The zone's boss: its sheet cut by cut.sh (idle, idle, windup, attack, hurt, down), its minions the same
+    sheet small, its music."""
+    if zone not in BOSSES or not os.path.exists(os.path.join(HERE, SPRITES, f"boss_{zone}.png")):
+        return None
+    name, health, attacks, rest, spit, brood, speed = BOSSES[zone]
+    sheet = thing(f"boss_{zone}", 6, 4)
+    small = thing(f"boss_{zone}_minion", 6, 8)
+    fw, fh = sheet["frame"]
+    # the body, not the frame (a sneeze or a bolt widens some frames): about half its width, most of its height
+    w, h = min(fw * 55 // 100, 130 * RES) // RES, fh * 82 // 100 // RES
+    part = lambda first, n, fps=4: dict(sheet, **{"from": first, "frames": n, "fps": fps})
+    out = {"name": name, "hitbox": [w, h], "health": health, "attacks": attacks, "rest": rest, "spit": spit,
+           "brood": brood, "speed": speed, "shot_speed": 420,
+           "minion": {"hitbox": [28, 28], "health": 1, "speed": 170},
+           "sprites": {"idle": part(0, 2, 3), "windup": part(2, 1), "attack": part(3, 1), "hurt": part(4, 1),
+                       "down": part(5, 1), "minion": dict(small, **{"from": 0, "frames": 2, "fps": 8})}}
+    spit_pic = thing("obj_spit", 1, 1)
+    if spit_pic:
+        out["sprites"]["shot"] = spit_pic
+    m = music("final_boss" if zone == "brain" else "boss")
+    if m:
+        out["music"] = m
+    return out
+
+
+def arena(lv):
+    """The level's end made the boss's arena: ARENA flat cells, a checkpoint where it starts, the boss ('X')
+    near its end and the goal (shown when the boss is beaten) after it."""
+    w, h = lv["width"], lv["height"]
+    ground = min(r for r in range(h) if lv["rows"][r].count("#") > w // 2)
+    rows = [list(r.replace("F", ".")) + ["#" if r_i >= ground else "." for _ in range(ARENA)] for r_i, r in enumerate(lv["rows"])]
+    w += ARENA
+    for c in range(w - ARENA - 8, w):  # the last stretch before it is flat too: no gap at the arena's edge
+        for r in range(h):
+            rows[r][c] = "#" if r >= ground else "."
+    rows[ground - 1][w - ARENA - 4] = "C"
+    rows[ground - 1][w - 14] = "X"
+    rows[ground - 1][w - 3] = "F"
+    return dict(lv, width=w, rows=["".join(r) for r in rows])
 
 
 def level():
@@ -275,6 +342,12 @@ def made_level(k, grade):
         for _ in range(rnd.randint(0, 1 + k // 2) if stretch >= 8 else 0):
             put(c + rnd.randint(3, stretch - 2), ground - 1, "E")
             enemies += 1
+        # the zone's own enemies: spores in the air, spitters standing
+        spores, spitters = ZONE_ENEMIES[ZONES[k][0]]
+        if stretch >= 8 and rnd.random() < spores:
+            put(c + rnd.randint(2, stretch - 2), ground - 7 - rnd.randint(0, 3), "S")
+        if stretch >= 8 and rnd.random() < spitters:
+            put(c + stretch - 3, ground - 1, "P")
         kind = rnd.random()
         if kind < 0.35:
             put(c + 2, ground - 5, "=" * 5)
@@ -302,13 +375,13 @@ def levels():
     """Every zone's level, in the order the body is climbed."""
     out = []
     for k, (zone, sky, grade) in enumerate(ZONES):
-        lv = level() if k == 0 else made_level(k, grade)
+        lv = arena(level() if k == 0 else made_level(k, grade))
         name = f"level_{k + 1}_{zone}.json"
         with open(os.path.join(OUT, name), "w", encoding="utf-8") as f:
             json.dump(lv, f, indent=1)
             f.write("\n")
         entry = {"level": name, "sky": sky, "layers": layers(zone), "textures": textures(zone),
-                 "intro": intro(zone), "music": music(zone)}
+                 "intro": intro(zone), "music": music(zone), "boss": boss(zone)}
         out.append({k2: v for k2, v in entry.items() if v})
     return out
 
@@ -351,11 +424,19 @@ def main():
         # a hero about 80 px tall: hitbox, and a jump of about 12 cells
         "weapon": WEAPON,
         "health": HEALTH,
+        "dash": DASH,
+        "enemies": ENEMIES,
         "physics": {"hitbox": [28, 66], "enemy_hitbox": [34, 30], "walk": 180, "run": 280, "jump": 1050, "gravity": 50, "gravity_hold": 30, "fall_max": 1200},
         "sprites": {k: v for k, v in {
             "hero": {"players": SKINS, "skins": skins},
             "enemy": {k: v for k, v in {"walk": dict(thing("enemy_germ_walk", 8, 10) or {}, stride=70) or None,
                                          "squashed": thing("enemy_germ", 6, 8, {"from": 5, "frames": 1})}.items() if v} or None,
+            "spore": {k: v for k, v in {"fly": thing("enemy_spore", 6, 10, {"from": 0, "frames": 5}),
+                                         "pop": thing("enemy_spore", 6, 10, {"from": 5, "frames": 1})}.items() if v} or None,
+            "spitter": {k: v for k, v in {"idle": thing("enemy_spitter", 6, 3, {"from": 0, "frames": 2}),
+                                           "spit": thing("enemy_spitter", 6, 10, {"from": 2, "frames": 3}),
+                                           "squashed": thing("enemy_spitter", 6, 8, {"from": 5, "frames": 1})}.items() if v} or None,
+            "spit": thing("obj_spit", 1, 1),
             "coin": thing("obj_vitamin", 4, 8),
             "checkpoint": {k: v for k, v in {"off": thing("obj_leukocyte", 4, 2, {"from": 0, "frames": 2}),
                                               "on": thing("obj_leukocyte", 4, 4, {"from": 2, "frames": 2})}.items() if v} or None,

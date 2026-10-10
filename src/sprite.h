@@ -25,6 +25,7 @@ enum
    ANIM_KO,       /* knocked out (format 3's health): played once over the knockout */
    ANIM_SUPER,    /* the super attack (format 3's weapon): played once over it */
    ANIM_GRANULE,  /* a super attack's granule (looped) */
+   ANIM_DASH,     /* the dash (format 3's "dash"): played once over it */
    ANIM_COUNT
 };
 
@@ -58,9 +59,38 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
 
 #define MAX_SKINS 8
 
-/* The level's things drawn from a package's sprites: "coin", "checkpoint" (off, on), "goal", "enemy" (walk, squashed). */
-enum { OBJ_COIN = 0, OBJ_CHECK_OFF, OBJ_CHECK_ON, OBJ_GOAL, OBJ_ENEMY_WALK, OBJ_ENEMY_SQUASHED, OBJ_COUNT };
+/*
+ * The level's things drawn from a package's sprites: "coin", "checkpoint"
+ * (off, on), "goal", "enemy" (walk, squashed), "spore" (fly, pop),
+ * "spitter" (idle, spit, squashed) and "spit" (an enemy's shot, looped).
+ */
+enum
+{
+   OBJ_COIN = 0, OBJ_CHECK_OFF, OBJ_CHECK_ON, OBJ_GOAL, OBJ_ENEMY_WALK, OBJ_ENEMY_SQUASHED,
+   OBJ_SPORE_FLY, OBJ_SPORE_POP, OBJ_SPITTER_IDLE, OBJ_SPITTER_SPIT, OBJ_SPITTER_SQUASHED, OBJ_SPIT,
+   OBJ_COUNT
+};
 extern hd_anim hd_objects[OBJ_COUNT];
+
+/*
+ * A level's boss (format 3's levels, "boss"): its pictures, kept with its
+ * level like the textures: idle (looped), windup and attack (held over the
+ * attack's two parts), hurt, down (beaten), its minions' walk and its own
+ * shot.
+ */
+enum { BOSS_IDLE = 0, BOSS_WINDUP, BOSS_ATTACK, BOSS_HURT, BOSS_DOWN, BOSS_MINION, BOSS_SHOT, BOSS_ANIMS };
+extern hd_anim hd_boss_anim[BOSS_ANIMS];
+/* Reads a level's "boss" (NULL is fine: no boss) into hd_boss, hd_kinds[EK_BOSS], hd_kinds[EK_MINION] and hd_boss_anim. */
+const char *hd_boss_load(const hd_zip *zip, const json *boss);
+void hd_boss_free(void);
+
+/* boss.c: the enemies' kinds (defaults, the manifest's "enemies") */
+void hd_kinds_default(void);
+const char *hd_enemies_load(const json *enemies);
+
+/* One animation of a package (a "file" cut in "frame"s, "fps", "feet", "from", "frames"); named in errors by who and what. */
+const char *hd_anim_load(const hd_zip *zip, const json *def, hd_anim *an, const char *who, const char *what);
+void hd_anim_free(hd_anim *an);
 
 /*
  * Format 3's "textures": a tile kind painted as a picture repeated over the
@@ -123,6 +153,9 @@ int hd_layers_cover(int32_t h, int32_t cy);
 /* sound.c: format 3's "sounds" and "music" (WAV files). */
 extern const int16_t *hd_pkg_music; /* stereo, NULL: the built-in tune */
 extern int32_t hd_pkg_music_frames, hd_pkg_music_loop, hd_pkg_music_vol;
+/* the level's boss music, played from when its boss wakes up (NULL: the level's music goes on) */
+extern const int16_t *hd_pkg_boss_music;
+extern int32_t hd_pkg_boss_music_frames, hd_pkg_boss_music_loop, hd_pkg_boss_music_vol;
 const char *hd_sounds_load(const hd_zip *zip, const json *sounds, const json *music);
 /* Only the music (the effects stay); and handing its samples over (the caller frees them). */
 const char *hd_music_load(const hd_zip *zip, const json *music);
@@ -138,6 +171,8 @@ int16_t *hd_music_take(void);
 #define MAX_STAGES 16
 extern int32_t hd_stage_count; /* 0: a package of one level (no "levels") */
 void hd_stage_select(int32_t k);
+/* Keeps the music just loaded as the level's boss music (the level being loaded). */
+void hd_stage_boss_music(void);
 int hd_stage_keep(int32_t k); /* takes what the loaders just loaded as level k */
 void hd_stages_free(void);
 void hd_sounds_free(void);

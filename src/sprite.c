@@ -29,10 +29,10 @@ int32_t hd_layer_count;
 int32_t hd_skin_count;
 int32_t hd_skin_of[MAX_PLAYERS];
 
-static const char *const anim_names[ANIM_COUNT] = { "idle", "run", "jump", "hurt", "bored", "win", "shot", "shot_hit", "knockout", "super", "granule" };
+static const char *const anim_names[ANIM_COUNT] = { "idle", "run", "jump", "hurt", "bored", "win", "shot", "shot_hit", "knockout", "super", "granule", "dash" };
 
-/* Every picture of every skin together may hold this many pixels (256 MB). */
-#define SPRITE_PIXELS_MAX (64 * 1024 * 1024)
+/* Every picture of the package together (every level's too) may hold this many pixels (384 MB). */
+#define SPRITE_PIXELS_MAX (96 * 1024 * 1024)
 
 static int64_t pixels_used;
 
@@ -108,7 +108,17 @@ static int32_t get_int(const json *obj, const char *key, int32_t lo, int32_t hi,
    return (int32_t)j->num;
 }
 
-static const char *load_anim(const hd_zip *zip, const json *def, hd_anim *an, const char *skin, const char *name)
+void hd_anim_free(hd_anim *an)
+{
+   if (an->frames)
+   {
+      free(an->frames[0].px); /* one block for all the frames */
+      free(an->frames);
+   }
+   memset(an, 0, sizeof *an);
+}
+
+const char *hd_anim_load(const hd_zip *zip, const json *def, hd_anim *an, const char *skin, const char *name)
 {
    static char msg[200];
    const json *file = hd_json_get(def, "file"), *frame = hd_json_get(def, "frame");
@@ -168,7 +178,7 @@ static const char *load_anim(const hd_zip *zip, const json *def, hd_anim *an, co
    if (pixels_used + (int64_t)n * dw * dh > SPRITE_PIXELS_MAX)
    {
       free(px);
-      return "the sprites are bigger than go-link HD keeps (64 million pixels)";
+      return "the sprites are bigger than go-link HD keeps (96 million pixels)";
    }
    hd_pic_clean(px, (int64_t)w * h);
    block = (uint32_t *)malloc((size_t)n * dw * dh * 4);
@@ -232,13 +242,13 @@ static const char *load_rig(const hd_zip *zip, const json *rig, hd_rig *r, const
          snprintf(msg, sizeof msg, "the rig of %s needs a \"%s\"", skin, parts[k]);
          return msg;
       }
-      err = load_anim(zip, def, an[k], skin, parts[k]);
+      err = hd_anim_load(zip, def, an[k], skin, parts[k]);
       if (err)
          return err;
    }
    if (hd_json_get(rig, "worn"))
    {
-      const char *err = load_anim(zip, hd_json_get(rig, "worn"), &r->worn, skin, "worn");
+      const char *err = hd_anim_load(zip, hd_json_get(rig, "worn"), &r->worn, skin, "worn");
       if (err)
          return err;
    }
@@ -270,6 +280,9 @@ const char *hd_sprites_load(const hd_zip *zip, const json *sprites)
          { "coin", NULL, OBJ_COIN }, { "goal", NULL, OBJ_GOAL },
          { "checkpoint", "off", OBJ_CHECK_OFF }, { "checkpoint", "on", OBJ_CHECK_ON },
          { "enemy", "walk", OBJ_ENEMY_WALK }, { "enemy", "squashed", OBJ_ENEMY_SQUASHED },
+         { "spore", "fly", OBJ_SPORE_FLY }, { "spore", "pop", OBJ_SPORE_POP },
+         { "spitter", "idle", OBJ_SPITTER_IDLE }, { "spitter", "spit", OBJ_SPITTER_SPIT }, { "spitter", "squashed", OBJ_SPITTER_SQUASHED },
+         { "spit", NULL, OBJ_SPIT },
       };
       size_t k;
       for (k = 0; k < sizeof objs / sizeof objs[0]; k++)
@@ -280,7 +293,7 @@ const char *hd_sprites_load(const hd_zip *zip, const json *sprites)
             def = hd_json_get(def, objs[k].sub);
          if (!def)
             continue;
-         err = load_anim(zip, def, &hd_objects[objs[k].obj], objs[k].key, objs[k].sub ? objs[k].sub : "animation");
+         err = hd_anim_load(zip, def, &hd_objects[objs[k].obj], objs[k].key, objs[k].sub ? objs[k].sub : "animation");
          if (err)
          {
             hd_sprites_free();
@@ -310,7 +323,7 @@ const char *hd_sprites_load(const hd_zip *zip, const json *sprites)
          const char *err;
          if (!def)
             continue;
-         err = load_anim(zip, def, &hd_skins[i].anim[a], p->str, anim_names[a]);
+         err = hd_anim_load(zip, def, &hd_skins[i].anim[a], p->str, anim_names[a]);
          if (err)
          {
             hd_sprites_free();
@@ -407,7 +420,7 @@ const char *hd_layers_load(const hd_zip *zip, const json *layers)
       {
          free(l->img.px);
          l->img.px = NULL;
-         return "the layers and sprites are bigger than go-link HD keeps (64 million pixels)";
+         return "the layers and sprites are bigger than go-link HD keeps (96 million pixels)";
       }
       pixels_used += (int64_t)l->img.w * l->img.h;
       {
@@ -593,7 +606,7 @@ const char *hd_textures_load(const hd_zip *zip, const json *tex)
       {
          free(im->px);
          im->px = NULL;
-         return "the textures, layers and sprites are bigger than go-link HD keeps (64 million pixels)";
+         return "the textures, layers and sprites are bigger than go-link HD keeps (96 million pixels)";
       }
       pixels_used += (int64_t)im->w * im->h;
    }

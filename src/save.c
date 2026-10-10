@@ -77,7 +77,8 @@ static void sanitize(hd_state *s)
    s->skip_hold = hd_clamp(s->skip_hold, 0, 600);
    s->stage = hd_stage_count ? hd_clamp(s->stage, 0, hd_stage_count - 1) : 0;
    hd_stage_select(s->stage); /* its music, for the clamp below */
-   s->music_pos = hd_clamp(s->music_pos, 0, hd_pkg_music_frames > 0 ? hd_pkg_music_frames - 1 : 0);
+   s->music_boss = s->music_boss && hd_pkg_boss_music ? 1 : 0;
+   s->music_pos = hd_clamp(s->music_pos, 0, (s->music_boss ? hd_pkg_boss_music_frames : hd_pkg_music_frames) > 0 ? (s->music_boss ? hd_pkg_boss_music_frames : hd_pkg_music_frames) - 1 : 0);
    s->paused = s->paused ? 1 : 0;
    s->zoom = s->zoom ? hd_clamp(s->zoom, 128, 512) : 0;
    s->dlg = hd_clamp(s->dlg, 0, DIALOGS_MAX);
@@ -139,7 +140,16 @@ static void sanitize(hd_state *s)
    {
       hd_enemy *e = &s->e[i];
       e->alive = hd_clamp(e->alive, 0, 2);
-      e->hp = hd_clamp(e->hp, 0, 100);
+      e->hp = hd_clamp(e->hp, 0, 999);
+      e->kind = hd_clamp(e->kind, 0, EK_COUNT - 1);
+      e->t = hd_clamp(e->t, 0, COUNT);
+      e->act = hd_clamp(e->act, -1, BA_COUNT);
+      e->act_t = hd_clamp(e->act_t, 0, COUNT);
+      e->face = hd_clamp(e->face, -1, 1);
+      e->ground = e->ground ? 1 : 0;
+      e->seq = hd_clamp(e->seq, 0, COUNT);
+      e->home_x = hd_clamp(e->home_x, -MAP_W * TILE, 2 * MAP_W * TILE);
+      e->home_y = hd_clamp(e->home_y, -MAP_H * TILE, 2 * MAP_H * TILE);
       e->flash = hd_clamp(e->flash, 0, 60);
       e->squash = hd_clamp(e->squash, 0, 600);
       e->anim = hd_clamp(e->anim, 0, COUNT);
@@ -148,6 +158,24 @@ static void sanitize(hd_state *s)
       e->vx = hd_clamp(e->vx, -SPEED, SPEED);
       e->vy = hd_clamp(e->vy, -SPEED, SPEED);
    }
+   s->bolt_next = hd_clamp(s->bolt_next, 0, MAX_BOLTS - 1);
+   for (i = 0; i < MAX_BOLTS; i++)
+   {
+      hd_bolt *b = &s->bolt[i];
+      b->life = hd_clamp(b->life, 0, 4000);
+      b->age = hd_clamp(b->age, 0, COUNT);
+      b->x = hd_clamp(b->x, -FAR, FAR);
+      b->y = hd_clamp(b->y, -FAR, FAR);
+      b->vx = hd_clamp(b->vx, -SPEED, SPEED);
+      b->vy = hd_clamp(b->vy, -SPEED, SPEED);
+      b->gravity = hd_clamp(b->gravity, 0, FX(2));
+      b->big = b->big ? 1 : 0;
+   }
+   s->boss = hd_clamp(s->boss, 0, MAX_ENEMIES);
+   s->boss_max = hd_clamp(s->boss_max, 0, 999);
+   s->boss_angry = s->boss_angry ? 1 : 0;
+   s->boss_beaten = s->boss_beaten ? 1 : 0;
+   s->arena = hd_clamp(s->arena, 0, MAP_W * TILE);
    s->cam_x = hd_clamp(s->cam_x, 0, FX(MAP_W * TILE - HD_W));
    s->cam_y = hd_clamp(s->cam_y, 0, FX(MAP_H * TILE - HD_H));
    for (i = 0; i < MAX_PLAYERS; i++)
@@ -172,6 +200,9 @@ static void sanitize(hd_state *s)
       p->hurt = hd_clamp(p->hurt, 0, 600);
       p->shot_wait = hd_clamp(p->shot_wait, 0, 120);
       p->aim = hd_clamp(p->aim, 0, 200);
+      p->dash_t = hd_clamp(p->dash_t, 0, 60);
+      p->dash_wait = hd_clamp(p->dash_wait, 0, 600);
+      p->dash_air = p->dash_air ? 1 : 0;
       p->hp = hd_clamp(p->hp, 0, 99);
       p->ko = hd_clamp(p->ko, 0, 600);
       p->charge = hd_clamp(p->charge, 0, 200);

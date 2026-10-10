@@ -45,7 +45,7 @@ A package is a zip (stored or deflate) with:
 | File | What |
 |---|---|
 | `manifest.json` | `format` (the package format: 1, or 2 with effects), `title`, `version`, `genre` (`platformer`), `players` (1 to 8, 4 by default), `screen` (`"16:9"` 640 × 360, `"4:3"` 480 × 360 or `"9:16"` 360 × 640), `level` (the level's file), `sky` (two colors, top and bottom, like `"#3a6ad0"`, optional) and `pictures` (the file of each picture below; each is optional: a missing one keeps the built-in demo's) |
-| the level (`level.json`) | `width` (at least the screen's width in cells, up to 1024) and `height` (at least the screen's height, up to 64), `start` (`[column, row]`, the cell where the players stand), `rows` (one text per row, a letter per 16 × 16 cell: `.` empty, `#` ground, `B` brick, `=` one-way platform, `o` coin, `C` checkpoint, `F` goal, `E` an enemy) and, in format 2, `effects` (below) |
+| the level (`level.json`) | `width` (at least the screen's width in cells, up to 1024) and `height` (at least the screen's height, up to 64), `start` (`[column, row]`, the cell where the players stand), `rows` (one text per row, a letter per 16 × 16 cell: `.` empty, `#` ground, `B` brick, `=` one-way platform, `o` coin, `C` checkpoint, `F` goal, `E` an enemy; format 3 also `S` a spore, `P` a spitter and `X` the level's boss, below) and, in format 2, `effects` (below) |
 | `hero` | PNG of 16 × 24 frames (idle, walk, walk, jump), a row per player: 1 to 8 rows (a player without a row wears row player mod rows) |
 | `enemy` | 48 × 16: walk, walk, squashed |
 | `tiles` | 64 × 16: ground top, ground, brick, one-way platform |
@@ -157,7 +157,8 @@ A skin's `shot` (facing right, looped) and `shot_hit` (the burst where it hits, 
   `body` holds 6 faces in a row (normal, blink, shout, hurt, tired, yawn), facing right, standing on its bottom; `hand` 6 gloves (open, fist, finger pistol, wave, pointing up, palm), the wrist's cuff on the cell's left edge at mid height and the fingers to the right; `foot` 4 shoes (flat, toe down, heel down, in the air), the toe to the right and the ankle a third of the way across. A sheet with fewer pictures uses its last one for the rest. `limb` is the hoses' width (1 to 32), `leg` and `arm` their length (4 to 200), `stride` the pixels of a whole walk cycle (two steps), `lift` how high a foot rises (0 to 100), `bob` how much the body bounces (0 to 50). `examples/antidoto/parts.py` cuts an image AI's part sheets into these.
 - `from` and `frames` use only part of a picture's frames (`{"file": "germ.png", "frame": [44, 48], "from": 0, "frames": 4}`), so one strip can give several animations.
 - The level's things have their own animations too, all optional: `coin` (any pickup), `checkpoint` with `off` and `on`, `goal`, and `enemy` with `walk` and `squashed` (it faces left, like the built-in one; its hitbox is the physics' `enemy_hitbox`). Each stands on its cell's bottom (an enemy on its hitbox's bottom), centered.
-- All the sprites together may hold 64 million pixels.
+- `spore` (`fly`, `pop`), `spitter` (`idle`, `spit` played over its attack, `squashed`) and `spit` (an enemy's shot, drawn flying left) draw format 3's other enemies (below); a missing one is a plain box.
+- All the pictures of a package together (sprites, layers, textures and bosses, every level's) may hold 96 million pixels.
 
 **`textures`**: a tile kind painted as a picture laid over the whole level, so a floor keeps a painting's detail on the level's grid of 16 pixels:
 
@@ -182,16 +183,56 @@ Optional pictures make the joins clean:
            {"file": "near.png", "speed": 130, "y": 0, "front": true}]
 ```
 
-Back to front in the list's order, up to 8. `speed` is the share of the camera's movement in hundredths (0 stays still, 100 moves with the level, more passes faster in front), 0 to 400; `y` is the picture's top in level pixels at speed 100 (it moves up and down at its speed too); `front` draws it over the characters. Pictures may be opaque or see-through; with layers, the built-in clouds and hills are not drawn and the manifest's sky fills what no layer covers. Layers and sprites share the 64 million pixels.
+Back to front in the list's order, up to 8. `speed` is the share of the camera's movement in hundredths (0 stays still, 100 moves with the level, more passes faster in front), 0 to 400; `y` is the picture's top in level pixels at speed 100 (it moves up and down at its speed too); `front` draws it over the characters. Pictures may be opaque or see-through; with layers, the built-in clouds and hills are not drawn and the manifest's sky fills what no layer covers. Layers and sprites share the 96 million pixels.
 
-**`sounds`** and **`music`**: a game's own sound, as WAV files (PCM, 16 bits, 48000 Hz, mono or stereo):
+**`dash`**: a button throws the player forward at `speed` for `frames`, gravity off, through enemies and their shots unhurt; then `cooldown` frames before the next, and in the air only once until it lands. The skin's `dash` animation is played once over it (a puppet too).
+
+```json
+"dash": {"button": "a", "speed": 750, "frames": 14, "cooldown": 30}
+```
+
+`button` as the weapon's (`"a"` by default), `speed` 100 to 4000 (700), `frames` 2 to 60 (14), `cooldown` 0 to 600 (30).
+
+**`enemies`**: two more kinds next to the walker (`E`), placed with `S` and `P` in the level:
+
+```json
+"enemies": {"spore": {"hitbox": [30, 28], "health": 2, "speed": 80, "bob": 10, "range": 260},
+            "spitter": {"hitbox": [40, 40], "health": 4, "rate": 100, "shot_speed": 380, "range": 340}}
+```
+
+A **spore** flies, bobbing `bob` pixels: after the nearest player within `range` pixels at `speed` (rising or sinking slowly to their height), else to and fro; a wall turns it back. A **spitter** stands; it turns to a player within `range` (and 120 pixels up or down) and every `rate` frames lobs a shot at `shot_speed` that falls as it flies, bursts on walls and hurts the player it touches. Both are stomped or shot like a walker and take `health` hits. `hitbox` in pixels (4 to 400, the physics' `enemy_hitbox` by default), `health` 1 to 999, `speed` and `shot_speed` in hundredths of a pixel a frame, `bob` 0 to 200, `range` 0 to 4000, `rate` 30 to 1200.
+
+**`boss`** (a level's, in its entry of `levels`, or the manifest's with `level`): the level's big enemy, at its `X`. It waits until it is mostly on the screen, then wakes up with a roar: its music starts, its name and a health bar show at the bottom and the camera stays on its arena (the screen with the boss on its right) until it is beaten. It rests `rest` frames pacing at the players, then does its `attacks` in turn, each after a windup:
+
+| Attack | What |
+|---|---|
+| `advance` | it creeps at the players for a while, then back to where it stood (a spider's to and fro) |
+| `jump` | a leap that lands near the nearest player; the landing sends a shock wave along the floor both ways |
+| `charge` | it runs at them, until a wall or the arena's edge |
+| `spit` | a fan of `spit` big shots at them, falling a little |
+| `brood` | it lets out `brood` minions that come flying from everywhere: thrown from it, dropping from above the screen and leaping in from both sides; they run at the players and hop (24 at most) |
+
+At half its health it gets angry (a roar, the bar blinking): it moves a third faster, rests two thirds as long, spits two more shots and lets out half a brood more. Shots, granules and stomps (2 hits, bouncing off) hurt it; touching it hurts. When it is beaten its brood and shots go with it, its `down` picture shakes, the level's music comes back and the goal (`F`, hidden until then) opens.
+
+```json
+"boss": {"name": "FAGO REX", "hitbox": [93, 183], "health": 180, "speed": 220, "shot_speed": 420,
+         "attacks": ["advance", "brood", "advance", "jump", "brood"], "rest": 50, "spit": 3, "brood": 6,
+         "minion": {"hitbox": [28, 28], "health": 1, "speed": 170},
+         "sprites": {"idle": {...}, "windup": {...}, "attack": {...}, "hurt": {...}, "down": {...},
+                     "minion": {...}, "shot": {...}},
+         "music": {"file": "boss.wav", "volume": 180}}
+```
+
+`hitbox` 4 to 400 pixels, `health` 1 to 999 (40), `speed` and `shot_speed` 10 to 2000 and 50 to 2000 (250, 450), `rest` 20 to 600 frames (80), `spit` 1 to 9 (3), `brood` 1 to 12 (5), `attacks` 1 to 8 of the table's (all but `advance` by default); the minion's `health` 1 to 99 (1) and `speed` 10 to 2000 (160). Its pictures face left: `idle` (looped), `windup` and `attack` (over the attack's two parts), `hurt` (a flinch at each hit while it rests, else it flashes white), `down`, the minions' `minion` and its shots' `shot` (else the `spit`). `music` plays from when it wakes up until it is beaten.
+
+**`sounds`** and **`music`**: a game's own sound, as WAV files (PCM 16 bits, or IMA ADPCM, a quarter of the size; 48000 Hz, mono or stereo). `tools/glhd adpcm IN.wav OUT.wav` makes a PCM WAV ADPCM; it is decoded once as the package loads, with integers, so the sound is the same on every computer:
 
 ```json
 "sounds": {"jump": "jump.wav", "coin": "gem.wav", "hurt": "ouch.wav"},
 "music": {"file": "colon.wav", "volume": 180, "loop_from": 0}
 ```
 
-`sounds` replaces the built-in effects it names (`jump`, `coin`, `stomp`, `hurt`, `join`, `check`, `clear`, `pause`, `shoot`, `hit` (a shot hits an enemy that does not pop), `knockout`, `super`, `yawn` (a package's hero standing still, when its bored look starts); up to 10 seconds each, mixed to mono, placed left or right by the game). `music` plays over and over instead of the built-in tune, in stereo (up to 10 minutes), at `volume` 0 to 256 (200 by default), starting again at `loop_from` milliseconds; its position is in the save state, so a loaded state goes on exactly where it was, and `golinkhd_set_music` turns it off like the built-in tune.
+`sounds` replaces the built-in effects it names (`jump`, `coin`, `stomp`, `hurt`, `join`, `check`, `clear`, `pause`, `shoot`, `hit` (a shot hits an enemy that does not pop), `knockout`, `super`, `yawn` (a package's hero standing still, when its bored look starts), `spit` (an enemy spits), `dash`, `roar` (a boss wakes up or gets angry), `boss_hit`, `boss_down`; up to 10 seconds each, mixed to mono, placed left or right by the game). `music` plays over and over instead of the built-in tune, in stereo (up to 10 minutes), at `volume` 0 to 256 (200 by default), starting again at `loop_from` milliseconds; its position is in the save state, so a loaded state goes on exactly where it was, and `golinkhd_set_music` turns it off like the built-in tune.
 
 **`resolution`**: `"360p"` (the default), `"720p"` or `"1080p"`. The game's rules stay on the logical screen (640 x 360 on 16:9, cells of 16 pixels, the same physics and levels), and the picture is drawn 2 or 3 times bigger: 1280 x 720 or 1920 x 1080 (the API's frame and `golinkhd_get_info` say so). The package's pictures are made for that size: sprites, layers and screens as big as they should look at it, and textures whose sides are multiples of 32 (720p) or 48 (1080p), a cell being 32 or 48 pixels of it; a puppet's hose sizes (`limb`, `leg`, `arm`, `lift`, `bob`) are in its pixels too, its `stride` in the game's. The built-in art, the text, the HUD and the effects are drawn bigger by the engine. The big passes (layers, grading) run on up to 4 cores, the same picture pixel for pixel. Measured on an Intel Mac with ANTÍDOTO: 1.1 ms a frame at 360p, 2.4 at 720p and 5.6 at 1080p (the worst frames 1.8, 5.7 and 14.9; 16.6 is 60 frames a second).
 

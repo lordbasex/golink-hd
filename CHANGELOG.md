@@ -18,6 +18,14 @@
 - ANTÍDOTO's floors are seamless: `textures.py` lays each texture's extra strip over the opposite edge along the cut where the two are most alike (no stroke shows twice) and resizes it as a repeating picture (a hard seam showed every 6 cells in HD).
 - Texture joins (format 3): a floor's and a wall's top band (`ground_top`, `brick_top`) is laid over the inside, so cells of any height meet; a wall on a floor is drawn as a step of it, a floating wall takes `brick_bottom`; ends (`<kind>_left`, `<kind>_right`) where a run stops, a half cell each, and steps' inner corners; a test. ANTÍDOTO's six zones have all of them (rounded, inked ends; platforms and floating walls outlined).
 - ANTÍDOTO's floors drawn to repeat by the image AI (`source/tex_<zone>_flesh.png`, `tex_<zone>_top.png`): `textures.py` uses them as they are, only the small step left at their edges spread over a few pixels, so no join is cut or invented.
+- `enemies` (format 3): a spore (`S`, flies bobbing after the nearest player) and a spitter (`P`, stands and lobs arcs at players in front of it), with their sprites (`spore`, `spitter`, `spit`); the enemies' shots in the state.
+- A level's `boss` (format 3, `X`): it wakes up on screen (its music, a roar, a health bar with its name, the camera on its arena) and does its attacks in turn after a windup (`advance`, `jump` with a shock wave, `charge`, `spit`, `brood`: small minions flying in from everywhere), angry at half its health; beaten, the goal opens. Sounds `spit`, `roar`, `boss_hit`, `boss_down`.
+- `dash` (format 3): a button throws the player forward, gravity off and through enemies, once in the air; the skin's `dash` animation; the `dash` sound.
+- WAV files may be IMA ADPCM (a quarter of the size), decoded with integers as the package loads; `tools/glhd adpcm` makes one from a PCM WAV.
+- A package's pictures may hold 96 million pixels (64 before): every level's textures and bosses count.
+- ANTÍDOTO: six bosses drawn by the image AI (FAGO REX the spider creeps at the heroes and back and lets its brood out, LOMBRIZ VÍRICA, ÁCIDO BARÓN, GRIPÓN, REY CÁPSIDE, NEUROVIRUS), each zone's arena with a checkpoint, the zones' own enemies (spitters from the intestine, spores from the stomach), the dash on A, the music in ADPCM (the 1080p package from about 228 MB to about 158 MB, two more songs in it).
+- A picture may be 8192 pixels on a side (4096 before; its decoded size is still capped): a boss's strip at 1080p is wider than 4096.
+- Tests: the new enemies, a boss, the dash and ADPCM.
 - `tools/hdrun --every N --audio FILE.raw`: every Nth frame as PNG and the run's sound, to make a video with ffmpeg.
 
 ### Added

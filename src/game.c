@@ -37,6 +37,7 @@
 hd_physics hd_phys;
 hd_weapon_config hd_weapon;
 hd_health_config hd_health;
+hd_dash_config hd_dash;
 
 void hd_weapon_default(void)
 {
@@ -158,7 +159,22 @@ static void reset_level(hd_state *s)
       s->e[i].x = FX(hd_enemy_start[i][0]);
       s->e[i].y = FX(hd_enemy_start[i][1]);
       s->e[i].vx = -ENEMY_SPEED;
+      s->e[i].kind = hd_enemy_kind_of[i];
+      s->e[i].face = -1;
+      s->e[i].act = -1;
+      s->e[i].home_x = hd_enemy_start[i][0];
+      s->e[i].home_y = hd_enemy_start[i][1];
+      if (s->e[i].kind != EK_WALKER)
+      {
+         /* format 3's kinds: their own health; they stand until they see a player */
+         s->e[i].hp = hd_kinds[s->e[i].kind].health;
+         s->e[i].vx = 0;
+      }
    }
+   memset(s->bolt, 0, sizeof s->bolt);
+   s->bolt_next = 0;
+   s->boss = s->boss_max = s->boss_angry = s->boss_beaten = s->arena = 0;
+   s->music_boss = 0;
    s->cam_x = 0;
    s->cam_y = FX(MAP_H * TILE - HD_H);
 }
@@ -372,7 +388,7 @@ static void touch_column(hd_state *s, const hd_player *p)
          burst(s, tx * TILE + 8, ty * TILE, 10, 0xff3ad85au, FX(2), 2);
          hd_play(s, SFX_CHECK, screen_x(s, tx * TILE));
       }
-      else if (t == T_FLAG && s->phase == PH_PLAY)
+      else if (t == T_FLAG && s->phase == PH_PLAY && hd_goal_open(s))
       {
          s->phase = PH_CLEAR;
          s->phase_t = 0;
@@ -508,6 +524,40 @@ static void player_step(hd_state *s, int32_t i)
       return;
    }
 
+   /* the dash: straight ahead, no gravity, until its frames are done or a wall stops it */
+   if (p->dash_wait)
+      p->dash_wait--;
+   if (p->ground)
+      p->dash_air = 0;
+   if (p->dash_t)
+   {
+      p->vx = p->facing * hd_dash.speed;
+      p->vy = 0;
+      move_x(p);
+      if ((p->dash_t & 1) == 0)
+         particle(s, FX_INT(p->x) + PW / 2 - p->facing * PW, FX_INT(p->y) + PH * 2 / 3, -p->facing * FX(1), 0, 14, 0xffe8e0d0u, 0);
+      if (++p->dash_t > hd_dash.frames || !p->vx)
+      {
+         p->dash_t = 0;
+         p->dash_wait = hd_dash.cooldown;
+         p->vx = p->facing * max;
+      }
+      touch_coins(s, p);
+      touch_column(s, p);
+      return;
+   }
+   if (hd_dash.on && (pressed & hd_dash.button) && !p->dash_wait && !p->dash_air)
+   {
+      p->dash_t = 1;
+      p->dash_air = !p->ground;
+      p->jumping = 0;
+      p->aim = 0;
+      p->still = 0;
+      burst(s, FX_INT(p->x) + PW / 2, FX_INT(p->y) + PH, 6, 0xffe0d0b0u, FX(1), 0);
+      hd_play(s, SFX_DASH, screen_x(s, FX_INT(p->x)));
+      return;
+   }
+
    /* walking and running */
    if (dir)
    {
@@ -607,6 +657,475 @@ static void player_step(hd_state *s, int32_t i)
    touch_column(s, p);
 }
 
+/* An enemy's hitbox: the built-in walker's, or its kind's (format 3). */
+static int32_t enemy_w(const hd_enemy *e)
+{
+   return e->kind == EK_WALKER ? EW : hd_kinds[e->kind].w;
+}
+
+static int32_t enemy_h(const hd_enemy *e)
+{
+   return e->kind == EK_WALKER ? EH : hd_kinds[e->kind].h;
+}
+
+/* The nearest player in the game, -1 when none; *dx and *dy from the enemy's middle to the player's. */
+static int32_t nearest(const hd_state *s, const hd_enemy *e, int32_t *dx, int32_t *dy)
+{
+   int32_t i, best = -1, far = 1 << 30;
+   int32_t cx = FX_INT(e->x) + enemy_w(e) / 2, cy = FX_INT(e->y) + enemy_h(e) / 2;
+   for (i = 0; i < MAX_PLAYERS; i++)
+   {
+      const hd_player *p = &s->p[i];
+      int32_t x, y;
+      if (!p->active || p->respawn || p->ko)
+         continue;
+      x = FX_INT(p->x) + PW / 2 - cx;
+      y = FX_INT(p->y) + PH / 2 - cy;
+      if (hd_abs(x) + hd_abs(y) < far)
+      {
+         far = hd_abs(x) + hd_abs(y);
+         best = i;
+         *dx = x;
+         *dy = y;
+      }
+   }
+   return best;
+}
+
+/* Falling, landing and walls for a body of the enemy's hitbox; a wall it walks into stops it (vx 0). */
+static void body_move(hd_enemy *e)
+{
+   int32_t w = enemy_w(e), h = enemy_h(e), ex, ey, tx, ty, front;
+   e->vy = hd_min(e->vy + ENEMY_GRAVITY, ENEMY_FALL_MAX);
+   if (e->vx)
+   {
+      e->x += e->vx;
+      ex = FX_INT(e->x);
+      ey = FX_INT(e->y);
+      front = e->vx > 0 ? ex + w : ex - 1;
+      for (ty = ey >> 4; ty <= (ey + h - 1) >> 4; ty++)
+         if (solid(front >> 4, ty))
+         {
+            e->x = e->vx > 0 ? FX((front >> 4) * TILE - w) : FX(((front >> 4) + 1) * TILE);
+            e->vx = 0;
+            break;
+         }
+   }
+   e->y += e->vy;
+   ex = FX_INT(e->x);
+   ey = FX_INT(e->y);
+   e->ground = 0;
+   if (e->vy >= 0)
+   {
+      ty = (ey + h - 1) >> 4;
+      for (tx = ex >> 4; tx <= (ex + w - 1) >> 4; tx++)
+         if (solid(tx, ty) || shelf(tx, ty))
+         {
+            e->y = FX(ty * TILE - h);
+            e->vy = 0;
+            e->ground = 1;
+            break;
+         }
+   }
+   else
+   {
+      ty = ey >> 4;
+      for (tx = ex >> 4; tx <= (ex + w - 1) >> 4; tx++)
+         if (solid(tx, ty))
+         {
+            e->y = FX((ty + 1) * TILE);
+            e->vy = 0;
+            break;
+         }
+   }
+}
+
+/* An enemy's shot from (x, y) pixels. */
+static void bolt(hd_state *s, int32_t x, int32_t y, int32_t vx, int32_t vy, int32_t gravity, int32_t life, int32_t big)
+{
+   hd_bolt *b = &s->bolt[s->bolt_next];
+   s->bolt_next = (s->bolt_next + 1) % MAX_BOLTS;
+   memset(b, 0, sizeof *b);
+   b->life = life;
+   b->x = FX(x);
+   b->y = FX(y);
+   b->vx = vx;
+   b->vy = vy;
+   b->gravity = gravity;
+   b->big = big;
+}
+
+/* A spore flies, bobbing: after the nearest player within its range (slowly up or down to them), else to and fro. */
+static void spore_step(hd_state *s, hd_enemy *e)
+{
+   const hd_enemy_kind *k = &hd_kinds[EK_SPORE];
+   int32_t dx = 0, dy = 0, who = nearest(s, e, &dx, &dy), nx, my;
+   e->t++;
+   if (who >= 0 && hd_abs(dx) < k->range && hd_abs(dy) < k->range)
+   {
+      e->face = dx > 0 ? 1 : -1;
+      e->vx = e->face * k->speed;
+      if ((e->t & 3) == 0 && hd_abs(dy) > 4)
+         e->home_y += dy > 0 ? 1 : -1;
+   }
+   else
+   {
+      if (e->t % 150 == 0)
+         e->face = -e->face;
+      e->vx = e->face * k->speed / 2;
+   }
+   nx = FX_INT(e->x + e->vx);
+   my = (FX_INT(e->y) + k->h / 2) >> 4;
+   if (solid((e->vx > 0 ? nx + k->w - 1 : nx) >> 4, my))
+   {
+      e->face = -e->face; /* a wall turns it back */
+      e->vx = 0;
+   }
+   e->x += e->vx;
+   e->home_y = hd_clamp(e->home_y, 0, MAP_H * TILE - k->h);
+   /* hd_sin is 16384 a whole: 4 times that is one 16.16 pixel */
+   e->y = FX(e->home_y) + hd_sin((e->t * (ANGLE_FULL / 120)) & (ANGLE_FULL - 1)) * 4 * k->bob;
+}
+
+/* A spitter stands; it turns to the nearest player within its range and spits an arc at them every `rate` frames. */
+static void spitter_step(hd_state *s, hd_enemy *e)
+{
+   const hd_enemy_kind *k = &hd_kinds[EK_SPITTER];
+   int32_t dx = 0, dy = 0, who = nearest(s, e, &dx, &dy);
+   int32_t seen = who >= 0 && hd_abs(dx) < k->range && hd_abs(dy) < 120;
+   e->vx = 0;
+   body_move(e);
+   if (e->act < 0)
+   {
+      if (seen)
+         e->face = dx > 0 ? 1 : -1;
+      if (++e->t >= k->rate && seen)
+      {
+         e->act = 0;
+         e->act_t = 0;
+         e->t = 0;
+      }
+      return;
+   }
+   if (++e->act_t == SPIT_AT)
+   {
+      int32_t x = FX_INT(e->x) + k->w / 2 + e->face * k->w / 2, y = FX_INT(e->y) + k->h * 2 / 5;
+      bolt(s, x, y, e->face * k->shot_speed, FX(-2), FX_FRAC(8, 100), 240, 0);
+      hd_play(s, SFX_SPIT, screen_x(s, x));
+   }
+   if (e->act_t >= SPIT_END)
+      e->act = -1;
+   if (FX_INT(e->y) > MAP_H * TILE + 32)
+      e->alive = 0;
+}
+
+/* A boss's minion runs at the nearest player, hopping now and then and over what is in its way. */
+static void minion_step(hd_state *s, hd_enemy *e)
+{
+   const hd_enemy_kind *k = &hd_kinds[EK_MINION];
+   int32_t dx = 0, dy = 0, who = nearest(s, e, &dx, &dy), want;
+   e->t++;
+   if (who >= 0 && e->ground)
+      e->face = dx > 0 ? 1 : -1;
+   want = e->face * k->speed;
+   if (e->ground)
+      e->vx = want; /* in the air it keeps the speed it was thrown or jumped with */
+   body_move(e);
+   if (e->ground && (!e->vx || e->t % 70 == 0))
+   {
+      e->vy = e->vx ? FX(-4) : FX(-6);
+      e->vx = want;
+      e->ground = 0;
+   }
+   if (FX_INT(e->y) > MAP_H * TILE + 32)
+      e->alive = 0;
+}
+
+/* Lets out a boss's brood: thrown from it in a fan, dropping from above the screen, leaping in from both sides. */
+static void brood(hd_state *s, hd_enemy *boss)
+{
+   const hd_enemy_kind *k = &hd_kinds[EK_MINION];
+   int32_t n = hd_boss.brood + (s->boss_angry ? (hd_boss.brood + 1) / 2 : 0), i, alive = 0, made = 0;
+   int32_t bx = FX_INT(boss->x) + hd_kinds[EK_BOSS].w / 2, by = FX_INT(boss->y) + hd_kinds[EK_BOSS].h / 3;
+   int32_t left = FX_INT(s->cam_x), top = FX_INT(s->cam_y);
+   for (i = 0; i < MAX_ENEMIES; i++)
+      alive += s->e[i].alive == 1 && s->e[i].kind == EK_MINION;
+   for (i = 0; i < MAX_ENEMIES && made < n && alive + made < 24; i++)
+   {
+      hd_enemy *m = &s->e[i];
+      int32_t from = made % 4, x, y, vx, vy;
+      if (m->alive)
+         continue;
+      if (from == 1)
+      {
+         /* dropping from above the screen, anywhere over it */
+         x = left + 24 + rng_range(&s->rng, HD_W - 48 - k->w);
+         y = top - k->h - rng_range(&s->rng, 40);
+         vx = 0;
+         vy = FX(1);
+      }
+      else if (from == 3)
+      {
+         /* leaping in from one side of the screen or the other */
+         int32_t side = (made / 4) & 1;
+         x = side ? left + HD_W : left - k->w;
+         y = top + HD_H / 3 + rng_range(&s->rng, HD_H / 4);
+         vx = (side ? -1 : 1) * (FX(2) + rng_range(&s->rng, FX(2)));
+         vy = FX(-3) - rng_range(&s->rng, FX(2));
+      }
+      else
+      {
+         /* thrown from the boss, up and to either side */
+         x = bx - k->w / 2;
+         y = by;
+         vx = (rng_range(&s->rng, 2) ? 1 : -1) * (FX(1) + rng_range(&s->rng, FX(3)));
+         vy = FX(-4) - rng_range(&s->rng, FX(3));
+      }
+      memset(m, 0, sizeof *m);
+      m->alive = 1;
+      m->awake = 1;
+      m->kind = EK_MINION;
+      m->hp = k->health;
+      m->x = FX(x);
+      m->y = FX(y);
+      m->vx = vx;
+      m->vy = vy;
+      m->face = vx > 0 ? 1 : -1;
+      m->act = -1;
+      m->t = rng_range(&s->rng, 70);
+      made++;
+   }
+   burst(s, bx, by, 18, 0xffe8d8f0u, FX(3), 1);
+}
+
+/* The arena's left edge for a boss: the screen with the boss on its right, inside the level. */
+static int32_t arena_of(const hd_enemy *e)
+{
+   return hd_clamp(FX_INT(e->x) + hd_kinds[EK_BOSS].w + 24 - HD_W, 0, hd_max(0, MAP_W * TILE - HD_W));
+}
+
+int hd_goal_open(const hd_state *s)
+{
+   int32_t i;
+   if (s->boss_beaten)
+      return 1;
+   for (i = 0; i < hd_enemy_count; i++)
+      if (hd_enemy_kind_of[i] == EK_BOSS)
+         return 0;
+   return 1;
+}
+
+static void boss_down(hd_state *s, hd_enemy *e)
+{
+   int32_t i, cx = FX_INT(e->x) + hd_kinds[EK_BOSS].w / 2, cy = FX_INT(e->y) + hd_kinds[EK_BOSS].h / 2;
+   e->alive = 2;
+   e->squash = 150; /* its "down" picture, then it is gone */
+   e->vx = 0;
+   e->act = -1;
+   s->boss_beaten = 1;
+   s->arena = 0;
+   s->shake = 40;
+   s->hitstop = 20;
+   /* its brood and its shots go with it */
+   for (i = 0; i < MAX_ENEMIES; i++)
+      if (s->e[i].alive == 1 && s->e[i].kind == EK_MINION)
+      {
+         s->e[i].alive = 2;
+         s->e[i].squash = 30;
+      }
+   memset(s->bolt, 0, sizeof s->bolt);
+   for (i = 0; i < 4; i++)
+      burst(s, cx + (i - 2) * 20, cy + (i & 1) * 30 - 15, 24, i & 1 ? 0xfff8f0a0u : 0xffffffffu, FX(4), 3);
+   if (s->music_boss)
+   {
+      s->music_boss = 0; /* the level's music again */
+      s->music_pos = 0;
+   }
+   hd_play(s, SFX_BOSS_DOWN, screen_x(s, cx));
+}
+
+/* A hit on an enemy of a format 3 kind (a walker's stays in fights and shots_step): `damage` of its health. */
+static void kind_hit(hd_state *s, hd_enemy *e, int32_t damage)
+{
+   int32_t ex = FX_INT(e->x), ey = FX_INT(e->y), w = enemy_w(e), h = enemy_h(e);
+   e->flash = e->kind == EK_BOSS ? 10 : 6;
+   e->hp -= hd_max(1, damage);
+   if (e->kind == EK_BOSS)
+   {
+      if (e->hp <= 0)
+      {
+         boss_down(s, e);
+         return;
+      }
+      if (!s->boss_angry && e->hp * 2 <= s->boss_max)
+      {
+         /* half its health gone: it gets angry (faster, shorter rests, a bigger brood) */
+         s->boss_angry = 1;
+         s->shake = 24;
+         hd_play(s, SFX_ROAR, screen_x(s, ex));
+      }
+      else
+         hd_play(s, SFX_BOSS_HIT, screen_x(s, ex));
+      return;
+   }
+   if (e->hp <= 0)
+   {
+      e->alive = 2;
+      e->squash = 30;
+      burst(s, ex + w / 2, ey + h / 2, 10, 0xffb070f0u, FX(2), 1);
+      hd_play(s, SFX_STOMP, screen_x(s, ex));
+   }
+   else
+      hd_play(s, SFX_HIT, screen_x(s, ex));
+}
+
+/*
+ * A boss waits off screen; once it is mostly on it, it wakes up (its music,
+ * a roar) and the camera stays on its arena. Then it rests, pacing at the
+ * players, and does its attacks in turn: each one a windup and the attack.
+ */
+static void boss_step(hd_state *s, hd_enemy *e)
+{
+   const hd_enemy_kind *k = &hd_kinds[EK_BOSS];
+   int32_t dx = 0, dy = 0, who, windup = BOSS_WINDUP(s);
+   int32_t speed = s->boss_angry ? k->speed * 4 / 3 : k->speed, rest = s->boss_angry ? hd_boss.rest * 2 / 3 : hd_boss.rest;
+   int32_t done = 0, lo, hi;
+   if (!s->boss)
+   {
+      if (FX_INT(e->x) + k->w * 2 / 3 > FX_INT(s->cam_x) + HD_W)
+         return;
+      s->boss = (int32_t)(e - s->e) + 1;
+      s->boss_max = e->hp;
+      s->arena = arena_of(e);
+      e->home_x = FX_INT(e->x);
+      e->t = rest;
+      e->act = -1;
+      s->shake = 30;
+      if (hd_pkg_boss_music)
+      {
+         s->music_boss = 1;
+         s->music_pos = 0;
+      }
+      hd_play(s, SFX_ROAR, screen_x(s, FX_INT(e->x)));
+   }
+   who = nearest(s, e, &dx, &dy);
+   if (e->act < 0)
+   {
+      /* resting: it paces at the players */
+      if (who >= 0)
+         e->face = dx > 0 ? 1 : -1;
+      if (e->ground)
+         e->vx = who >= 0 && hd_abs(dx) > k->w ? e->face * speed / 3 : 0;
+      body_move(e);
+      if (--e->t <= 0)
+      {
+         e->act = hd_boss.attack[e->seq % hd_boss.attacks];
+         e->seq++;
+         e->act_t = 0;
+         e->vx = 0;
+      }
+   }
+   else
+   {
+      int32_t at = ++e->act_t - windup; /* frames into the attack itself (<= 0: the windup) */
+      if (at <= 0 && e->ground)
+         e->vx = 0;
+      switch (e->act)
+      {
+      case BA_JUMP:
+         if (at == 1 && e->ground)
+         {
+            /* a leap that lands near the player: about 40 frames in the air */
+            e->vy = FX(-9);
+            e->vx = hd_clamp((int32_t)((int64_t)FX(dx) / 40), -speed * 3, speed * 3);
+            e->ground = 0;
+         }
+         body_move(e);
+         if (at > 4 && e->ground)
+         {
+            /* the landing shakes the floor: a shock wave runs out both ways */
+            int32_t fx = FX_INT(e->x), fy = FX_INT(e->y) + k->h - 10;
+            s->shake = 16;
+            burst(s, fx + k->w / 2, fy + 8, 16, 0xffe0d0b0u, FX(3), 1);
+            bolt(s, fx, fy, -k->shot_speed, 0, 0, 60, 1);
+            bolt(s, fx + k->w, fy, k->shot_speed, 0, 0, 60, 1);
+            hd_play(s, SFX_STOMP, screen_x(s, fx));
+            done = 1;
+         }
+         else if (at > 120)
+            done = 1;
+         break;
+      case BA_CHARGE:
+         if (at == 1)
+            e->vx = e->face * speed * 2;
+         if (at > 0 && e->vx == 0)
+         {
+            s->shake = 12; /* into a wall */
+            done = 1;
+         }
+         if (at > 0 && (at & 3) == 0)
+            particle(s, FX_INT(e->x) + k->w / 2, FX_INT(e->y) + k->h, 0, FX_FRAC(-1, 2), 16, 0xffe0d0b0u, 0);
+         body_move(e);
+         if (at > 90)
+            done = 1;
+         break;
+      case BA_ADVANCE:
+         /* it creeps at the players for a while, then back to where it stood */
+         if (at > 0 && at <= 70)
+            e->vx = e->face * speed;
+         else if (at > 70)
+         {
+            int32_t back = e->home_x - FX_INT(e->x);
+            e->vx = hd_abs(back) < 4 ? 0 : (back > 0 ? speed : -speed);
+            if (!e->vx || at > 200)
+               done = 1;
+         }
+         body_move(e);
+         break;
+      case BA_SPIT:
+         body_move(e);
+         if (at == 1)
+         {
+            /* a fan of big shots at the player, falling a little */
+            int32_t n = hd_boss.spit + (s->boss_angry ? 2 : 0), j;
+            int32_t x = FX_INT(e->x) + k->w / 2 + e->face * k->w / 3, y = FX_INT(e->y) + k->h / 3;
+            for (j = 0; j < n; j++)
+               bolt(s, x, y, e->face * k->shot_speed, n > 1 ? FX(-3) + (int32_t)((int64_t)FX(4) * j / (n - 1)) : FX(-1),
+                    FX_FRAC(6, 100), 240, 1);
+            hd_play(s, SFX_SPIT, screen_x(s, x));
+         }
+         if (at > 30)
+            done = 1;
+         break;
+      default: /* BA_BROOD */
+         body_move(e);
+         if (at == 1)
+         {
+            brood(s, e);
+            s->shake = 10;
+            hd_play(s, SFX_ROAR, screen_x(s, FX_INT(e->x)));
+         }
+         if (at > 40)
+            done = 1;
+         break;
+      }
+      if (done)
+      {
+         e->act = -1;
+         e->t = rest;
+      }
+   }
+   /* it stays in its arena */
+   lo = s->arena;
+   hi = s->arena + HD_W - k->w;
+   if (FX_INT(e->x) < lo || FX_INT(e->x) > hi)
+   {
+      e->x = FX(hd_clamp(FX_INT(e->x), lo, hd_max(lo, hi)));
+      if (e->act == BA_CHARGE)
+         e->vx = 0;
+   }
+}
+
 static void enemy_step(hd_state *s, hd_enemy *e)
 {
    int32_t ex, ey, tx, ty, front;
@@ -627,6 +1146,14 @@ static void enemy_step(hd_state *s, hd_enemy *e)
    if (e->flash)
       e->flash--;
    e->anim++;
+   switch (e->kind)
+   {
+   case EK_SPORE: spore_step(s, e); return;
+   case EK_SPITTER: spitter_step(s, e); return;
+   case EK_BOSS: boss_step(s, e); return;
+   case EK_MINION: minion_step(s, e); return;
+   default: break;
+   }
    e->vy = hd_min(e->vy + ENEMY_GRAVITY, ENEMY_FALL_MAX);
    e->x += e->vx;
    ex = FX_INT(e->x);
@@ -676,9 +1203,22 @@ static void fights(hd_state *s)
       {
          hd_enemy *e = &s->e[j];
          int32_t ex = FX_INT(e->x), ey = FX_INT(e->y);
-         if (e->alive != 1 || !overlap(px, py, PW, PH, ex, ey, EW, EH))
+         if (e->alive != 1 || !overlap(px, py, PW, PH, ex, ey, enemy_w(e), enemy_h(e)))
             continue;
-         if (p->vy > 0 && py + PH - FX_INT(p->vy) <= ey + 6)
+         if (p->dash_t)
+            continue; /* a dash goes through */
+         if (p->vy > 0 && py + PH - FX_INT(p->vy) <= ey + 6 && e->kind == EK_BOSS)
+         {
+            /* stomping on a boss hurts it and bounces off */
+            p->y = FX(ey - PH);
+            p->vy = (p->pad & PAD_JUMP) ? BOUNCE_HELD : BOUNCE;
+            p->jumping = 1;
+            s->hitstop = 4;
+            kind_hit(s, e, 2);
+            px = FX_INT(p->x);
+            py = FX_INT(p->y);
+         }
+         else if (p->vy > 0 && py + PH - FX_INT(p->vy) <= ey + 6)
          {
             e->alive = 2;
             e->squash = 30;
@@ -686,11 +1226,11 @@ static void fights(hd_state *s)
             p->vy = (p->pad & PAD_JUMP) ? BOUNCE_HELD : BOUNCE;
             p->jumping = 1;
             s->hitstop = 4;
-            burst(s, ex + EW / 2, ey + EH / 2, 8, 0xffb070f0u, FX(2), 1);
+            burst(s, ex + enemy_w(e) / 2, ey + enemy_h(e) / 2, 8, 0xffb070f0u, FX(2), 1);
             hd_play(s, SFX_STOMP, screen_x(s, ex));
          }
          else if (!p->hurt)
-            hurt(s, p, ex + EW / 2);
+            hurt(s, p, ex + enemy_w(e) / 2);
       }
    }
 }
@@ -732,13 +1272,20 @@ static void shots_step(hd_state *s)
          hd_enemy *e = &s->e[j];
          int32_t ex = FX_INT(e->x), ey = FX_INT(e->y);
          /* a shot's middle within the enemy's hitbox, with some grace (a shot is drawn about 16 pixels tall) */
-         if (e->alive != 1 || x < ex - 4 || x > ex + EW + 4 || y < ey - SHOT_GRACE || y > ey + EH + SHOT_GRACE)
+         if (e->alive != 1 || x < ex - 4 || x > ex + enemy_w(e) + 4 || y < ey - SHOT_GRACE || y > ey + enemy_h(e) + SHOT_GRACE)
             continue;
+         if (e->kind == EK_BOSS && !s->boss)
+            continue; /* not before it wakes up */
          q->hit = SHOT_HIT_FRAMES;
          q->life = 0;
          e->flash = 6;
          if (!q->granule && hd_weapon.super_on && q->owner >= 0 && q->owner < MAX_PLAYERS)
             s->p[q->owner].charge = hd_min(s->p[q->owner].charge + 1, hd_weapon.super_charge);
+         if (e->kind != EK_WALKER)
+         {
+            kind_hit(s, e, q->damage);
+            break;
+         }
          e->hp -= hd_max(1, q->damage);
          if (e->hp <= 0)
          {
@@ -753,6 +1300,46 @@ static void shots_step(hd_state *s)
             hd_play(s, SFX_HIT, screen_x(s, ex));
          }
          break;
+      }
+   }
+}
+
+/* The enemies' shots fly (falling when they have gravity), burst on walls and hurt the players they touch. */
+static void bolts_step(hd_state *s)
+{
+   int32_t i, j;
+   for (i = 0; i < MAX_BOLTS; i++)
+   {
+      hd_bolt *b = &s->bolt[i];
+      int32_t x, y, r;
+      if (!b->life)
+         continue;
+      b->life--;
+      b->age++;
+      b->vy = hd_min(b->vy + b->gravity, FX(8));
+      b->x += b->vx;
+      b->y += b->vy;
+      x = FX_INT(b->x);
+      y = FX_INT(b->y);
+      r = b->big ? 10 : 6;
+      if (solid(x >> 4, y >> 4) || y > MAP_H * TILE + 32)
+      {
+         b->life = 0;
+         burst(s, x, y, 6, 0xffc0e060u, FX(1), 1);
+         continue;
+      }
+      for (j = 0; j < MAX_PLAYERS && s->phase == PH_PLAY; j++)
+      {
+         hd_player *p = &s->p[j];
+         if (!p->active || p->respawn || p->ko || p->super_t || p->dash_t || p->hurt)
+            continue;
+         if (overlap(FX_INT(p->x), FX_INT(p->y), PW, PH, x - r, y - r, 2 * r, 2 * r))
+         {
+            hurt(s, p, x);
+            b->life = 0;
+            burst(s, x, y, 8, 0xffc0e060u, FX(2), 1);
+            break;
+         }
       }
    }
 }
@@ -788,6 +1375,8 @@ static void camera(hd_state *s)
    vh = HD_H * 256 / s->zoom;
    tx = (lo + hi) / 2 - vw / 2;
    ty = (top + bottom) / 2 - vh * 3 / 5;
+   if (s->arena && !s->boss_beaten)
+      tx = s->arena; /* a boss's fight stays on its arena */
    tx = hd_clamp(tx, 0, hd_max(0, MAP_W * TILE - vw));
    ty = hd_clamp(ty, 0, hd_max(0, MAP_H * TILE - vh));
    s->cam_x += (FX(tx) - s->cam_x) / 6;
@@ -1023,6 +1612,7 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       if (s->e[i].alive)
          enemy_step(s, &s->e[i]);
    shots_step(s);
+   bolts_step(s);
    if (s->phase == PH_PLAY)
    {
       fights(s);

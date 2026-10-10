@@ -12,6 +12,7 @@ uint8_t hd_map[MAP_MAX_H][MAP_MAX_W];
 int32_t hd_map_w = 224, hd_map_h = 24;
 int32_t hd_enemy_start[MAX_ENEMIES][2];
 int32_t hd_enemy_count;
+int32_t hd_enemy_kind_of[MAX_ENEMIES]; /* the built-in level has walkers only */
 int32_t hd_start_x, hd_start_y;
 
 enum
@@ -115,6 +116,7 @@ void hd_level_build(void)
    hd_map_w = 224;
    hd_map_h = 24;
    hd_enemy_count = 0;
+   memset(hd_enemy_kind_of, 0, sizeof hd_enemy_kind_of);
    for (p = pieces; p->kind != P_END; p++)
    {
       switch (p->kind)

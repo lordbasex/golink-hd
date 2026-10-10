@@ -13,7 +13,7 @@
 /* Limits: a package, one entry once unpacked, one picture's side. */
 #define PACK_MAX_BYTES (256u * 1024u * 1024u)
 #define PACK_MAX_ENTRY (64u * 1024u * 1024u)
-#define PACK_MAX_SIDE 4096
+#define PACK_MAX_SIDE 8192 /* a long strip of big frames (a boss's at 1080p); the decoded size stays under PACK_MAX_ENTRY */
 
 /* inflate.c: raw DEFLATE and zlib streams; 1 on success. */
 int hd_inflate(const uint8_t *src, size_t len, uint8_t *dst, size_t cap, size_t *out);

@@ -12,7 +12,8 @@
  *   the pictures   PNG files of fixed sizes (see the table below); each one is
  *                  optional, a missing one keeps the built-in demo's
  * Level cells: '.' empty, '#' ground, 'B' brick, '=' one-way platform, 'o' coin,
- * 'C' checkpoint, 'F' goal, 'E' an enemy's start; start is the cell the
+ * 'C' checkpoint, 'F' goal, 'E' an enemy's start (format 3 also: 'S' a
+ * spore's, 'P' a spitter's, 'X' the level's boss's); start is the cell the
  * players stand in. Unknown manifest keys are ignored, so newer packages
  * with extra data still load when their format is one this engine reads.
  */
@@ -46,6 +47,9 @@ void hd_content_builtin(void)
    hd_sounds_free(); /* the built-in effects and tune */
    hd_physics_default(); /* before the level: its start stands on the hitbox's height */
    hd_weapon_default();
+   hd_kinds_default();
+   hd_boss_free();
+   memset(&hd_dash, 0, sizeof hd_dash);
    hd_level_build();
    strcpy(hd_title, "GO-LINK HD DEMO");
    hd_w = 640;
@@ -110,7 +114,10 @@ static uint8_t cell_of(char c)
    case 'o': return T_COIN;
    case 'C': return T_CHECK;
    case 'F': return T_FLAG;
-   case 'E': return T_ENEMY;
+   case 'E':
+   case 'S':
+   case 'P':
+   case 'X': return T_ENEMY;
    case '.': return T_EMPTY;
    default: return 255;
    }
@@ -144,13 +151,20 @@ static const char *load_level(const json *lv)
       {
          uint8_t t = cell_of(row->str[x]);
          if (t == 255)
-            return "the level has a cell that is not one of . # B = o C F E";
+            return "the level has a cell that is not one of . # B = o C F E S P X";
          if (t == T_ENEMY)
          {
+            char c = row->str[x];
+            int32_t kind = c == 'S' ? EK_SPORE : c == 'P' ? EK_SPITTER : c == 'X' ? EK_BOSS : EK_WALKER;
+            int32_t w = kind == EK_WALKER ? EW : hd_kinds[kind].w, h = kind == EK_WALKER ? EH : hd_kinds[kind].h;
             if (hd_enemy_count >= MAX_ENEMIES)
                return "the level has more than 48 enemies";
-            hd_enemy_start[hd_enemy_count][0] = x * TILE + (TILE - EW) / 2;
-            hd_enemy_start[hd_enemy_count][1] = (y + 1) * TILE - EH;
+            if (kind == EK_BOSS && !hd_boss.on)
+               return "the level has a boss ('X') but its entry in levels has no \"boss\"";
+            /* standing on the cell's bottom, in its middle (a boss's wide hitbox too) */
+            hd_enemy_start[hd_enemy_count][0] = x * TILE + (TILE - w) / 2;
+            hd_enemy_start[hd_enemy_count][1] = (y + 1) * TILE - h;
+            hd_enemy_kind_of[hd_enemy_count] = kind;
             hd_enemy_count++;
             t = T_EMPTY;
          }
@@ -404,6 +418,33 @@ static const char *load_weapon(const json *w)
 }
 
 /*
+ * The manifest's "dash" (format 3): {"button": "a", "speed": 700, "frames": 14, "cooldown": 30}:
+ * a button (as the weapon's) throws the player forward at speed (hundredths
+ * of a pixel a frame, 100 to 4000) for frames (2 to 60), gravity off and
+ * enemies passed through unhurt; then cooldown frames (0 to 600) before
+ * the next; in the air once until it lands.
+ */
+static const char *load_dash(const json *d)
+{
+   const json *b;
+   int bad = 0;
+   if (!d)
+      return NULL;
+   if (d->type != JSON_OBJECT)
+      return "manifest.json's dash must be an object";
+   hd_dash.on = 1;
+   hd_dash.button = PAD_A;
+   if ((b = hd_json_get(d, "button")) && !(hd_dash.button = weapon_button(b)))
+      return "the dash's button must be \"run\", \"a\", \"b\", \"x\", \"y\", \"l\" or \"r\"";
+   hd_dash.speed = FX_FRAC(num(d, "speed", 100, 4000, 700, &bad), 100);
+   hd_dash.frames = num(d, "frames", 2, 60, 14, &bad);
+   hd_dash.cooldown = num(d, "cooldown", 0, 600, 30, &bad);
+   if (bad)
+      return "the dash has a value out of range (speed 100-4000, frames 2-60, cooldown 0-600)";
+   return NULL;
+}
+
+/*
  * The manifest's "health" (format 3): {"hits": 3, "worn": 1, "knockout": 90}:
  * the hits a player takes (1 to 99), how many left look worn (0 to hits),
  * the frames a knockout lasts (10 to 600).
@@ -640,6 +681,7 @@ static const char *load_stages(const hd_zip *zip, const json *levels)
    for (it = levels->child; it; it = it->next, k++)
    {
       const json *file = hd_json_get(it, "level"), *sky = hd_json_get(it, "sky"), *intro = hd_json_get(it, "intro"), *music = hd_json_get(it, "music");
+      const json *boss = hd_json_get(it, "boss"), *boss_music = boss ? hd_json_get(boss, "music") : NULL;
       const char *err;
       if (it->type != JSON_OBJECT || !file || file->type != JSON_STRING)
          return "each of the levels needs a \"level\" file";
@@ -648,7 +690,16 @@ static const char *load_stages(const hd_zip *zip, const json *levels)
       hd_sky_bottom = sky_bottom;
       if (sky && (sky->type != JSON_ARRAY || sky->count != 2 || !parse_color(hd_json_at(sky, 0), &hd_sky_top) || !parse_color(hd_json_at(sky, 1), &hd_sky_bottom)))
          return "a level's sky must be two colors like \"#3a6ad0\"";
-      err = load_level_file(zip, file->str);
+      err = hd_boss_load(zip, boss); /* before the level: its 'X' stands on the boss's hitbox */
+      if (!err && boss_music)
+      {
+         /* the boss's music first, kept aside; then the level's own */
+         err = hd_music_load(zip, boss_music);
+         if (!err)
+            hd_stage_boss_music();
+      }
+      if (!err)
+         err = load_level_file(zip, file->str);
       if (!err)
          err = hd_layers_load(zip, hd_json_get(it, "layers"));
       if (!err)
@@ -764,13 +815,19 @@ static const char *load_package(const uint8_t *data, size_t size)
       err = load_weapon(hd_json_get(man, "weapon"));
    if (!err)
       err = load_health(hd_json_get(man, "health"));
+   if (!err)
+      err = load_dash(hd_json_get(man, "dash"));
+   if (!err)
+      err = hd_enemies_load(hd_json_get(man, "enemies"));
    if (err)
    {
       hd_json_free(man);
       return err;
    }
    /* a package of several levels loads them last, after what they share */
-   err = levels ? NULL : load_level_file(&zip, level->str);
+   err = levels ? NULL : hd_boss_load(&zip, hd_json_get(man, "boss"));
+   if (!err && !levels)
+      err = load_level_file(&zip, level->str);
    for (s = 0; !err && s < (int32_t)(sizeof sheets / sizeof sheets[0]); s++)
       err = load_sheet(&zip, pictures, s);
    if (!err)

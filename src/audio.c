@@ -148,6 +148,12 @@ void hd_audio_build(void)
    samples[SFX_KO] = (sample){ s_ko, N(s_ko), 0 };
    samples[SFX_SUPER] = (sample){ s_super, N(s_super), 0 };
    samples[SFX_YAWN] = (sample){ s_yawn, N(s_yawn), 0 };
+   /* format 3's enemies and dash: a built-in one until the package brings its own */
+   samples[SFX_SPIT] = (sample){ s_shoot, N(s_shoot), 0 };
+   samples[SFX_DASH] = (sample){ s_jump, N(s_jump), 0 };
+   samples[SFX_ROAR] = (sample){ s_ko, N(s_ko), 0 };
+   samples[SFX_BOSS_HIT] = (sample){ s_hit, N(s_hit), 0 };
+   samples[SFX_BOSS_DOWN] = (sample){ s_clear, N(s_clear), 0 };
    samples[WAVE_SQUARE] = (sample){ w_square, WAVE_LEN, 1 };
    samples[WAVE_TRIANGLE] = (sample){ w_triangle, WAVE_LEN, 1 };
 }
@@ -260,19 +266,23 @@ void hd_mix(hd_state *s, int16_t *out, int music_on)
          }
       }
    }
-   /* a package's music, stereo, over and over */
+   /* a package's music, stereo, over and over: the level's, or its boss's once the boss woke up */
    if (hd_pkg_music)
    {
-      int32_t pos = hd_clamp(s->music_pos, 0, hd_pkg_music_frames - 1);
+      int boss = s->music_boss && hd_pkg_boss_music;
+      const int16_t *m = boss ? hd_pkg_boss_music : hd_pkg_music;
+      int32_t frames = boss ? hd_pkg_boss_music_frames : hd_pkg_music_frames;
+      int32_t loop = boss ? hd_pkg_boss_music_loop : hd_pkg_music_loop, vol = boss ? hd_pkg_boss_music_vol : hd_pkg_music_vol;
+      int32_t pos = hd_clamp(s->music_pos, 0, frames - 1);
       for (n = 0; n < HD_SAMPLES_PER_FRAME; n++)
       {
          if (music_on)
          {
-            acc[2 * n] += hd_pkg_music[2 * pos] * hd_pkg_music_vol >> 8;
-            acc[2 * n + 1] += hd_pkg_music[2 * pos + 1] * hd_pkg_music_vol >> 8;
+            acc[2 * n] += m[2 * pos] * vol >> 8;
+            acc[2 * n + 1] += m[2 * pos + 1] * vol >> 8;
          }
-         if (++pos >= hd_pkg_music_frames)
-            pos = hd_clamp(hd_pkg_music_loop, 0, hd_pkg_music_frames - 1);
+         if (++pos >= frames)
+            pos = hd_clamp(loop, 0, frames - 1);
       }
       s->music_pos = pos;
    }

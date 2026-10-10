@@ -29,6 +29,7 @@ ENGINE_C := \
 	$(CORE_DIR)/src/showcase.c \
 	$(CORE_DIR)/src/sound.c \
 	$(CORE_DIR)/src/sprite.c \
+	$(CORE_DIR)/src/boss.c \
 	$(CORE_DIR)/src/text.c \
 	$(CORE_DIR)/src/zip.c
 

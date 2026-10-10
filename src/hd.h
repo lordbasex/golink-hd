@@ -23,7 +23,7 @@
  * The save state's layout version. Bump it whenever hd_state changes; a
  * save state of another version is refused cleanly, never misread.
  */
-#define HD_STATE_VERSION 5
+#define HD_STATE_VERSION 6
 
 /*
  * The logical screen, chosen by the game: 640 x 360 (16:9, scaled x3 to
@@ -69,6 +69,7 @@ extern int32_t hd_players;
 #define MAX_ENEMIES 48
 #define MAX_PARTICLES 256
 #define MAX_SHOTS 48
+#define MAX_BOLTS 48 /* the enemies' own shots: spit, a boss's attacks */
 #define MAX_CHANNELS 32
 /* Channels 0 and 1 belong to the music, the rest to sound effects. */
 #define MUSIC_CHANNELS 2
@@ -134,6 +135,11 @@ enum
    SFX_KO,    /* a player runs out of health (format 3's "health") */
    SFX_SUPER, /* a super attack (format 3's "super") */
    SFX_YAWN,  /* a player standing still yawns (a puppet's yawn, a skin's bored animation) */
+   SFX_SPIT,  /* an enemy spits (format 3's spitter, a boss's spit) */
+   SFX_DASH,  /* a player dashes (format 3's "dash") */
+   SFX_ROAR,  /* a boss wakes up, and again when it gets angry */
+   SFX_BOSS_HIT,  /* a boss takes a hit */
+   SFX_BOSS_DOWN, /* a boss is defeated */
    SFX_COUNT
 };
 /* Every sample the mixer knows: the effects and the music's two waves. */
@@ -194,6 +200,56 @@ typedef struct
    int32_t on, hits, worn, knockout;
 } hd_health_config;
 extern hd_health_config hd_health;
+
+/*
+ * The players' dash (format 3's "dash"; off in the built-in game): a button
+ * throws the player forward at `speed` for `frames`, gravity off and
+ * enemies passed through unhurt, then `cooldown` frames before the next;
+ * in the air once until it lands.
+ */
+typedef struct
+{
+   int32_t on;
+   uint32_t button;
+   int32_t speed, frames, cooldown;
+} hd_dash_config;
+extern hd_dash_config hd_dash;
+
+/*
+ * The enemies' kinds. A walker is the built-in game's; the others come with
+ * format 3's "enemies" (and a level's "boss"): a spore flies, bobbing, and
+ * goes after the nearest player; a spitter stands and spits arcs at
+ * players in front of it; a boss is a level's big enemy with a health bar,
+ * attacks in turn and a brood of small ones (minions) it lets out now and
+ * then; the level's goal opens when it is beaten.
+ */
+enum { EK_WALKER = 0, EK_SPORE, EK_SPITTER, EK_BOSS, EK_MINION, EK_COUNT };
+typedef struct
+{
+   int32_t w, h;   /* hitbox */
+   int32_t health; /* hits it takes (a walker: the weapon's enemy_health) */
+   int32_t speed;  /* 16.16 pixels a frame */
+   int32_t rate;   /* frames between two attacks */
+   int32_t shot_speed; /* 16.16 pixels a frame */
+   int32_t range;  /* pixels: how near a player must be */
+   int32_t bob;    /* a spore's bobbing, in pixels */
+} hd_enemy_kind;
+extern hd_enemy_kind hd_kinds[EK_COUNT];
+
+/* A boss's attacks, done in the order the level lists them. */
+enum { BA_JUMP = 0, BA_CHARGE, BA_SPIT, BA_BROOD, BA_ADVANCE, BA_COUNT };
+#define BOSS_ATTACKS_MAX 8
+#define BOSS_NAME_MAX 32
+typedef struct
+{
+   int32_t on;
+   int32_t attacks, attack[BOSS_ATTACKS_MAX];
+   int32_t brood;     /* minions let out at a time (more when angry) */
+   int32_t spit;      /* shots in its spit's fan */
+   int32_t rest;      /* frames between two attacks (fewer when angry) */
+   char name[BOSS_NAME_MAX];
+} hd_boss_config;
+extern hd_boss_config hd_boss;
 /* The player's hitbox (inside its 16 x 24 picture in the built-in game). */
 #define PW (hd_phys.pw)
 #define PH (hd_phys.ph)
@@ -224,6 +280,9 @@ typedef struct
    int32_t ko;               /* frames left of a knockout */
    int32_t charge;           /* the super attack's charge: its shots' hits */
    int32_t super_t;          /* frames into a super attack (0: none) */
+   int32_t dash_t;           /* frames into a dash (0: none) */
+   int32_t dash_wait;        /* frames before the next dash */
+   int32_t dash_air;         /* dashed in the air: no other until it lands */
 } hd_player;
 
 typedef struct
@@ -234,7 +293,24 @@ typedef struct
    int32_t awake;
    int32_t hp;    /* hits it still takes (format 3's weapon) */
    int32_t flash; /* frames it shows white after a hit */
+   int32_t kind;  /* EK_* */
+   int32_t t;     /* a timer of its own (a spore's bobbing, a spitter's or a boss's next attack) */
+   int32_t home_x, home_y; /* where it started, in pixels */
+   int32_t act, act_t;     /* a boss's or a spitter's attack (-1: resting) and frames into it */
+   int32_t face;           /* -1 left, 1 right */
+   int32_t ground;         /* standing on something */
+   int32_t seq;            /* a boss's attacks done so far (the next in its list) */
 } hd_enemy;
+
+/* An enemy's shot: flying (life > 0), falling in an arc when it has gravity. */
+typedef struct
+{
+   int32_t life;
+   int32_t x, y, vx, vy; /* its middle, 16.16 */
+   int32_t gravity;      /* 16.16 pixels a frame squared */
+   int32_t age;
+   int32_t big;          /* a boss's (drawn bigger) */
+} hd_bolt;
 
 /* A weapon's shot: flying (hit 0) or bursting where it hit (hit > 0, frames left). */
 #define SHOT_HIT_FRAMES 18
@@ -300,6 +376,14 @@ typedef struct
    hd_particle part[MAX_PARTICLES];
    hd_shot shot[MAX_SHOTS];
    int32_t shot_next;
+   hd_bolt bolt[MAX_BOLTS];
+   int32_t bolt_next;
+   int32_t boss;         /* the level's boss: its enemy's index + 1 once it woke up, 0 before */
+   int32_t boss_max;     /* its health when it woke up (the bar) */
+   int32_t boss_angry;   /* it lost half its health */
+   int32_t boss_beaten;  /* the goal is open */
+   int32_t arena;        /* the camera's left edge while the boss fights (pixels), 0: none */
+   int32_t music_boss;   /* the level's boss music plays (format 3's levels) */
    hd_channel ch[MAX_CHANNELS];
    /* the sound's effects on the whole mix (underwater, caves) */
    int32_t lowpass;              /* 0 off; else 1..256, how much of each new sample passes */
@@ -366,6 +450,7 @@ int hd_art_build(void);
 extern uint8_t hd_map[MAP_MAX_H][MAP_MAX_W];
 extern int32_t hd_map_w, hd_map_h;
 extern int32_t hd_enemy_start[MAX_ENEMIES][2]; /* pixels; count in hd_enemy_count */
+extern int32_t hd_enemy_kind_of[MAX_ENEMIES];  /* EK_* of each */
 extern int32_t hd_enemy_count;
 extern int32_t hd_start_x, hd_start_y;
 void hd_level_build(void);
@@ -390,6 +475,11 @@ void hd_static_init(void);
 void hd_reset(hd_state *s);
 void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS]);
 int hd_cell(int32_t tx, int32_t ty);
+/* Whether the level's goal is open: always, but in a level with a boss only once it is beaten. */
+int hd_goal_open(const hd_state *s);
+#define SPIT_AT 24  /* frames into a spitter's attack when its shot leaves */
+#define SPIT_END 44 /* and when the attack ends */
+#define BOSS_WINDUP(s) ((s)->boss_angry ? 20 : 30) /* a boss's windup before each attack */
 
 /* draw.c */
 void hd_draw(const hd_state *s, uint32_t *fb);

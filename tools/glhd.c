@@ -8,6 +8,8 @@
  *                                 manifest, its level and the pictures it names
  *   tools/glhd check FILE.glhd    loads a package like the core does and prints
  *                                 its title and SHA-256, or why it cannot play
+ *   tools/glhd adpcm IN.wav OUT.wav  a 16-bit PCM WAV made IMA ADPCM (a quarter
+ *                                 of the size; the core plays both), for music
  *
  * The demo exported and packed plays exactly like the built-in demo (same
  * frames, same sound): tests/test.c checks it.
@@ -501,6 +503,195 @@ static int check(const char *path)
    return 1;
 }
 
+/* A whole file, NULL when it cannot be read. */
+static uint8_t *read_file(const char *path, size_t *n)
+{
+   FILE *f = fopen(path, "rb");
+   uint8_t *d;
+   long len;
+   if (!f || fseek(f, 0, SEEK_END) || (len = ftell(f)) < 0 || fseek(f, 0, SEEK_SET))
+   {
+      if (f)
+         fclose(f);
+      return NULL;
+   }
+   d = (uint8_t *)malloc((size_t)len + 1);
+   if (d && fread(d, 1, (size_t)len, f) != (size_t)len)
+   {
+      free(d);
+      d = NULL;
+   }
+   fclose(f);
+   *n = (size_t)len;
+   return d;
+}
+
+/* IMA ADPCM, as the core's sound.c reads it. */
+static const int16_t ima_step[89] = {
+   7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118,
+   130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 1060,
+   1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484,
+   7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767
+};
+static const int8_t ima_index[16] = { -1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8 };
+#define ADPCM_ALIGN 512 /* bytes a block per channel: 1017 samples */
+
+/* The 4-bit code nearest to the sample, moving the predictor exactly as the decoder will. */
+static uint32_t ima_code(int32_t *pred, int32_t *index, int32_t sample)
+{
+   int32_t step = ima_step[*index], diff = sample - *pred, code = 0, d = step >> 3;
+   if (diff < 0)
+   {
+      code = 8;
+      diff = -diff;
+   }
+   if (diff >= step)
+   {
+      code |= 4;
+      diff -= step;
+      d += step;
+   }
+   if (diff >= step >> 1)
+   {
+      code |= 2;
+      diff -= step >> 1;
+      d += step >> 1;
+   }
+   if (diff >= step >> 2)
+   {
+      code |= 1;
+      d += step >> 2;
+   }
+   *pred += (code & 8) ? -d : d;
+   *pred = *pred < -32768 ? -32768 : *pred > 32767 ? 32767 : *pred;
+   *index += ima_index[code];
+   *index = *index < 0 ? 0 : *index > 88 ? 88 : *index;
+   return (uint32_t)code;
+}
+
+static void put16(uint8_t *p, uint32_t v)
+{
+   p[0] = (uint8_t)v;
+   p[1] = (uint8_t)(v >> 8);
+}
+
+static void put32(uint8_t *p, uint32_t v)
+{
+   put16(p, v & 0xffff);
+   put16(p + 2, v >> 16);
+}
+
+static int adpcm(const char *in, const char *out)
+{
+   size_t n, at = 12;
+   uint8_t *d = read_file(in, &n), *buf, hdr[60];
+   const uint8_t *pcm = NULL;
+   uint32_t ch = 0, rate = 0, bits = 0, fmt = 0, len = 0, frames, per, blocks, b, c, align;
+   FILE *f;
+   if (!d || n < 12 || memcmp(d, "RIFF", 4) || memcmp(d + 8, "WAVE", 4))
+   {
+      fprintf(stderr, "%s: not a WAV file\n", in);
+      return 1;
+   }
+   while (at + 8 <= n)
+   {
+      uint32_t l = (uint32_t)d[at + 4] | (uint32_t)d[at + 5] << 8 | (uint32_t)d[at + 6] << 16 | (uint32_t)d[at + 7] << 24;
+      if (l > n - at - 8)
+         break;
+      if (!memcmp(d + at, "fmt ", 4) && l >= 16)
+      {
+         fmt = d[at + 8] | d[at + 9] << 8;
+         ch = d[at + 10] | d[at + 11] << 8;
+         rate = (uint32_t)d[at + 12] | (uint32_t)d[at + 13] << 8 | (uint32_t)d[at + 14] << 16;
+         bits = d[at + 22] | d[at + 23] << 8;
+      }
+      else if (!memcmp(d + at, "data", 4))
+      {
+         pcm = d + at + 8;
+         len = l;
+      }
+      at += 8 + l + (l & 1);
+   }
+   if ((fmt != 1 && fmt != 0xfffe) || bits != 16 || (ch != 1 && ch != 2) || !pcm)
+   {
+      fprintf(stderr, "%s: must be PCM, 16 bits, mono or stereo\n", in);
+      free(d);
+      return 1;
+   }
+   align = ADPCM_ALIGN * ch;
+   per = (align - 4 * ch) * 2 / ch + 1;
+   frames = len / (2 * ch);
+   blocks = (frames + per - 1) / per;
+   buf = (uint8_t *)calloc(blocks, align);
+   if (!buf)
+   {
+      free(d);
+      return 1;
+   }
+   for (b = 0; b < blocks; b++)
+   {
+      uint8_t *blk = buf + (size_t)b * align;
+      int32_t pred[2], index[2] = { 0, 0 };
+      uint32_t i, o = 4 * ch;
+#define SAMPLE(k, c) ((k) < frames ? (int16_t)(pcm[((size_t)(k) * ch + (c)) * 2] | pcm[((size_t)(k) * ch + (c)) * 2 + 1] << 8) : 0)
+      for (c = 0; c < ch; c++)
+      {
+         uint32_t first = b * per;
+         /* a step index that suits the block's first jump: smaller steps are refined as it goes */
+         int32_t jump = SAMPLE(first + 1, c) - SAMPLE(first, c);
+         pred[c] = SAMPLE(first, c);
+         jump = jump < 0 ? -jump : jump;
+         while (index[c] < 88 && ima_step[index[c]] < jump)
+            index[c]++;
+         put16(blk + 4 * c, (uint16_t)pred[c]);
+         blk[4 * c + 2] = (uint8_t)index[c];
+      }
+      for (i = 1; i < per; i += 8)
+         for (c = 0; c < ch; c++, o += 4)
+         {
+            uint32_t k;
+            for (k = 0; k < 8; k++)
+            {
+               uint32_t code = ima_code(&pred[c], &index[c], SAMPLE(b * per + i + k, c));
+               blk[o + k / 2] |= (uint8_t)(k & 1 ? code << 4 : code);
+            }
+         }
+#undef SAMPLE
+   }
+   memcpy(hdr, "RIFF", 4);
+   put32(hdr + 4, 52 + blocks * align);
+   memcpy(hdr + 8, "WAVEfmt ", 8);
+   put32(hdr + 16, 20);
+   put16(hdr + 20, 0x11);
+   put16(hdr + 22, ch);
+   put32(hdr + 24, rate);
+   put32(hdr + 28, rate * align / per);
+   put16(hdr + 32, align);
+   put16(hdr + 34, 4);
+   put16(hdr + 36, 2);
+   put16(hdr + 38, per);
+   memcpy(hdr + 40, "fact", 4);
+   put32(hdr + 44, 4);
+   put32(hdr + 48, frames);
+   memcpy(hdr + 52, "data", 4);
+   put32(hdr + 56, blocks * align);
+   f = fopen(out, "wb");
+   if (!f || fwrite(hdr, 1, 60, f) != 60 || fwrite(buf, 1, (size_t)blocks * align, f) != (size_t)blocks * align)
+   {
+      fprintf(stderr, "%s: could not write\n", out);
+      if (f)
+         fclose(f);
+      free(buf);
+      free(d);
+      return 1;
+   }
+   fclose(f);
+   printf("%s: %u samples, %u bytes (PCM %u)\n", out, frames, 60 + blocks * align, len);
+   free(buf);
+   free(d);
+   return 0;
+}
+
 int main(int argc, char **argv)
 {
    if (argc == 3 && !strcmp(argv[1], "export-demo"))
@@ -517,8 +708,10 @@ int main(int argc, char **argv)
       fprintf(stderr, "cannot write %s\n", argv[3]);
       return 1;
    }
+   if (argc == 4 && !strcmp(argv[1], "adpcm"))
+      return adpcm(argv[2], argv[3]);
    if (argc == 3 && !strcmp(argv[1], "check"))
       return check(argv[2]) ? 0 : 1;
-   fprintf(stderr, "usage: %s export-demo DIR | pack DIR OUT.glhd | check FILE.glhd\n", argv[0]);
+   fprintf(stderr, "usage: %s export-demo DIR | pack DIR OUT.glhd | check FILE.glhd | adpcm IN.wav OUT.wav\n", argv[0]);
    return 2;
 }
