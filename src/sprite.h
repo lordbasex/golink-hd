@@ -174,6 +174,7 @@ void hd_stage_select(int32_t k);
 /* Keeps the music just loaded as the level's boss music (the level being loaded). */
 void hd_stage_boss_music(void);
 int hd_stage_keep(int32_t k); /* takes what the loaders just loaded as level k */
+void hd_stage_share(int32_t k); /* level k shows level k - 1's sky, pictures and music */
 void hd_stages_free(void);
 void hd_sounds_free(void);
 

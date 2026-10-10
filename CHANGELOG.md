@@ -28,6 +28,10 @@
 - Tests: the new enemies, a boss, the dash and ADPCM.
 - A boss fight shows the whole boss: it wakes up once its whole picture is on the screen, the camera stays at 1x and at the arena's floor (following the players' jumps up cut its feet off), and the boss stays inside what the camera shows, after the camera moves too.
 - `tools/sprites.py --separate`: a piece drawn in one stroke goes whole with one frame, a loose piece (a drop, a loose arm) with the frame drawn nearest it, and a spray keeps its drops (a boss's attack was cut, pieces of it in the next frame).
+- `health` takes `invulnerable` (the frames a hit player cannot be hurt again, 90 by default), `lives` (each knockout or last fall costs one; 0 keeps them unlimited) and `continue` (the seconds a player out of lives has to press start and come back with all of them, its countdown over its own part of the screen while the others play on; out of time it leaves the game and start brings it back; with nobody left, GAME OVER and the title); lives in the HUD. Save states are version 7.
+- A level with `same_art: true` is another act of the level before it: its sky, layers, textures and music (not loaded again, no intro), with its own map and boss.
+- Levels may be 1792 cells wide (1024 before) and hold 224 enemies of their own (48 before); 32 more are kept for what a boss lets out.
+- Tests: lives and continue, acts sharing their art.
 - `tools/hdrun --every N --audio FILE.raw`: every Nth frame as PNG and the run's sound, to make a video with ffmpeg.
 
 ### Added
@@ -35,6 +39,7 @@
 - `tools/hdrun --check` (the game's info, a state saved halfway and played again, a restart played again) and `--music off`.
 
 ### Fixed
+- A save state taken on a level's intro loaded as a stage clear (its phase was cut down).
 - A player walking on flat ground was in the air every other frame (the floor was looked for at the feet's whole pixel, so sinking half a pixel missed it), which drew a jump frame every other frame; and on the ground the speed crept past the top speed by 0.05 pixels a frame (the two bugs hid each other). The floor is looked for with the fraction, and the speed stops at the top speed. Found by measuring a video of ANTÍDOTO frame by frame; the demo's and the API test's hashes changed (identical on macOS and Linux).
 - The goal and checkpoints count when a player passes their column near their height (from 2 rows below to 8 above, so jumping over still counts): a level that climbs on a 9:16 screen no longer clears when the player runs under its goal. Found by the 9:16 API test in a go-link room.
 - Centered texts (the title, STAGE CLEAR!, PAUSE) get smaller when they would not fit a 4:3 or 9:16 screen; a long title was cut.

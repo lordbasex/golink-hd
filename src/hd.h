@@ -23,7 +23,7 @@
  * The save state's layout version. Bump it whenever hd_state changes; a
  * save state of another version is refused cleanly, never misread.
  */
-#define HD_STATE_VERSION 6
+#define HD_STATE_VERSION 7
 
 /*
  * The logical screen, chosen by the game: 640 x 360 (16:9, scaled x3 to
@@ -55,7 +55,7 @@ extern int32_t hd_res_host; /* the host's choice for the next package, 0: the pa
 
 #define TILE 16
 /* The level's size in cells: the loaded game's, within these limits. */
-#define MAP_MAX_W 1024
+#define MAP_MAX_W 1792 /* 28672 pixels: positions are 16.16, so a level stays well inside 32767 */
 #define MAP_MAX_H 64
 #define MAP_MIN_W (HD_W / TILE)
 #define MAP_MIN_H ((HD_H + TILE - 1) / TILE)
@@ -66,7 +66,9 @@ extern int32_t hd_res_host; /* the host's choice for the next package, 0: the pa
 #define MAX_PLAYERS GOLINKHD_MAX_PLAYERS
 #define DEFAULT_PLAYERS 4
 extern int32_t hd_players;
-#define MAX_ENEMIES 48
+#define MAX_ENEMIES 256
+/* a level's own enemies: the rest is kept for what a boss lets out */
+#define MAX_LEVEL_ENEMIES (MAX_ENEMIES - 32)
 #define MAX_PARTICLES 256
 #define MAX_SHOTS 48
 #define MAX_BOLTS 48 /* the enemies' own shots: spit, a boss's attacks */
@@ -118,7 +120,7 @@ enum
    T_ENEMY /* where an enemy starts; empty once the level is built */
 };
 
-enum { PH_TITLE = 0, PH_PLAY, PH_CLEAR, PH_INTRO };
+enum { PH_TITLE = 0, PH_PLAY, PH_CLEAR, PH_INTRO, PH_OVER };
 
 enum
 {
@@ -193,11 +195,15 @@ void hd_weapon_default(void);
  * The players' health (format 3's "health"; off in the built-in game, where
  * a hit costs coins): a hit costs one of `hits`, the last one knocks the
  * player out (`knockout` frames, then back at the checkpoint with all of
- * them); with `worn` or fewer left a puppet shows its worn body.
+ * them); with `worn` or fewer left a puppet shows its worn body. After a hit
+ * the player cannot be hurt for `invulnerable` frames. With `lives`, each
+ * knockout costs one; at none the player gets `cont` seconds to continue
+ * with start (all its lives back) or leaves the game (0 lives: unlimited).
  */
 typedef struct
 {
    int32_t on, hits, worn, knockout;
+   int32_t invulnerable, lives, cont;
 } hd_health_config;
 extern hd_health_config hd_health;
 
@@ -258,8 +264,10 @@ extern hd_boss_config hd_boss;
 #define EH (hd_phys.eh)
 
 /* A hurt player blinks for HURT_FRAMES and flashes white while hurt > HURT_FLASH. */
-#define HURT_FRAMES 90
-#define HURT_FLASH 84
+#define HURT_FRAMES (hd_health.invulnerable)
+#define HURT_FLASH (HURT_FRAMES - 6)
+/* frames a game over shows before the title */
+#define OVER_FRAMES 240
 
 typedef struct
 {
@@ -283,6 +291,8 @@ typedef struct
    int32_t dash_t;           /* frames into a dash (0: none) */
    int32_t dash_wait;        /* frames before the next dash */
    int32_t dash_air;         /* dashed in the air: no other until it lands */
+   int32_t lives;            /* lives left (format 3's health with lives) */
+   int32_t cont;             /* frames left to continue after the last life (0: none) */
 } hd_player;
 
 typedef struct

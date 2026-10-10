@@ -33,7 +33,7 @@ ANIMS = {
 }
 SKINS = ["red", "blue"]
 # pixels walked in one whole walk cycle (12 frames, two steps): the steps follow the ground; at the
-# walking speed (1.8 px a frame) a cycle lasts about a second, 12 drawings a second like an animated cartoon
+# walking speed (2.6 px a frame) a cycle lasts about two thirds of a second
 STRIDE = 110
 # the rubber-hose puppet (src/rig.c): parts cut by parts.py, arms and legs drawn by the engine;
 # a skin with a rig is posed on every frame instead of playing its sheets
@@ -41,7 +41,8 @@ RIG = {"limb": 4, "leg": 24, "arm": 15, "stride": 84, "lift": 8, "bob": 3}
 # the finger pistol: X fires antibodies (about 7 a second) from the fingertip of the puppet's aiming
 # pose; a germ takes 3. Y, once 6 antibodies have hit (the first two germs), opens the capsule: a fan of 10 granules
 # three hits; with the last one left the capsule looks worn out; at none it dissolves
-HEALTH = {"hits": 3, "worn": 1, "knockout": 100}
+# two seconds unhurt after a hit; 3 lives, then 10 seconds to continue (each player its own countdown)
+HEALTH = {"hits": 3, "worn": 1, "knockout": 100, "invulnerable": 120, "lives": 3, "continue": 10}
 WEAPON = {"button": "x", "rate": 8, "speed": 900, "range": 420, "muzzle": [30, -33], "enemy_health": 3,
           "super": {"button": "y", "charge": 6, "granules": 10, "spread": 70, "speed": 650, "range": 260,
                     "damage": 2, "frames": 48, "release": 22}}
@@ -111,7 +112,7 @@ LAYERS = {z: [(f"bg_{z}_far", 400, 20, -20), (f"bg_{z}_mid", 300, 55, 200)] for 
 
 
 def layers(zone):
-    """Resizes the zone's layer pictures to the game's size (Pillow through uv, see cut.sh) and lists them."""
+    """The zone's layer pictures made to repeat and sized for the game (layers.py through uv, see cut.sh), listed."""
     import subprocess
     out = []
     for name, height, speed, y in LAYERS[zone]:
@@ -119,10 +120,9 @@ def layers(zone):
         if not os.path.exists(src):
             continue
         dst = os.path.join(OUT, name + ".png")
-        subprocess.run([os.environ.get("UV", "uv"), "run", "-q", "--with", "pillow", "python", "-c",
-                        "import sys; from PIL import Image; im = Image.open(sys.argv[1]);"
-                        " im.resize((round(im.width * int(sys.argv[3]) / im.height), int(sys.argv[3])), Image.LANCZOS).save(sys.argv[2])",
-                        src, dst, str(height * RES)], check=True)
+        # made to repeat with no seam (the engine lays it again and again across the level)
+        subprocess.run([os.environ.get("UV", "uv"), "run", "-q", "--with", "pillow", "--with", "numpy", "python",
+                        os.path.join(HERE, "layers.py"), src, dst, str(height * RES)], check=True, cwd=HERE)
         out.append({"file": name + ".png", "speed": speed, "y": y})
     return out
 
@@ -312,17 +312,32 @@ def intro(zone):
     return name + ".png"
 
 
-def made_level(k, grade):
-    """Level k + 1 (k >= 1), made from a fixed seed so every build is the same: the ground broken by
-    gaps a hero clears, platforms with vitamins over some of them, brick steps, germs on the flat
-    stretches, two checkpoints and the goal; longer, with more gaps and germs, as the body goes up."""
+# each zone is two acts: the first one long, the second longer and ending in the boss's arena; cells wide
+# (the engine takes up to 1792), so the whole game takes 40 to 60 minutes
+def act_width(k, act):
+    return 1200 + 60 * k + 100 * act
+
+
+def made_level(k, grade, act, base=None):
+    """Zone k's act (0 or 1), made from a fixed seed so every build is the same: stretches of ground with
+    germs and the zone's own enemies, broken by gaps a hero clears and by sections that change the pace
+    (platform bridges over long pits, brick stairs, towers with vitamins on top, enemy gauntlets, quiet
+    stretches of vitamins), a checkpoint every 180 cells, the goal; harder as the body goes up and in
+    the second act. `base`, a hand-made start (the colon's first act), is kept and the rest made after it."""
     import random
-    rnd = random.Random(1930 + k)
-    w, h, ground = 200 + 20 * k, 30, 26
+    rnd = random.Random(1930 + k * 10 + act)
+    w, h, ground = act_width(k, act), 30, 26
+    hard = k + act  # 0 to 6
     rows = [["."] * w for _ in range(h)]
     for r in range(ground, h):
         for c in range(w):
             rows[r][c] = "#"
+    c = 14
+    if base:
+        for r in range(h):
+            for c2, ch in enumerate(base["rows"][r][:base["width"] - 10]):
+                rows[r][c2] = ch
+        c = base["width"] - 10
 
     def put(col, row, text):
         for i, ch in enumerate(text):
@@ -331,58 +346,130 @@ def made_level(k, grade):
 
     def gap(c0, n):
         for r in range(ground, h):
-            for c in range(c0, c0 + n):
-                rows[r][c] = "."
+            for x in range(c0, min(w, c0 + n)):
+                rows[r][x] = "."
 
-    c, enemies, checks = 14, 0, [w // 3, 2 * w // 3]
-    while c < w - 24:
-        run = rnd.randint(9, 16) - min(k, 4)
-        stretch = max(6, run)
-        # germs on the flat, more of them higher up the body
-        for _ in range(rnd.randint(0, 1 + k // 2) if stretch >= 8 else 0):
-            put(c + rnd.randint(3, stretch - 2), ground - 1, "E")
-            enemies += 1
-        # the zone's own enemies: spores in the air, spitters standing
-        spores, spitters = ZONE_ENEMIES[ZONES[k][0]]
-        if stretch >= 8 and rnd.random() < spores:
-            put(c + rnd.randint(2, stretch - 2), ground - 7 - rnd.randint(0, 3), "S")
-        if stretch >= 8 and rnd.random() < spitters:
-            put(c + stretch - 3, ground - 1, "P")
+    # enemies spread over the whole act: no more than its share so far (the engine takes 224 a level)
+    budget, placed = 90 + 18 * hard, [0]
+
+    def foe(col, row, ch):
+        if placed[0] < budget * col / w + 6 and 0 <= col < w:
+            rows[row][col] = ch
+            placed[0] += 1
+
+    spores, spitters = ZONE_ENEMIES[ZONES[k][0]]
+    checks = list(range(180, w - 40, 180))
+    while c < w - 30:
+        before = c
         kind = rnd.random()
-        if kind < 0.35:
-            put(c + 2, ground - 5, "=" * 5)
-            put(c + 2, ground - 6, "ooo")
-        elif kind < 0.55:
-            put(c + 3, ground - 1, "BB")
-            put(c + 4, ground - 2, "B")
-            put(c + 4, ground - 3, "o")
-        c += stretch
-        if any(c - stretch < x <= c for x in checks):
-            put(c - 2, ground - 1, "C")
-            continue
-        n = rnd.randint(2, 3 + (k >= 3))
-        gap(c, n)
-        if rnd.random() < 0.5:
-            put(c - 1, ground - 5, "=" * (n + 2))
-            put(c, ground - 6, "o" * n)
-        c += n
+        if kind < 0.12:
+            # a bridge: a long pit crossed on short platforms, vitamins over the gaps between them
+            n = rnd.randint(9, 12 + min(hard, 4))
+            gap(c, n)
+            x = c
+            while x < c + n - 1:
+                put(x, ground - 3 - rnd.randint(0, 2), "===")
+                if x + 4 < c + n:
+                    put(x + 3, ground - 7, "o")
+                x += 5
+            c += n
+        elif kind < 0.22:
+            # brick stairs up and a jump off the top
+            steps = rnd.randint(3, 5)
+            for i in range(steps):
+                for r in range(ground - 1 - i, ground):
+                    put(c + i * 2, r, "BB")
+            put(c + steps * 2 - 2, ground - 2 - steps, "oo")
+            c += steps * 2
+            n = rnd.randint(2, 3)
+            gap(c, n)
+            c += n
+        elif kind < 0.30:
+            # a tower: a brick column, vitamins on top and a spore around it from the stomach up
+            tall = rnd.randint(4, 7)
+            for r in range(ground - tall, ground):
+                put(c + 3, r, "BB")
+            put(c + 3, ground - tall - 1, "oo")
+            if spores and rnd.random() < spores:
+                foe(c + 8, ground - tall - 2, "S")
+            c += 10
+        elif kind < 0.38 + 0.02 * hard:
+            # a gauntlet: germs in a row, a spitter at its end when the zone has them
+            n = 3 + min(hard, 4)
+            for i in range(n):
+                foe(c + 3 + i * 3, ground - 1, "E")
+            if spitters:
+                foe(c + 4 + n * 3, ground - 1, "P")
+            c += 7 + n * 3
+        elif kind < 0.46:
+            # a quiet stretch: vitamins in an arc, a breath before what comes next
+            for i in range(8):
+                put(c + 2 + i, ground - 2 - (3 if 2 <= i <= 5 else 1), "o")
+            c += 12
+        else:
+            # the plain stretch: germs on the flat, the zone's enemies, a platform or a step, then a gap
+            run = rnd.randint(9, 16) - min(hard, 4)
+            stretch = max(6, run)
+            for _ in range(rnd.randint(0, 1 + hard // 2) if stretch >= 8 else 0):
+                foe(c + rnd.randint(3, stretch - 2), ground - 1, "E")
+            if stretch >= 8 and rnd.random() < spores:
+                foe(c + rnd.randint(2, stretch - 2), ground - 7 - rnd.randint(0, 3), "S")
+            if stretch >= 8 and rnd.random() < spitters:
+                foe(c + stretch - 3, ground - 1, "P")
+            pick = rnd.random()
+            if pick < 0.35:
+                put(c + 2, ground - 5, "=" * 5)
+                put(c + 2, ground - 6, "ooo")
+            elif pick < 0.55:
+                put(c + 3, ground - 1, "BB")
+                put(c + 4, ground - 2, "B")
+                put(c + 4, ground - 3, "o")
+            c += stretch
+            n = rnd.randint(2, 3 + (hard >= 3))
+            gap(c, n)
+            if rnd.random() < 0.5:
+                put(c - 1, ground - 5, "=" * (n + 2))
+                put(c, ground - 6, "o" * n)
+            c += n
+        # a checkpoint on solid ground once the section passes one: a flat landing of 6 cells
+        if checks and c >= checks[0]:
+            checks.pop(0)
+            for r in range(ground, h):
+                for x in range(c, min(w, c + 6)):
+                    rows[r][x] = "#"
+            for r in range(ground - 8, ground):
+                for x in range(c, min(w, c + 6)):
+                    rows[r][x] = "."
+            put(c + 2, ground - 1, "C")
+            c += 6
+        if c == before:
+            c += 1
+    for r in range(ground, h):  # solid ground to the goal
+        for x in range(w - 30, w):
+            rows[r][x] = "#"
     put(w - 8, ground - 1, "F")
     return {"width": w, "height": h, "start": [4, ground - 1], "rows": ["".join(r) for r in rows],
             "effects": {"shadows": True, "zoom": "auto", "grade": grade, "grade_amount": 40}}
 
 
 def levels():
-    """Every zone's level, in the order the body is climbed."""
+    """Every zone's two acts, in the order the body is climbed: the second one shows the first one's art and ends with the boss."""
     out = []
     for k, (zone, sky, grade) in enumerate(ZONES):
-        lv = arena(level() if k == 0 else made_level(k, grade))
-        name = f"level_{k + 1}_{zone}.json"
-        with open(os.path.join(OUT, name), "w", encoding="utf-8") as f:
-            json.dump(lv, f, indent=1)
-            f.write("\n")
-        entry = {"level": name, "sky": sky, "layers": layers(zone), "textures": textures(zone),
-                 "intro": intro(zone), "music": music(zone), "boss": boss(zone)}
-        out.append({k2: v for k2, v in entry.items() if v})
+        for act in (0, 1):
+            lv = made_level(k, grade, act, level() if k == 0 and act == 0 else None)
+            if act == 1:
+                lv = arena(lv)
+            name = f"level_{k + 1}_{zone}_{act + 1}.json"
+            with open(os.path.join(OUT, name), "w", encoding="utf-8") as f:
+                json.dump(lv, f, indent=1)
+                f.write("\n")
+            if act == 0:
+                entry = {"level": name, "sky": sky, "layers": layers(zone), "textures": textures(zone),
+                         "intro": intro(zone), "music": music(zone)}
+            else:
+                entry = {"level": name, "same_art": True, "boss": boss(zone)}
+            out.append({k2: v for k2, v in entry.items() if v})
     return out
 
 
@@ -426,7 +513,7 @@ def main():
         "health": HEALTH,
         "dash": DASH,
         "enemies": ENEMIES,
-        "physics": {"hitbox": [28, 66], "enemy_hitbox": [34, 30], "walk": 180, "run": 280, "jump": 1050, "gravity": 50, "gravity_hold": 30, "fall_max": 1200},
+        "physics": {"hitbox": [28, 66], "enemy_hitbox": [34, 30], "walk": 260, "run": 340, "accel": 40, "jump": 1050, "gravity": 50, "gravity_hold": 30, "fall_max": 1200},
         "sprites": {k: v for k, v in {
             "hero": {"players": SKINS, "skins": skins},
             "enemy": {k: v for k, v in {"walk": dict(thing("enemy_germ_walk", 8, 10) or {}, stride=70) or None,

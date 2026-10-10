@@ -44,6 +44,8 @@ void hd_weapon_default(void)
    memset(&hd_weapon, 0, sizeof hd_weapon);
    hd_weapon.enemy_health = 1;
    memset(&hd_health, 0, sizeof hd_health);
+   hd_health.invulnerable = 90;
+   hd_health.cont = 10;
 }
 
 void hd_physics_default(void)
@@ -213,9 +215,39 @@ static void join(hd_state *s, int32_t i)
    p->check_x = x;
    p->check_y = y;
    p->hp = hd_health.hits;
+   p->lives = hd_health.lives;
    place(p, x, y - 48);
    p->hurt = 60;
    hd_play(s, SFX_JOIN, screen_x(s, x));
+}
+
+/* A player out of time to continue leaves the game (start brings it back); with nobody left, the game is over. */
+static void leave(hd_state *s, int32_t i)
+{
+   int32_t j, playing = 0;
+   s->p[i].active = 0;
+   s->p[i].cont = 0;
+   s->p[i].respawn = 0;
+   for (j = 0; j < MAX_PLAYERS; j++)
+      playing |= s->p[j].active;
+   if (!playing && s->phase == PH_PLAY)
+   {
+      s->phase = PH_OVER;
+      s->phase_t = 0;
+   }
+}
+
+/* A knockout, or a fall with no health left: with lives, one less; at none the player waits to continue. */
+static void life_lost(hd_state *s, int32_t i)
+{
+   hd_player *p = &s->p[i];
+   if (!hd_health.lives || --p->lives > 0)
+      return;
+   p->lives = 0;
+   p->cont = hd_health.cont * 60;
+   p->respawn = 1; /* held while it waits: out of the game's way */
+   if (!p->cont)
+      leave(s, i);
 }
 
 void hd_reset(hd_state *s)
@@ -255,6 +287,11 @@ static void next_stage(hd_state *s)
       p->check_y = hd_start_y;
       place(p, p->check_x, p->check_y - 48);
       p->respawn = p->ko = p->super_t = p->shot_wait = p->aim = 0;
+      if (p->cont)
+      {
+         p->cont = 0; /* a player waiting to continue goes on to the next level too */
+         p->lives = hd_health.lives;
+      }
       if (p->hp <= 0)
          p->hp = hd_health.hits;
       p->hurt = 60;
@@ -482,11 +519,28 @@ static void player_step(hd_state *s, int32_t i)
    int32_t max = (pad & PAD_RUN) && !hd_weapon.on ? RUN_MAX : WALK_MAX;
    int32_t was_vy;
 
+   if (p->cont)
+   {
+      /* out of lives: start (or jump) continues with all of them, else it leaves when the time is up */
+      if (pressed & (PAD_START | PAD_JUMP))
+      {
+         p->cont = 0;
+         p->lives = hd_health.lives;
+         p->respawn = 1;
+         hd_play(s, SFX_JOIN, HD_W / 2);
+      }
+      else if (--p->cont == 0)
+         leave(s, i);
+      return;
+   }
    if (p->ko)
    {
       /* knocked out: nothing moves it; then it is gone for a moment and comes back */
       if (--p->ko == 0)
+      {
          p->respawn = RESPAWN_FRAMES;
+         life_lost(s, i);
+      }
       return;
    }
    if (p->respawn)
@@ -632,9 +686,9 @@ static void player_step(hd_state *s, int32_t i)
    if (FX_INT(p->y) > MAP_H * TILE + 48)
    {
       p->respawn = RESPAWN_FRAMES;
-      if (hd_health.on)
-         p->hp--; /* a fall costs a hit; with none left it comes back with all of them */
-      else
+      if (hd_health.on && --p->hp <= 0)
+         life_lost(s, i); /* a fall costs a hit; with none left a life, and it comes back with all of them */
+      else if (!hd_health.on)
          p->coins -= hd_min(3, p->coins);
       hd_play(s, SFX_HURT, screen_x(s, FX_INT(p->x)));
       return;
@@ -1466,6 +1520,22 @@ static void particles_step(hd_state *s)
    }
 }
 
+/* Back to the title after the last level or a game over, the music and sounds going on. */
+static void over_to_title(hd_state *s)
+{
+   uint32_t rng = s->rng;
+   hd_channel ch[MAX_CHANNELS];
+   int32_t row = s->music_row, tick = s->music_tick, sfx = s->sfx_next, mpos = s->music_pos;
+   memcpy(ch, s->ch, sizeof ch);
+   hd_reset(s);
+   s->rng = rng;
+   memcpy(s->ch, ch, sizeof ch);
+   s->music_row = row;
+   s->music_tick = tick;
+   s->music_pos = mpos;
+   s->sfx_next = sfx;
+}
+
 void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
 {
    int32_t i;
@@ -1578,7 +1648,7 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       uint32_t pressed = s->p[i].pad & ~s->p[i].prev;
       if (!s->p[i].active && (pressed & (PAD_START | PAD_JUMP)) && !s->paused && s->phase == PH_PLAY)
          join(s, i);
-      else if (s->p[i].active && (pressed & PAD_START) && s->phase == PH_PLAY)
+      else if (s->p[i].active && !s->p[i].cont && (pressed & PAD_START) && s->phase == PH_PLAY)
       {
          s->paused = !s->paused;
          hd_play(s, SFX_PAUSE, HD_W / 2);
@@ -1602,7 +1672,16 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       return;
    }
 
-   if (s->phase == PH_CLEAR)
+   if (s->phase == PH_OVER)
+   {
+      /* game over: a moment, then the title */
+      if (++s->phase_t >= OVER_FRAMES)
+      {
+         over_to_title(s);
+         return;
+      }
+   }
+   else if (s->phase == PH_CLEAR)
    {
       s->phase_t++;
       if (s->phase_t % 20 == 0 && s->phase_t < 200)
@@ -1615,17 +1694,7 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       }
       if (s->phase_t >= CLEAR_FRAMES)
       {
-         uint32_t rng = s->rng;
-         hd_channel ch[MAX_CHANNELS];
-         int32_t row = s->music_row, tick = s->music_tick, sfx = s->sfx_next, mpos = s->music_pos;
-         memcpy(ch, s->ch, sizeof ch);
-         hd_reset(s);
-         s->rng = rng;
-         memcpy(s->ch, ch, sizeof ch);
-         s->music_row = row;
-         s->music_tick = tick;
-         s->music_pos = mpos;
-         s->sfx_next = sfx;
+         over_to_title(s);
          return;
       }
    }

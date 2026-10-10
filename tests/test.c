@@ -941,6 +941,7 @@ static void test_weapon(void)
 }
 
 extern int32_t hd_stage_count; /* sprite.h (not included here: its names meet the bones') */
+void hd_stage_select(int32_t k);
 
 /* format 3's resolution: the same game drawn 2 or 3 times bigger with pictures made for that size (the
    API's frame grows, the rules do not change); a texture of the wrong size for it is refused. */
@@ -1819,6 +1820,125 @@ static void test_adpcm(void)
    hd_content_builtin();
 }
 
+/* Lives: each knockout costs one; at none the player waits to continue (its own countdown, the others play on),
+   start brings it back with all of them, the time running out takes it out, and with nobody left the game is over. */
+static void test_lives(void)
+{
+   static uint8_t zip[300000], save[HD_SAVE_SIZE];
+   static char level[100000];
+   static hd_state s, again;
+   hd_input in[MAX_PLAYERS];
+   const char *err;
+   size_t n;
+   int32_t f;
+   zfile files[2] = {{0}};
+   flat_level(level, sizeof level, 60, 30);
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Lives\", \"players\": 2, \"level\": \"level.json\","
+                   " \"health\": {\"hits\": 2, \"knockout\": 10, \"invulnerable\": 120, \"lives\": 2, \"continue\": 3}}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  lives: %s\n", err);
+   CHECK(hd_health.lives == 2 && hd_health.cont == 3 && HURT_FRAMES == 120);
+   hd_reset(&s);
+   memset(in, 0, sizeof in);
+   in[0].buttons = in[1].buttons = PAD_START;
+   hd_step(&s, in);
+   in[0].buttons = in[1].buttons = 0;
+   for (f = 0; f < 60; f++)
+      hd_step(&s, in);
+   CHECK(s.p[0].active && s.p[1].active && s.p[0].lives == 2);
+   /* the first knockout: one life less, back after the respawn */
+   s.p[0].ko = 1;
+   hd_step(&s, in);
+   CHECK(s.p[0].lives == 1 && s.p[0].respawn > 0 && !s.p[0].cont);
+   for (f = 0; f < 60; f++)
+      hd_step(&s, in);
+   CHECK(!s.p[0].respawn && s.p[0].hp == 2);
+   /* the last one: three seconds to continue, out of the game's way, the other player and the game going on */
+   s.p[0].ko = 1;
+   hd_step(&s, in);
+   CHECK(s.p[0].lives == 0 && s.p[0].cont == 180 && s.p[0].respawn == 1 && s.p[0].active);
+   for (f = 0; f < 60; f++)
+      hd_step(&s, in);
+   CHECK(s.p[0].cont == 120 && s.p[0].respawn == 1 && s.phase == PH_PLAY && !s.paused);
+   hd_save(&s, save);
+   again = s;
+   /* start continues: all its lives, back at the checkpoint, and it does not pause the game */
+   in[0].buttons = PAD_START;
+   hd_step(&s, in);
+   in[0].buttons = 0;
+   hd_step(&s, in);
+   CHECK(!s.p[0].cont && s.p[0].lives == 2 && !s.p[0].respawn && !s.paused && s.p[0].hp == 2);
+   /* from the save state, the time runs out: it leaves; the other player still plays */
+   CHECK(hd_load(&again, save, HD_SAVE_SIZE) == 1);
+   for (f = 0; f < 120; f++)
+      hd_step(&again, in);
+   CHECK(!again.p[0].active && again.p[1].active && again.phase == PH_PLAY);
+   /* the other one out of lives and time too: game over, then the title */
+   again.p[1].ko = 1;
+   hd_step(&again, in);
+   for (f = 0; f < 60; f++)
+      hd_step(&again, in);
+   again.p[1].ko = 1;
+   hd_step(&again, in);
+   CHECK(again.p[1].cont == 180);
+   for (f = 0; f < 180; f++)
+      hd_step(&again, in);
+   CHECK(again.phase == PH_OVER && !again.p[1].active);
+   for (f = 0; f < OVER_FRAMES; f++)
+      hd_step(&again, in);
+   CHECK(again.phase == PH_TITLE);
+   /* a value out of range is refused */
+   files[0].text = "{\"format\": 3, \"title\": \"Lives\", \"level\": \"level.json\", \"health\": {\"lives\": 100}}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "lives") != NULL);
+   hd_content_builtin();
+   CHECK(HURT_FRAMES == 90 && !hd_health.lives); /* the built-in game as it was */
+}
+
+/* A level with same_art is another act of the one before: its sky and pictures, none loaded twice. */
+static void test_same_art(void)
+{
+   static uint8_t zip[400000], png[20000];
+   static char one[100000], two[100000];
+   const char *err;
+   size_t n;
+   const uint32_t *ground;
+   zfile files[4] = {{0}};
+   flat_level(one, sizeof one, 60, 30);
+   flat_level(two, sizeof two, 80, 30);
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Acts\", \"levels\": [{\"level\": \"one.json\", \"sky\": [\"#102030\", \"#203040\"],"
+                   " \"intro\": \"g.png\", \"textures\": {\"ground\": \"g.png\"}}, {\"level\": \"two.json\", \"same_art\": true}]}";
+   files[1].name = "one.json";
+   files[1].text = one;
+   files[2].name = "two.json";
+   files[2].text = two;
+   files[3].name = "g.png";
+   files[3].text = (const char *)png;
+   files[3].len = tiny_png(png, 16, 16);
+   n = make_zip(zip, files, 4);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  same art: %s\n", err);
+   CHECK(hd_stage_count == 2 && hd_textures[TL_GROUND].px != NULL);
+   ground = hd_textures[TL_GROUND].px;
+   hd_stage_select(1);
+   CHECK(hd_map_w == 80 && hd_textures[TL_GROUND].px == ground && hd_sky_top == 0x102030u);
+   hd_stage_select(0);
+   files[0].text = "{\"format\": 3, \"title\": \"Acts\", \"levels\": [{\"level\": \"one.json\", \"same_art\": true}]}";
+   n = make_zip(zip, files, 4);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "first level") != NULL);
+   files[0].text = "{\"format\": 3, \"title\": \"Acts\", \"levels\": [{\"level\": \"one.json\"}, {\"level\": \"two.json\", \"same_art\": 1}]}";
+   n = make_zip(zip, files, 4);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "true or false") != NULL);
+   hd_content_builtin(); /* the shared pictures freed once */
+}
+
 int main(void)
 {
    hd_static_init();
@@ -1853,6 +1973,8 @@ int main(void)
    test_enemy_kinds();
    test_boss();
    test_dash();
+   test_lives();
+   test_same_art();
    test_adpcm();
    test_api();
    if (failures)

@@ -767,6 +767,53 @@ static void particles(const hd_state *s)
 /* A row of the 360 row screen, moved to the same place on a taller one. */
 #define ROW(y) ((y) * HD_H / 360)
 
+/* A player's continue, its lives and a game over, in the game's language. */
+static const char *const cont_text[3] = { "CONTINUE?", "CONTINUAR?", "CONTINUAR?" };
+static const char *const start_text[3] = { "PRESS START", "PULSA START", "APERTE START" };
+static const char *const lives_text[3] = { "LIVES", "VIDAS", "VIDAS" };
+
+/* Darkens a box of the screen to a third, so what is drawn on it reads over the game. */
+static void dim(int32_t x, int32_t y, int32_t w, int32_t h)
+{
+   int32_t i, j;
+   for (j = hd_max(y, 0); j < hd_min(y + h, surf.h); j++)
+      for (i = hd_max(x, 0); i < hd_min(x + w, surf.w); i++)
+      {
+         uint32_t c = surf.px[j * surf.w + i];
+         surf.px[j * surf.w + i] = (c & 0xff000000u) | ((c >> 2) & 0x3f3f3fu) | ((c >> 3) & 0x1f1f1fu);
+      }
+}
+
+/* A text centered between x and x + w, smaller when it would not fit. */
+static void center_in(const char *t, int32_t x, int32_t w, int32_t y, int32_t scale, uint32_t c)
+{
+   while (scale > 1 && text_width(t, scale) > w - S(8))
+      scale--;
+   text(t, x + (w - text_width(t, scale)) / 2, y, scale, c);
+}
+
+/*
+ * A player out of lives: its countdown over its own part of the screen (the
+ * whole of it alone, a half with two players, a quarter with more), so the
+ * others play on around it.
+ */
+static void continue_panel(const hd_state *s, int32_t i)
+{
+   const hd_player *p = &s->p[i];
+   int32_t cols = hd_min(hd_max(hd_players, 1), 4), rows = (hd_max(hd_players, 1) + 3) / 4;
+   int32_t w = HD_OUT_W / cols, cell_h = HD_OUT_H / rows, ph = hd_min(S(150), cell_h - S(8));
+   int32_t x = (i % cols) * w, y = (i / cols) * cell_h + (cell_h - ph) / 2;
+   char buf[8] = "P1";
+   buf[1] = (char)('1' + i);
+   dim(x + S(6), y, w - S(12), ph);
+   center_in(buf, x, w, y + S(10), S(2), hd_player_color[i] & 0xffffffu);
+   center_in(cont_text[hd_lang], x, w, y + S(30), S(3), 0xffffffu);
+   number(buf, (p->cont + 59) / 60);
+   center_in(buf, x, w, y + S(60), S(7), 0xf8c838u);
+   if ((s->frame >> 4) & 1)
+      center_in(start_text[hd_lang], x, w, y + ph - S(24), S(2), 0xffffffu);
+}
+
 /* "Hold A to skip" in the game's language. */
 static const char *const skip_text[3] = { "HOLD A TO SKIP", "MANTÉN A PARA SALTAR", "SEGURE A PARA PULAR" };
 
@@ -855,12 +902,19 @@ static void hud(const hd_state *s)
       text(buf, x + S(46), y, S(2), 0xffffffu);
       if (hd_health.on)
       {
-         /* its health: HP and the hits left, red and blinking when worn */
-         int32_t worn = p->hp <= hd_health.worn;
+         /* its health: HP and the hits left, red and blinking when worn; after the coins, however many */
+         int32_t worn = p->hp <= hd_health.worn, hx = hd_max(x + S(90), x + S(46) + text_width(buf, S(2)) + S(6));
          strcpy(buf, "HP");
          number(buf + 2, p->hp);
          if (!worn || ((s->frame >> 4) & 1))
-            text(buf, x + S(90), y, S(2), worn ? 0xff4040u : 0xffffffu);
+            text(buf, hx, y, S(2), worn ? 0xff4040u : 0xffffffu);
+      }
+      if (hd_health.lives)
+      {
+         /* its lives, small under the line, after the super's bar */
+         char line[16];
+         snprintf(line, sizeof line, "%s %d", lives_text[hd_lang], (int)p->lives);
+         text(line, x + S(66), y + S(16), S(1), p->lives <= 1 ? 0xff4040u : 0xffffffu);
       }
       if (hd_weapon.super_on)
       {
@@ -881,6 +935,14 @@ static void hud(const hd_state *s)
          center(hd_boss.name, y - S(16), S(2), 0xffffffu);
       rect(x - S(2), y - S(2), w + S(4), S(10), 0x1a1020u);
       rect(x, y, (int32_t)((int64_t)w * hd_max(0, b->hp) / hd_max(1, s->boss_max)), S(6), c);
+   }
+   for (i = 0; i < hd_players; i++)
+      if (s->p[i].active && s->p[i].cont)
+         continue_panel(s, i);
+   if (s->phase == PH_OVER)
+   {
+      dim(0, S(HD_H / 2 - 40), HD_OUT_W, S(80));
+      center("GAME OVER", S(HD_H / 2 - 21), S(6), 0xff4040u);
    }
    if (s->paused)
    {

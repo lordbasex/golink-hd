@@ -157,8 +157,8 @@ static const char *load_level(const json *lv)
             char c = row->str[x];
             int32_t kind = c == 'S' ? EK_SPORE : c == 'P' ? EK_SPITTER : c == 'X' ? EK_BOSS : EK_WALKER;
             int32_t w = kind == EK_WALKER ? EW : hd_kinds[kind].w, h = kind == EK_WALKER ? EH : hd_kinds[kind].h;
-            if (hd_enemy_count >= MAX_ENEMIES)
-               return "the level has more than 48 enemies";
+            if (hd_enemy_count >= MAX_LEVEL_ENEMIES)
+               return "the level has more than 224 enemies";
             if (kind == EK_BOSS && !hd_boss.on)
                return "the level has a boss ('X') but its entry in levels has no \"boss\"";
             /* standing on the cell's bottom, in its middle (a boss's wide hitbox too) */
@@ -445,9 +445,12 @@ static const char *load_dash(const json *d)
 }
 
 /*
- * The manifest's "health" (format 3): {"hits": 3, "worn": 1, "knockout": 90}:
- * the hits a player takes (1 to 99), how many left look worn (0 to hits),
- * the frames a knockout lasts (10 to 600).
+ * The manifest's "health" (format 3): {"hits": 3, "worn": 1, "knockout": 90,
+ * "invulnerable": 90, "lives": 3, "continue": 10}: the hits a player takes
+ * (1 to 99), how many left look worn (0 to hits), the frames a knockout
+ * lasts (10 to 600), the frames a hit player cannot be hurt again (10 to
+ * 600), its lives (0 to 99, 0: unlimited) and the seconds it has to
+ * continue after the last one (0 to 60, 0: it leaves at once).
  */
 static const char *load_health(const json *h)
 {
@@ -460,8 +463,11 @@ static const char *load_health(const json *h)
    hd_health.hits = num(h, "hits", 1, 99, 3, &bad);
    hd_health.worn = num(h, "worn", 0, 99, 1, &bad);
    hd_health.knockout = num(h, "knockout", 10, 600, 90, &bad);
+   hd_health.invulnerable = num(h, "invulnerable", 10, 600, 90, &bad);
+   hd_health.lives = num(h, "lives", 0, 99, 0, &bad);
+   hd_health.cont = num(h, "continue", 0, 60, 10, &bad);
    if (bad || hd_health.worn > hd_health.hits)
-      return "the health has a value out of range (hits 1-99, worn 0 to hits, knockout 10-600)";
+      return "the health has a value out of range (hits 1-99, worn 0 to hits, knockout 10-600, invulnerable 10-600, lives 0-99, continue 0-60)";
    return NULL;
 }
 
@@ -682,6 +688,8 @@ static const char *load_stages(const hd_zip *zip, const json *levels)
    {
       const json *file = hd_json_get(it, "level"), *sky = hd_json_get(it, "sky"), *intro = hd_json_get(it, "intro"), *music = hd_json_get(it, "music");
       const json *boss = hd_json_get(it, "boss"), *boss_music = boss ? hd_json_get(boss, "music") : NULL;
+      const json *same = hd_json_get(it, "same_art");
+      int shared = same && same->type == JSON_BOOL && same->num;
       const char *err;
       if (it->type != JSON_OBJECT || !file || file->type != JSON_STRING)
          return "each of the levels needs a \"level\" file";
@@ -700,16 +708,22 @@ static const char *load_stages(const hd_zip *zip, const json *levels)
       }
       if (!err)
          err = load_level_file(zip, file->str);
-      if (!err)
+      if (same && same->type != JSON_BOOL)
+         err = "a level's same_art must be true or false";
+      else if (shared && k == 0)
+         err = "the first level cannot have same_art (there is no level before it)";
+      if (!err && !shared)
          err = hd_layers_load(zip, hd_json_get(it, "layers"));
-      if (!err)
+      if (!err && !shared)
          err = hd_textures_load(zip, hd_json_get(it, "textures"));
-      if (!err && intro)
+      if (!err && !shared && intro)
          err = hd_screen_load(zip, intro, SCREEN_INTRO);
-      if (!err && music)
+      if (!err && !shared && music)
          err = hd_music_load(zip, music);
       if (!err && !hd_stage_keep(k))
          err = "not enough memory for the levels";
+      if (!err && shared)
+         hd_stage_share(k);
       if (err)
       {
          snprintf(msg, sizeof msg, "level %d: %s", (int)k + 1, err);

@@ -10,7 +10,9 @@
  *
  * Each level is loaded with the package by the same loaders as a package of
  * one level (they fill the engine's globals), then kept here; selecting a
- * level points the globals at its copy again. The state's `stage` is the
+ * level points the globals at its copy again. A level with "same_art": true
+ * is another act of the one before: it shows that level's sky, layers,
+ * textures and music (not loaded twice, no intro), with its own map and boss. The state's `stage` is the
  * level played, so a save state brings back the same one.
  */
 #include <stdlib.h>
@@ -36,6 +38,7 @@ typedef struct
    hd_anim boss_anim[BOSS_ANIMS];
    int16_t *boss_music;
    int32_t boss_music_frames, boss_music_loop, boss_music_vol;
+   int32_t shared; /* the pictures and music are another level's (not freed here) */
 } stage;
 
 const int16_t *hd_pkg_boss_music;
@@ -103,6 +106,32 @@ int hd_stage_keep(int32_t k)
    hd_stage_count = k + 1;
    selected = -1;
    return 1;
+}
+
+void hd_stage_share(int32_t k)
+{
+   stage *st = &stages[k];
+   const stage *from = &stages[k - 1];
+   int32_t i;
+   if (k < 1 || k >= hd_stage_count)
+      return;
+   for (i = 0; i < st->layer_count; i++)
+      free(st->layers[i].img.px);
+   for (i = 0; i < TEX_COUNT; i++)
+      free(st->textures[i].px);
+   free(st->intro.px);
+   free(st->music);
+   st->sky_top = from->sky_top;
+   st->sky_bottom = from->sky_bottom;
+   memcpy(st->layers, from->layers, sizeof st->layers);
+   st->layer_count = from->layer_count;
+   memcpy(st->textures, from->textures, sizeof st->textures);
+   memset(&st->intro, 0, sizeof st->intro);
+   st->music = from->music;
+   st->music_frames = from->music_frames;
+   st->music_loop = from->music_loop;
+   st->music_vol = from->music_vol;
+   st->shared = 1;
 }
 
 void hd_stage_select(int32_t k)
@@ -173,12 +202,15 @@ void hd_stages_free(void)
    {
       stage *st = &stages[k];
       free(st->map);
-      for (i = 0; i < st->layer_count; i++)
-         free(st->layers[i].img.px);
-      for (i = 0; i < TEX_COUNT; i++)
-         free(st->textures[i].px);
-      free(st->intro.px);
-      free(st->music);
+      if (!st->shared)
+      {
+         for (i = 0; i < st->layer_count; i++)
+            free(st->layers[i].img.px);
+         for (i = 0; i < TEX_COUNT; i++)
+            free(st->textures[i].px);
+         free(st->intro.px);
+         free(st->music);
+      }
       free(st->boss_music);
       for (i = 0; i < BOSS_ANIMS; i++)
          hd_anim_free(&st->boss_anim[i]);

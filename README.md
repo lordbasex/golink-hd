@@ -45,7 +45,7 @@ A package is a zip (stored or deflate) with:
 | File | What |
 |---|---|
 | `manifest.json` | `format` (the package format: 1, or 2 with effects), `title`, `version`, `genre` (`platformer`), `players` (1 to 8, 4 by default), `screen` (`"16:9"` 640 × 360, `"4:3"` 480 × 360 or `"9:16"` 360 × 640), `level` (the level's file), `sky` (two colors, top and bottom, like `"#3a6ad0"`, optional) and `pictures` (the file of each picture below; each is optional: a missing one keeps the built-in demo's) |
-| the level (`level.json`) | `width` (at least the screen's width in cells, up to 1024) and `height` (at least the screen's height, up to 64), `start` (`[column, row]`, the cell where the players stand), `rows` (one text per row, a letter per 16 × 16 cell: `.` empty, `#` ground, `B` brick, `=` one-way platform, `o` coin, `C` checkpoint, `F` goal, `E` an enemy; format 3 also `S` a spore, `P` a spitter and `X` the level's boss, below) and, in format 2, `effects` (below) |
+| the level (`level.json`) | `width` (at least the screen's width in cells, up to 1792) and `height` (at least the screen's height, up to 64), `start` (`[column, row]`, the cell where the players stand), `rows` (one text per row, a letter per 16 × 16 cell: `.` empty, `#` ground, `B` brick, `=` one-way platform, `o` coin, `C` checkpoint, `F` goal, `E` an enemy; format 3 also `S` a spore, `P` a spitter and `X` the level's boss, below) and, in format 2, `effects` (below) |
 | `hero` | PNG of 16 × 24 frames (idle, walk, walk, jump), a row per player: 1 to 8 rows (a player without a row wears row player mod rows) |
 | `enemy` | 48 × 16: walk, walk, squashed |
 | `tiles` | 64 × 16: ground top, ground, brick, one-way platform |
@@ -128,6 +128,12 @@ A skin's `shot` (facing right, looped) and `shot_hit` (the burst where it hits, 
 ```
 
 `hits` 1 to 99 (3 by default), `worn` 0 to `hits` (1), `knockout` 10 to 600 frames (90).
+
+After a hit the player blinks and cannot be hurt for `invulnerable` frames (10 to 600, 90 by default). With `lives` (0 to 99, 0 by default: unlimited) each knockout, or a fall with the last hit, costs one, shown in the HUD; at none the player gets `continue` seconds (0 to 60, 10 by default) with its own countdown over its part of the screen (the whole screen alone, a half with two players, a quarter with more) while the others play on. Start (or jump) brings it back at the checkpoint with all its lives; out of time it leaves the game, and start brings it in again. With nobody left playing, GAME OVER shows for 4 seconds and the title comes back.
+
+```json
+"health": {"hits": 3, "worn": 1, "knockout": 100, "invulnerable": 120, "lives": 3, "continue": 10}
+```
 
 **`sprites`**: the heroes' own pictures, of any size, an animation per state and a skin per player:
 
@@ -248,7 +254,7 @@ At half its health it gets angry (a roar, the bar blinking): it moves a third fa
 ]
 ```
 
-A level without `sky` uses the manifest's; without `layers`, `textures`, `intro` or `music` it has none (the built-in scenery and tune, no intro).
+A level without `sky` uses the manifest's; without `layers`, `textures`, `intro` or `music` it has none (the built-in scenery and tune, no intro). A level with `"same_art": true` is another act of the level before it: it shows that level's sky, layers, textures and music (loaded once, so they count once in the pictures' limit) and has no intro; its own level file, effects and boss. A level is up to 1792 cells wide with up to 224 enemies.
 
 **`screens`**: pictures over the whole screen, scaled to it (keeping their shape, cropped from the middle):
 

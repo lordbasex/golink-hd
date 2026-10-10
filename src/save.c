@@ -63,7 +63,7 @@ void hd_save(const hd_state *s, uint8_t *out)
 static void sanitize(hd_state *s)
 {
    int32_t i;
-   s->phase = hd_clamp(s->phase, PH_TITLE, PH_CLEAR);
+   s->phase = hd_clamp(s->phase, PH_TITLE, PH_OVER);
    s->music_row = hd_clamp(s->music_row, 0, 63);
    s->part_next = hd_clamp(s->part_next, 0, MAX_PARTICLES - 1);
    s->sfx_next = hd_clamp(s->sfx_next, MUSIC_CHANNELS, MAX_CHANNELS - 1);
@@ -205,6 +205,8 @@ static void sanitize(hd_state *s)
       p->dash_air = p->dash_air ? 1 : 0;
       p->hp = hd_clamp(p->hp, 0, 99);
       p->ko = hd_clamp(p->ko, 0, 600);
+      p->lives = hd_clamp(p->lives, 0, 99);
+      p->cont = hd_clamp(p->cont, 0, 60 * 60);
       p->charge = hd_clamp(p->charge, 0, 200);
       p->super_t = hd_clamp(p->super_t, 0, 240);
    }
