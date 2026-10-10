@@ -72,7 +72,7 @@ def separate(rgba: np.ndarray, n: int) -> np.ndarray:
     """The strip redrawn with its n frames side by side, none overlapping: for strips whose frames
     reach into each other's columns or touch (a spray, a burst), where any vertical cut would slice
     one of them. The blobs are thinned until n big cores stand apart (thin bridges between frames
-    break first); every visible pixel then goes with the nearest core, and far specks are dropped."""
+    break first); every piece then goes with its frame (below), and far specks are dropped."""
     alpha = rgba[..., 3]
     solid = alpha > ALPHA_MIN
     for thin in range(0, 40, 2):
@@ -92,9 +92,38 @@ def separate(rgba: np.ndarray, n: int) -> np.ndarray:
     marks = np.zeros_like(labels)
     for k, c in enumerate(cores):
         marks[labels == c + 1] = k + 1
-    # every pixel takes the frame of its nearest core; a speck far from all of them is dropped
+    # a piece drawn in one stroke (its visible pixels joined; the faint haze around a drawing would join
+    # everything) holding one core goes whole with that frame; a piece holding two (frames touching) is
+    # split pixel by pixel, each to its nearest core
+    pieces_of, count = ndimage.label(alpha > ALPHA_MIN)
+    frame_of = np.zeros_like(labels)
+    loose = []
     dist, (iy, ix) = ndimage.distance_transform_edt(marks == 0, return_indices=True)
-    frame_of = np.where((alpha > 0) & (dist <= thin + 40), marks[iy, ix], 0)
+    for k, box in enumerate(ndimage.find_objects(pieces_of), start=1):
+        here = pieces_of[box] == k
+        cores_in = np.unique(marks[box][here])
+        cores_in = cores_in[cores_in > 0]
+        if len(cores_in) == 1:
+            frame_of[box][here] = int(cores_in[0])
+        elif len(cores_in) > 1:
+            frame_of[box][here] = marks[iy[box], ix[box]][here]
+        else:
+            loose.append((int(here.sum()), k, box))
+    # a loose piece (a drop of a sneeze, a loose arm, stars over a head) goes with the frame whose drawing
+    # is nearest it (the spray it flies from, not the next frame's body); a speck far from every frame is dropped
+    reach = alpha.shape[1] / n * 0.6
+    near = [ndimage.distance_transform_edt(frame_of != f) for f in range(1, n + 1)]
+    for _, k, box in sorted(loose, reverse=True):
+        here = pieces_of[box] == k
+        gaps = [d[box][here].min() for d in near]
+        f = int(np.argmin(gaps))
+        if gaps[f] <= reach:
+            frame_of[box][here] = f + 1
+    # the faint haze takes the frame of the nearest visible pixel next to it
+    taken = frame_of > 0
+    dist, (iy, ix) = ndimage.distance_transform_edt(~taken, return_indices=True)
+    faint = (alpha > 0) & ~taken & (dist <= 3)
+    frame_of[faint] = frame_of[iy, ix][faint]
     crops = []
     for k in range(1, n + 1):
         mask = frame_of == k
@@ -190,10 +219,10 @@ def main() -> None:
         rgba = separate(rgba, args.frames)
     alpha = rgba[..., 3]
     runs = even(alpha, args.frames) if args.frames else pieces(alpha)
-    # each frame keeps only its character
+    # each frame keeps only its character (separated frames hold only their own pieces already)
     clean = np.zeros_like(alpha)
     for x0, x1 in runs:
-        mask = keep_character(alpha[:, x0:x1])
+        mask = alpha[:, x0:x1] > 0 if args.separate and args.frames else keep_character(alpha[:, x0:x1])
         clean[:, x0:x1] = np.where(mask, alpha[:, x0:x1], 0)
     alpha = clean
     rgba = rgba.copy()

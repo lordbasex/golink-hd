@@ -202,7 +202,7 @@ Back to front in the list's order, up to 8. `speed` is the share of the camera's
 
 A **spore** flies, bobbing `bob` pixels: after the nearest player within `range` pixels at `speed` (rising or sinking slowly to their height), else to and fro; a wall turns it back. A **spitter** stands; it turns to a player within `range` (and 120 pixels up or down) and every `rate` frames lobs a shot at `shot_speed` that falls as it flies, bursts on walls and hurts the player it touches. Both are stomped or shot like a walker and take `health` hits. `hitbox` in pixels (4 to 400, the physics' `enemy_hitbox` by default), `health` 1 to 999, `speed` and `shot_speed` in hundredths of a pixel a frame, `bob` 0 to 200, `range` 0 to 4000, `rate` 30 to 1200.
 
-**`boss`** (a level's, in its entry of `levels`, or the manifest's with `level`): the level's big enemy, at its `X`. It waits until it is mostly on the screen, then wakes up with a roar: its music starts, its name and a health bar show at the bottom and the camera stays on its arena (the screen with the boss on its right) until it is beaten. It rests `rest` frames pacing at the players, then does its `attacks` in turn, each after a windup:
+**`boss`** (a level's, in its entry of `levels`, or the manifest's with `level`): the level's big enemy, at its `X`. It waits until its whole picture is on the screen, then wakes up with a roar: its music starts, its name and a health bar show at the bottom and the camera stays on its arena (the screen with the boss on its right, its floor in view) until it is beaten. It rests `rest` frames pacing at the players, then does its `attacks` in turn, each after a windup:
 
 | Attack | What |
 |---|---|

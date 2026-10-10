@@ -26,6 +26,8 @@
 - ANTÍDOTO: six bosses drawn by the image AI (FAGO REX the spider creeps at the heroes and back and lets its brood out, LOMBRIZ VÍRICA, ÁCIDO BARÓN, GRIPÓN, REY CÁPSIDE, NEUROVIRUS), each zone's arena with a checkpoint, the zones' own enemies (spitters from the intestine, spores from the stomach), the dash on A, the music in ADPCM (the 1080p package from about 228 MB to about 158 MB, two more songs in it).
 - A picture may be 8192 pixels on a side (4096 before; its decoded size is still capped): a boss's strip at 1080p is wider than 4096.
 - Tests: the new enemies, a boss, the dash and ADPCM.
+- A boss fight shows the whole boss: it wakes up once its whole picture is on the screen, the camera stays at 1x and at the arena's floor (following the players' jumps up cut its feet off), and the boss stays inside what the camera shows, after the camera moves too.
+- `tools/sprites.py --separate`: a piece drawn in one stroke goes whole with one frame, a loose piece (a drop, a loose arm) with the frame drawn nearest it, and a spray keeps its drops (a boss's attack was cut, pieces of it in the next frame).
 - `tools/hdrun --every N --audio FILE.raw`: every Nth frame as PNG and the run's sound, to make a video with ffmpeg.
 
 ### Added

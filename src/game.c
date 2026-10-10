@@ -898,10 +898,20 @@ static void brood(hd_state *s, hd_enemy *boss)
    burst(s, bx, by, 18, 0xffe8d8f0u, FX(3), 1);
 }
 
-/* The arena's left edge for a boss: the screen with the boss on its right, inside the level. */
+/* How far a boss's picture reaches past its hitbox on each side (a sneeze, a cape), in the game's pixels. */
+static int32_t boss_overhang(void)
+{
+   int32_t a, wide = 0;
+   for (a = BOSS_IDLE; a <= BOSS_DOWN; a++)
+      if (hd_boss_anim[a].frames)
+         wide = hd_max(wide, hd_boss_anim[a].frames[0].w / hd_max(1, hd_res));
+   return hd_max(0, (wide - hd_kinds[EK_BOSS].w) / 2);
+}
+
+/* The arena's left edge for a boss: the screen with the whole boss (its picture too) on its right, inside the level. */
 static int32_t arena_of(const hd_enemy *e)
 {
-   return hd_clamp(FX_INT(e->x) + hd_kinds[EK_BOSS].w + 24 - HD_W, 0, hd_max(0, MAP_W * TILE - HD_W));
+   return hd_clamp(FX_INT(e->x) + hd_kinds[EK_BOSS].w + boss_overhang() + 8 - HD_W, 0, hd_max(0, MAP_W * TILE - HD_W));
 }
 
 int hd_goal_open(const hd_state *s)
@@ -979,6 +989,20 @@ static void kind_hit(hd_state *s, hd_enemy *e, int32_t damage)
       hd_play(s, SFX_HIT, screen_x(s, ex));
 }
 
+/* A boss stays in its arena, its whole picture on the screen (on what the camera shows, while it still moves there). */
+static void boss_on_screen(hd_state *s, hd_enemy *e)
+{
+   int32_t w = hd_kinds[EK_BOSS].w, over = boss_overhang();
+   int32_t lo = hd_max(s->arena, FX_INT(s->cam_x)) + over;
+   int32_t hi = hd_min(s->arena + HD_W, FX_INT(s->cam_x) + HD_W * 256 / (s->zoom ? s->zoom : 256)) - w - over;
+   if (FX_INT(e->x) < lo || FX_INT(e->x) > hi)
+   {
+      e->x = FX(hd_clamp(FX_INT(e->x), lo, hd_max(lo, hi)));
+      if (e->act == BA_CHARGE)
+         e->vx = 0;
+   }
+}
+
 /*
  * A boss waits off screen; once it is mostly on it, it wakes up (its music,
  * a roar) and the camera stays on its arena. Then it rests, pacing at the
@@ -989,11 +1013,13 @@ static void boss_step(hd_state *s, hd_enemy *e)
    const hd_enemy_kind *k = &hd_kinds[EK_BOSS];
    int32_t dx = 0, dy = 0, who, windup = BOSS_WINDUP(s);
    int32_t speed = s->boss_angry ? k->speed * 4 / 3 : k->speed, rest = s->boss_angry ? hd_boss.rest * 2 / 3 : hd_boss.rest;
-   int32_t done = 0, lo, hi;
+   int32_t done = 0;
    if (!s->boss)
    {
-      if (FX_INT(e->x) + k->w * 2 / 3 > FX_INT(s->cam_x) + HD_W)
-         return;
+      int32_t z = s->zoom ? s->zoom : 256;
+      if (FX_INT(e->x) + k->w + boss_overhang() > FX_INT(s->cam_x) + HD_W * 256 / z ||
+          FX_INT(e->y) + k->h > FX_INT(s->cam_y) + HD_H * 256 / z)
+         return; /* until its whole picture is on the screen */
       s->boss = (int32_t)(e - s->e) + 1;
       s->boss_max = e->hp;
       s->arena = arena_of(e);
@@ -1115,15 +1141,7 @@ static void boss_step(hd_state *s, hd_enemy *e)
          e->t = rest;
       }
    }
-   /* it stays in its arena */
-   lo = s->arena;
-   hi = s->arena + HD_W - k->w;
-   if (FX_INT(e->x) < lo || FX_INT(e->x) > hi)
-   {
-      e->x = FX(hd_clamp(FX_INT(e->x), lo, hd_max(lo, hi)));
-      if (e->act == BA_CHARGE)
-         e->vx = 0;
-   }
+   boss_on_screen(s, e);
 }
 
 static void enemy_step(hd_state *s, hd_enemy *e)
@@ -1361,7 +1379,9 @@ static void camera(hd_state *s)
    }
    if (!n)
       return;
-   if (hd_fx.zoom_auto)
+   if (hd_fx.zoom_auto && s->arena && !s->boss_beaten)
+      s->zoom += (256 - s->zoom + 7) / 8; /* a boss's arena is seen whole, at 1x: no zoom moving its edges */
+   else if (hd_fx.zoom_auto)
    {
       /* zoom out (down to 0.5x) when the players spread apart, back in when they gather */
       int32_t spread = hd_max(hi - lo + 200, (bottom - top + 120) * HD_W / HD_H);
@@ -1375,8 +1395,14 @@ static void camera(hd_state *s)
    vh = HD_H * 256 / s->zoom;
    tx = (lo + hi) / 2 - vw / 2;
    ty = (top + bottom) / 2 - vh * 3 / 5;
-   if (s->arena && !s->boss_beaten)
-      tx = s->arena; /* a boss's fight stays on its arena */
+   if (s->arena && !s->boss_beaten && s->boss > 0 && s->boss <= MAX_ENEMIES)
+   {
+      /* a boss's fight stays on its arena: across, and high enough that its floor and the whole boss show (a
+         camera that followed the players' jumps up cut the boss's feet off) */
+      const hd_enemy *b = &s->e[s->boss - 1];
+      tx = s->arena;
+      ty = b->home_y + hd_kinds[EK_BOSS].h + 40 - vh;
+   }
    tx = hd_clamp(tx, 0, hd_max(0, MAP_W * TILE - vw));
    ty = hd_clamp(ty, 0, hd_max(0, MAP_H * TILE - vh));
    s->cam_x += (FX(tx) - s->cam_x) / 6;
@@ -1619,5 +1645,7 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       dialogs(s);
    }
    camera(s);
+   if (s->boss > 0 && s->boss <= MAX_ENEMIES && s->e[s->boss - 1].alive == 1 && s->arena)
+      boss_on_screen(s, &s->e[s->boss - 1]); /* again after the camera moved */
    particles_step(s);
 }
