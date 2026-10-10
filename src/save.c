@@ -63,7 +63,7 @@ void hd_save(const hd_state *s, uint8_t *out)
 static void sanitize(hd_state *s)
 {
    int32_t i;
-   s->phase = hd_clamp(s->phase, PH_TITLE, PH_OVER);
+   s->phase = hd_clamp(s->phase, PH_TITLE, PH_CREDITS);
    s->music_row = hd_clamp(s->music_row, 0, 63);
    s->part_next = hd_clamp(s->part_next, 0, MAX_PARTICLES - 1);
    s->sfx_next = hd_clamp(s->sfx_next, MUSIC_CHANNELS, MAX_CHANNELS - 1);
@@ -170,11 +170,14 @@ static void sanitize(hd_state *s)
       b->vy = hd_clamp(b->vy, -SPEED, SPEED);
       b->gravity = hd_clamp(b->gravity, 0, FX(2));
       b->big = b->big ? 1 : 0;
+      b->puff = b->puff ? 1 : 0;
    }
    s->boss = hd_clamp(s->boss, 0, MAX_ENEMIES);
    s->boss_max = hd_clamp(s->boss_max, 0, 999);
    s->boss_angry = s->boss_angry ? 1 : 0;
    s->boss_beaten = s->boss_beaten ? 1 : 0;
+   s->boss_form = s->boss_form && hd_boss_forms[1].cfg.on ? 1 : 0;
+   hd_boss_form_use(s->boss_form);
    s->arena = hd_clamp(s->arena, 0, MAP_W * TILE);
    s->cam_x = hd_clamp(s->cam_x, 0, FX(MAP_W * TILE - HD_W));
    s->cam_y = hd_clamp(s->cam_y, 0, FX(MAP_H * TILE - HD_H));

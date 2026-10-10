@@ -33,9 +33,8 @@ typedef struct
    int16_t *music;
    int32_t music_frames, music_loop, music_vol;
    int32_t enemy_kind[MAX_ENEMIES];
-   hd_boss_config boss;
-   hd_enemy_kind boss_kind, minion_kind;
-   hd_anim boss_anim[BOSS_ANIMS];
+   hd_boss_form boss[2]; /* its boss and the form it evolves into */
+   hd_enemy_kind minion_kind;
    int16_t *boss_music;
    int32_t boss_music_frames, boss_music_loop, boss_music_vol;
    int32_t shared; /* the pictures and music are another level's (not freed here) */
@@ -75,11 +74,10 @@ int hd_stage_keep(int32_t k)
    st->enemies = hd_enemy_count;
    memcpy(st->enemy_start, hd_enemy_start, sizeof st->enemy_start);
    memcpy(st->enemy_kind, hd_enemy_kind_of, sizeof st->enemy_kind);
-   st->boss = hd_boss;
-   st->boss_kind = hd_kinds[EK_BOSS];
+   memcpy(st->boss, hd_boss_forms, sizeof st->boss);
    st->minion_kind = hd_kinds[EK_MINION];
-   memcpy(st->boss_anim, hd_boss_anim, sizeof st->boss_anim);
-   memset(hd_boss_anim, 0, sizeof hd_boss_anim); /* the level's now */
+   memset(hd_boss_forms, 0, sizeof hd_boss_forms); /* the level's now */
+   memset(hd_boss_anim, 0, sizeof hd_boss_anim);
    memset(&hd_boss, 0, sizeof hd_boss);
    st->boss_music = pending_music;
    st->boss_music_frames = pending_frames;
@@ -152,10 +150,9 @@ void hd_stage_select(int32_t k)
    hd_enemy_count = st->enemies;
    memcpy(hd_enemy_start, st->enemy_start, sizeof st->enemy_start);
    memcpy(hd_enemy_kind_of, st->enemy_kind, sizeof st->enemy_kind);
-   hd_boss = st->boss;
-   hd_kinds[EK_BOSS] = st->boss_kind;
+   memcpy(hd_boss_forms, st->boss, sizeof hd_boss_forms);
    hd_kinds[EK_MINION] = st->minion_kind;
-   memcpy(hd_boss_anim, st->boss_anim, sizeof hd_boss_anim);
+   hd_boss_form_use(0);
    hd_pkg_boss_music = st->boss_music;
    hd_pkg_boss_music_frames = st->boss_music_frames;
    hd_pkg_boss_music_loop = st->boss_music_loop;
@@ -192,6 +189,7 @@ void hd_stages_free(void)
       hd_pkg_music = NULL;
       hd_pkg_music_frames = hd_pkg_music_loop = 0;
       memset(hd_boss_anim, 0, sizeof hd_boss_anim); /* the levels' */
+      memset(hd_boss_forms, 0, sizeof hd_boss_forms);
       memset(&hd_boss, 0, sizeof hd_boss);
    }
    hd_pkg_boss_music = NULL;
@@ -213,7 +211,10 @@ void hd_stages_free(void)
       }
       free(st->boss_music);
       for (i = 0; i < BOSS_ANIMS; i++)
-         hd_anim_free(&st->boss_anim[i]);
+      {
+         hd_anim_free(&st->boss[0].anim[i]);
+         hd_anim_free(&st->boss[1].anim[i]);
+      }
    }
    memset(stages, 0, sizeof stages);
    hd_stage_count = 0;

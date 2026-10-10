@@ -62,12 +62,18 @@ void hd_rig_draw(hd_surface *s, const hd_rig *rig, const hd_state *st, const hd_
 /*
  * The level's things drawn from a package's sprites: "coin", "checkpoint"
  * (off, on), "goal", "enemy" (walk, squashed), "spore" (fly, pop),
- * "spitter" (idle, spit, squashed) and "spit" (an enemy's shot, looped).
+ * "spitter" (idle, spit, squashed), "spit" (an enemy's shot, looped),
+ * "roller" (roll, squashed), "hopper" (idle, jump, squashed), "puffer"
+ * (idle, puff, squashed, shot: its spore) and "splitter" (crawl, split,
+ * squashed).
  */
 enum
 {
    OBJ_COIN = 0, OBJ_CHECK_OFF, OBJ_CHECK_ON, OBJ_GOAL, OBJ_ENEMY_WALK, OBJ_ENEMY_SQUASHED,
    OBJ_SPORE_FLY, OBJ_SPORE_POP, OBJ_SPITTER_IDLE, OBJ_SPITTER_SPIT, OBJ_SPITTER_SQUASHED, OBJ_SPIT,
+   OBJ_ROLLER_ROLL, OBJ_ROLLER_SQUASHED, OBJ_HOPPER_IDLE, OBJ_HOPPER_JUMP, OBJ_HOPPER_SQUASHED,
+   OBJ_PUFFER_IDLE, OBJ_PUFFER_PUFF, OBJ_PUFFER_SQUASHED, OBJ_PUFFER_SHOT,
+   OBJ_SPLITTER_CRAWL, OBJ_SPLITTER_SPLIT, OBJ_SPLITTER_SQUASHED,
    OBJ_COUNT
 };
 extern hd_anim hd_objects[OBJ_COUNT];
@@ -80,6 +86,19 @@ extern hd_anim hd_objects[OBJ_COUNT];
  */
 enum { BOSS_IDLE = 0, BOSS_WINDUP, BOSS_ATTACK, BOSS_HURT, BOSS_DOWN, BOSS_MINION, BOSS_SHOT, BOSS_ANIMS };
 extern hd_anim hd_boss_anim[BOSS_ANIMS];
+/*
+ * A boss's forms: the level's, and the one it evolves into when beaten
+ * (its "evolve", cfg.on 0 when it has none). The loaded forms own their
+ * pictures; hd_boss, hd_kinds[EK_BOSS] and hd_boss_anim show the form in
+ * play (hd_boss_form_use, from the state's boss_form).
+ */
+typedef struct
+{
+   hd_boss_config cfg;
+   hd_enemy_kind kind;
+   hd_anim anim[BOSS_ANIMS];
+} hd_boss_form;
+extern hd_boss_form hd_boss_forms[2];
 /* Reads a level's "boss" (NULL is fine: no boss) into hd_boss, hd_kinds[EK_BOSS], hd_kinds[EK_MINION] and hd_boss_anim. */
 const char *hd_boss_load(const hd_zip *zip, const json *boss);
 void hd_boss_free(void);

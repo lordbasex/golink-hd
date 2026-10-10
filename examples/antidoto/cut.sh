@@ -27,10 +27,12 @@ for who in red blue; do
   done
 done
 # the enemies and the level's things: their own heights
-for item in red_granule:4:11 blue_granule:4:11 red_shot:4:18 blue_shot:4:18 red_shot_hit:6:40 blue_shot_hit:6:40 enemy_germ:6:44 enemy_germ_walk:8:44 enemy_spore:6:44 enemy_spitter:6:52 obj_spit:1:14 obj_vitamin:4:24 obj_leukocyte:4:64 obj_portal:4:120; do
+for item in red_granule:4:11 blue_granule:4:11 red_shot:4:18 blue_shot:4:18 red_shot_hit:6:40 blue_shot_hit:6:40 enemy_germ:6:44 enemy_germ_walk:8:44 enemy_spore:6:44 enemy_spitter:6:52 enemy_bacteria:6:44 enemy_parasite:6:46 enemy_fungus:6:52 enemy_cancer:6:50 obj_spit:1:14 obj_vitamin:4:24 obj_leukocyte:4:64 obj_portal:4:120; do
   name=${item%%:*}; rest=${item#*:}; frames=${rest%%:*}; height=${rest##*:}
   [ -f source/$name.png ] || continue
-  cut source/$name.png $OUT/$name.png --height "$(( height * RES ))" --frames "$frames"
+  # a cancer cell splitting is wide and reaches into its neighbours' columns: split by blobs
+  sep=""; [ "$name" = enemy_cancer ] && sep="--separate"
+  cut source/$name.png $OUT/$name.png --height "$(( height * RES ))" --frames "$frames" $sep
 done
 # the bosses, big (two thirds of the screen), and their minions: the same sheets, small; split by blobs
 # (a spit or a sneeze reaches into the next frame's column: a straight cut left pieces of it in the wrong frame)
@@ -39,3 +41,12 @@ for z in colon intestine stomach lungs heart brain; do
   cut source/boss_$z.png $OUT/boss_$z.png --height "$(( 220 * RES ))" --frames 6 --separate
   cut source/boss_$z.png $OUT/boss_${z}_minion.png --height "$(( 56 * RES ))" --frames 6 --separate
 done
+# the mid-bosses (half-way through each zone), a little smaller, and their minions
+for z in colon intestine stomach lungs heart brain; do
+  [ -f source/miniboss_$z.png ] || continue
+  cut source/miniboss_$z.png $OUT/miniboss_$z.png --height "$(( 170 * RES ))" --frames 6 --separate
+  cut source/miniboss_$z.png $OUT/miniboss_${z}_minion.png --height "$(( 50 * RES ))" --frames 6 --separate
+done
+# the final boss's evolved form: bigger still (four fifths of the screen)
+[ -f source/boss_brain_omega.png ] && cut source/boss_brain_omega.png $OUT/boss_brain_omega.png --height "$(( 290 * RES ))" --frames 6 --separate --drop-strays 0.05
+true

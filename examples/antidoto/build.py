@@ -50,7 +50,13 @@ WEAPON = {"button": "x", "rate": 8, "speed": 900, "range": 420, "muzzle": [30, -
 DASH = {"button": "a", "speed": 750, "frames": 14, "cooldown": 30}
 # the zones' other enemies: a spore flies after the heroes, bobbing; a spitter stands and lobs green globs
 ENEMIES = {"spore": {"hitbox": [30, 28], "health": 2, "speed": 80, "bob": 10, "range": 260},
-           "spitter": {"hitbox": [40, 40], "health": 4, "rate": 100, "shot_speed": 380, "range": 340}}
+           "spitter": {"hitbox": [40, 40], "health": 4, "rate": 100, "shot_speed": 380, "range": 340},
+           # a bacteria curls up and rolls at the heroes; a parasite leaps at them; a fungus puffs spores up
+           # that fall on them; a cancer cell crawls at them and splits in two when beaten
+           "roller": {"hitbox": [30, 30], "health": 3, "speed": 330, "range": 380},
+           "hopper": {"hitbox": [32, 30], "health": 2, "speed": 260, "jump": 720, "rate": 80, "range": 320},
+           "puffer": {"hitbox": [36, 44], "health": 4, "rate": 140, "shot_speed": 300, "spores": 3, "range": 340},
+           "splitter": {"hitbox": [40, 38], "health": 6, "speed": 70, "range": 420}}
 # zone -> its boss: name, health, attacks in turn, rest between them, spit fan, brood size, speed; harder up the body.
 # FAGO REX creeps like a spider: forward at the heroes and back, then lets its brood out, and again
 BOSSES = {
@@ -61,9 +67,34 @@ BOSSES = {
     "heart": ("REY CÁPSIDE", 380, ["jump", "brood", "charge", "spit", "brood"], 40, 4, 8, 280),
     "brain": ("NEUROVIRUS", 500, ["spit", "brood", "jump", "charge", "brood", "advance"], 35, 5, 9, 300),
 }
-# the enemies of each zone past the germs: (spores, spitters) per stretch, 0 to 1
-ZONE_ENEMIES = {"colon": (0, 0), "intestine": (0, 0.35), "stomach": (0.3, 0.35), "lungs": (0.6, 0),
-                "heart": (0.2, 0.4), "brain": (0.45, 0.45)}
+# zone -> its mid-boss, at the end of the first act (the same fields as BOSSES), a little easier than the zone's boss
+MINIBOSSES = {
+    "colon": ("CAPITÁN COLI", 110, ["charge", "brood", "advance", "spit"], 55, 3, 4, 240),
+    "intestine": ("LA TENIA", 140, ["advance", "brood", "charge", "spit"], 55, 3, 5, 260),
+    "stomach": ("HONGÓN", 170, ["spit", "brood", "jump", "spit"], 50, 4, 5, 220),
+    "lungs": ("MOHO NEGRO", 200, ["spit", "brood", "spit", "charge"], 50, 5, 5, 230),
+    "heart": ("TUMORÓN", 230, ["jump", "brood", "advance", "brood"], 45, 3, 6, 240),
+    "brain": ("EL PRIÓN", 260, ["charge", "spit", "brood", "jump"], 45, 4, 6, 280),
+}
+# NEUROVIRUS, beaten once, evolves: bigger, stronger, faster, angrier
+OMEGA = ("NEUROVIRUS OMEGA", 650, ["spit", "charge", "brood", "jump", "spit", "brood"], 30, 7, 10, 320)
+# the credits after the ending ("# " starts a heading)
+CREDITS = [
+    "# ANTÍDOTO", "",
+    "# IDEA, DISEÑO Y PROGRAMACIÓN", "Federico Pereira", "",
+    "# MOTOR", "go-link HD", "motor propio en C, sin librerías externas", "",
+    "# SE JUEGA CON", "go-link", "Pion WebRTC", "libvpx (VP8)", "Opus", "Fyne", "",
+    "# GRACIAS", "a quienes probaron el juego", "y a ti por jugarlo", "",
+    "# FIN", "",
+]
+# the enemies of each zone past the germs, per stretch (0 to 1): S spores (in the air), P spitters, R bacteria
+# (rollers), H parasites (hoppers), U fungi (puffers), K cancer cells (splitters)
+ZONE_ENEMIES = {"colon": {"R": 0.35, "H": 0.2},
+                "intestine": {"P": 0.3, "H": 0.35, "R": 0.2},
+                "stomach": {"S": 0.25, "P": 0.25, "U": 0.35, "R": 0.2},
+                "lungs": {"S": 0.5, "U": 0.4, "H": 0.15},
+                "heart": {"S": 0.15, "P": 0.3, "K": 0.35, "H": 0.25},
+                "brain": {"S": 0.3, "P": 0.25, "K": 0.3, "U": 0.25, "R": 0.2, "H": 0.2}}
 ARENA = 52  # the boss's arena: flat cells at the level's end, a checkpoint at its start
 # a skin's shot and its burst (cut.sh): strip, frames, fps
 SHOTS = {"shot": ("shot", 4, 12), "shot_hit": ("shot_hit", 6, 20), "granule": ("granule", 4, 12)}
@@ -216,27 +247,39 @@ def music(track):
     return {"file": track + ".wav", "volume": 180}
 
 
-def boss(zone):
-    """The zone's boss: its sheet cut by cut.sh (idle, idle, windup, attack, hurt, down), its minions the same
-    sheet small, its music."""
-    if zone not in BOSSES or not os.path.exists(os.path.join(HERE, SPRITES, f"boss_{zone}.png")):
-        return None
-    name, health, attacks, rest, spit, brood, speed = BOSSES[zone]
-    sheet = thing(f"boss_{zone}", 6, 4)
-    small = thing(f"boss_{zone}_minion", 6, 8)
+def boss_sprites(sheet_name):
+    """A boss sheet cut by cut.sh (idle, idle, windup, attack, hurt, down): its hitbox and its animations."""
+    sheet = thing(sheet_name, 6, 4)
     fw, fh = sheet["frame"]
     # the body, not the frame (a sneeze or a bolt widens some frames): about half its width, most of its height
     w, h = min(fw * 55 // 100, 130 * RES) // RES, fh * 82 // 100 // RES
     part = lambda first, n, fps=4: dict(sheet, **{"from": first, "frames": n, "fps": fps})
-    out = {"name": name, "hitbox": [w, h], "health": health, "attacks": attacks, "rest": rest, "spit": spit,
+    return [w, h], {"idle": part(0, 2, 3), "windup": part(2, 1), "attack": part(3, 1), "hurt": part(4, 1),
+                    "down": part(5, 1)}
+
+
+def boss(zone, mid=False):
+    """The zone's boss (or, `mid`, its mid-boss): its sheet cut by cut.sh, its minions the same sheet small,
+    its music; NEUROVIRUS evolves into its OMEGA form."""
+    prefix, table = ("miniboss", MINIBOSSES) if mid else ("boss", BOSSES)
+    if zone not in table or not os.path.exists(os.path.join(HERE, SPRITES, f"{prefix}_{zone}.png")):
+        return None
+    name, health, attacks, rest, spit, brood, speed = table[zone]
+    hitbox, sprites = boss_sprites(f"{prefix}_{zone}")
+    small = thing(f"{prefix}_{zone}_minion", 6, 8)
+    sprites["minion"] = dict(small, **{"from": 0, "frames": 2, "fps": 8})
+    out = {"name": name, "hitbox": hitbox, "health": health, "attacks": attacks, "rest": rest, "spit": spit,
            "brood": brood, "speed": speed, "shot_speed": 420,
-           "minion": {"hitbox": [28, 28], "health": 1, "speed": 170},
-           "sprites": {"idle": part(0, 2, 3), "windup": part(2, 1), "attack": part(3, 1), "hurt": part(4, 1),
-                       "down": part(5, 1), "minion": dict(small, **{"from": 0, "frames": 2, "fps": 8})}}
+           "minion": {"hitbox": [28, 28], "health": 1, "speed": 170}, "sprites": sprites}
     spit_pic = thing("obj_spit", 1, 1)
     if spit_pic:
         out["sprites"]["shot"] = spit_pic
-    m = music("final_boss" if zone == "brain" else "boss")
+    if zone == "brain" and not mid and os.path.exists(os.path.join(HERE, SPRITES, "boss_brain_omega.png")):
+        name, health, attacks, rest, spit, brood, speed = OMEGA
+        hitbox, sprites = boss_sprites("boss_brain_omega")
+        out["evolve"] = {"name": name, "hitbox": hitbox, "health": health, "attacks": attacks, "rest": rest,
+                         "spit": spit, "brood": brood, "speed": speed, "shot_speed": 520, "sprites": sprites}
+    m = music("final_boss" if zone == "brain" and not mid else "boss")
     if m:
         out["music"] = m
     return out
@@ -357,7 +400,19 @@ def made_level(k, grade, act, base=None):
             rows[row][col] = ch
             placed[0] += 1
 
-    spores, spitters = ZONE_ENEMIES[ZONES[k][0]]
+    mix = ZONE_ENEMIES[ZONES[k][0]]
+    spores = mix.get("S", 0)
+    ground_kinds = [ch for ch in "PRHUK" if mix.get(ch)]
+
+    def zone_foe(col):
+        """One of the zone's own ground enemies, picked by their weights (None: a germ)."""
+        roll = rnd.random() * max(1, sum(mix.get(ch, 0) for ch in ground_kinds))
+        for ch in ground_kinds:
+            roll -= mix[ch]
+            if roll < 0:
+                return ch
+        return None
+
     checks = list(range(180, w - 40, 180))
     while c < w - 30:
         before = c
@@ -394,12 +449,12 @@ def made_level(k, grade, act, base=None):
                 foe(c + 8, ground - tall - 2, "S")
             c += 10
         elif kind < 0.38 + 0.02 * hard:
-            # a gauntlet: germs in a row, a spitter at its end when the zone has them
+            # a gauntlet: germs and the zone's own enemies in a row
             n = 3 + min(hard, 4)
             for i in range(n):
-                foe(c + 3 + i * 3, ground - 1, "E")
-            if spitters:
-                foe(c + 4 + n * 3, ground - 1, "P")
+                foe(c + 3 + i * 3, ground - 1, (zone_foe(c) if rnd.random() < 0.5 else None) or "E")
+            if ground_kinds:
+                foe(c + 4 + n * 3, ground - 1, ground_kinds[rnd.randrange(len(ground_kinds))])
             c += 7 + n * 3
         elif kind < 0.46:
             # a quiet stretch: vitamins in an arc, a breath before what comes next
@@ -414,8 +469,9 @@ def made_level(k, grade, act, base=None):
                 foe(c + rnd.randint(3, stretch - 2), ground - 1, "E")
             if stretch >= 8 and rnd.random() < spores:
                 foe(c + rnd.randint(2, stretch - 2), ground - 7 - rnd.randint(0, 3), "S")
-            if stretch >= 8 and rnd.random() < spitters:
-                foe(c + stretch - 3, ground - 1, "P")
+            for ch in ground_kinds:
+                if stretch >= 8 and rnd.random() < mix[ch]:
+                    foe(c + rnd.randint(3, stretch - 3), ground - 1, ch)
             pick = rnd.random()
             if pick < 0.35:
                 put(c + 2, ground - 5, "=" * 5)
@@ -458,17 +514,18 @@ def levels():
     for k, (zone, sky, grade) in enumerate(ZONES):
         for act in (0, 1):
             lv = made_level(k, grade, act, level() if k == 0 and act == 0 else None)
-            if act == 1:
-                lv = arena(lv)
+            fight = boss(zone, mid=act == 0)
+            if fight:
+                lv = arena(lv)  # the first act ends with the mid-boss, the second with the zone's boss
             name = f"level_{k + 1}_{zone}_{act + 1}.json"
             with open(os.path.join(OUT, name), "w", encoding="utf-8") as f:
                 json.dump(lv, f, indent=1)
                 f.write("\n")
             if act == 0:
                 entry = {"level": name, "sky": sky, "layers": layers(zone), "textures": textures(zone),
-                         "intro": intro(zone), "music": music(zone)}
+                         "intro": intro(zone), "music": music(zone), "boss": fight}
             else:
-                entry = {"level": name, "same_art": True, "boss": boss(zone)}
+                entry = {"level": name, "same_art": True, "boss": fight}
             out.append({k2: v for k2, v in entry.items() if v})
     return out
 
@@ -524,12 +581,24 @@ def main():
                                            "spit": thing("enemy_spitter", 6, 10, {"from": 2, "frames": 3}),
                                            "squashed": thing("enemy_spitter", 6, 8, {"from": 5, "frames": 1})}.items() if v} or None,
             "spit": thing("obj_spit", 1, 1),
+            "roller": {k: v for k, v in {"roll": thing("enemy_bacteria", 6, 12, {"from": 0, "frames": 5}),
+                                          "squashed": thing("enemy_bacteria", 6, 8, {"from": 5, "frames": 1})}.items() if v} or None,
+            "hopper": {k: v for k, v in {"idle": thing("enemy_parasite", 6, 4, {"from": 4, "frames": 1}),
+                                          "jump": thing("enemy_parasite", 6, 8, {"from": 1, "frames": 2}),
+                                          "squashed": thing("enemy_parasite", 6, 8, {"from": 5, "frames": 1})}.items() if v} or None,
+            "puffer": {k: v for k, v in {"idle": thing("enemy_fungus", 6, 3, {"from": 0, "frames": 2}),
+                                          "puff": thing("enemy_fungus", 6, 10, {"from": 2, "frames": 3}),
+                                          "squashed": thing("enemy_fungus", 6, 8, {"from": 5, "frames": 1})}.items() if v} or None,
+            "splitter": {k: v for k, v in {"crawl": thing("enemy_cancer", 6, 6, {"from": 0, "frames": 4}),
+                                            "split": thing("enemy_cancer", 6, 8, {"from": 4, "frames": 1}),
+                                            "squashed": thing("enemy_cancer", 6, 8, {"from": 5, "frames": 1})}.items() if v} or None,
             "coin": thing("obj_vitamin", 4, 8),
             "checkpoint": {k: v for k, v in {"off": thing("obj_leukocyte", 4, 2, {"from": 0, "frames": 2}),
                                               "on": thing("obj_leukocyte", 4, 4, {"from": 2, "frames": 2})}.items() if v} or None,
             "goal": thing("obj_portal", 4, 6),
         }.items() if v},
         "screens": screens(),
+        "credits": CREDITS,
         "sounds": sounds(),
         "levels": levels(),
     }

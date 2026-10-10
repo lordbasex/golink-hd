@@ -570,6 +570,40 @@ static void kind_actor(const hd_state *s, const hd_enemy *e)
          return; /* it bursts (the particles) */
       an = &hd_boss_anim[BOSS_MINION];
       break;
+   case EK_ROLLER:
+      an = &hd_objects[e->alive == 2 ? OBJ_ROLLER_SQUASHED : OBJ_ROLLER_ROLL];
+      if (e->alive == 1 && e->act < 0)
+         frame = an->count > 4 ? 4 : 0; /* curled up and waiting: its standing frame when it has one */
+      else if (e->alive == 1 && an->count)
+         frame = (int32_t)(((int64_t)hd_abs(FX_INT(e->x)) / 12) % hd_min(an->count, 4)); /* the ball turns as it goes */
+      break;
+   case EK_HOPPER:
+      an = &hd_objects[e->alive == 2 ? OBJ_HOPPER_SQUASHED : !e->ground && hd_objects[OBJ_HOPPER_JUMP].frames ? OBJ_HOPPER_JUMP : OBJ_HOPPER_IDLE];
+      if (e->alive == 1 && !e->ground && an->count)
+         frame = hd_clamp((e->vy + FX(6)) * an->count / FX(12), 0, an->count - 1); /* up, top, down */
+      break;
+   case EK_PUFFER:
+      if (e->alive == 2)
+         an = &hd_objects[OBJ_PUFFER_SQUASHED];
+      else if (e->act >= 0 && hd_objects[OBJ_PUFFER_PUFF].frames)
+      {
+         an = &hd_objects[OBJ_PUFFER_PUFF];
+         frame = hd_min(e->act_t * an->count / SPIT_END, an->count - 1);
+      }
+      else
+         an = &hd_objects[OBJ_PUFFER_IDLE];
+      break;
+   case EK_SPLITTER:
+      if (e->alive == 2)
+      {
+         /* a whole one splits, a half bursts */
+         an = &hd_objects[!e->seq && hd_objects[OBJ_SPLITTER_SPLIT].frames ? OBJ_SPLITTER_SPLIT : OBJ_SPLITTER_SQUASHED];
+         t = 30 - e->squash;
+         loop = 0;
+      }
+      else
+         an = &hd_objects[OBJ_SPLITTER_CRAWL];
+      break;
    default: /* EK_BOSS */
       if (e->alive == 2)
       {
@@ -599,6 +633,21 @@ static void kind_actor(const hd_state *s, const hd_enemy *e)
       return;
    }
    im = frame >= 0 ? &an->frames[frame] : anim_frame(an, t, loop);
+   if (e->kind == EK_SPLITTER && e->seq)
+   {
+      /* a splitter's half: its pictures two thirds of their size, feet on its hitbox's bottom */
+      hd_style st;
+      int32_t sw = im->w * 2 / 3, sh = (im->h - an->feet) * 2 / 3;
+      memset(&st, 0, sizeof st);
+      st.flags = ((flags & BLIT_FLIP) ? DRAW_FLIP_X : 0) | ((flags & BLIT_WHITE) ? DRAW_WHITE : 0);
+      st.outline = hd_fx.outline;
+      fx = S(FX_INT(e->x) - cam_x) + S(w * 2 / 3) / 2;
+      fy = S(FX_INT(e->y) + h * 2 / 3 - cam_y);
+      if (hd_fx.shadows && shadow)
+         gfx_shadow(&surf, fx, fy, shadow * 2 / 3, S(2), 120);
+      gfx_blit_rot(&surf, im, fx - sw / 2, fy - sh, 0, 0, 0, FX(2) / 3, FX(2) / 3, &st);
+      return;
+   }
    actor(im, fx - im->w / 2, fy - (im->h - an->feet), flags, fx, fy, shadow);
 }
 
@@ -724,7 +773,9 @@ static void bolts(const hd_state *s)
          continue;
       x = S(FX_INT(b->x) - cam_x);
       y = S(FX_INT(b->y) - cam_y);
-      an = b->big && hd_boss_anim[BOSS_SHOT].frames ? &hd_boss_anim[BOSS_SHOT] : hd_objects[OBJ_SPIT].frames ? &hd_objects[OBJ_SPIT] : NULL;
+      an = b->big && hd_boss_anim[BOSS_SHOT].frames ? &hd_boss_anim[BOSS_SHOT]
+         : b->puff && hd_objects[OBJ_PUFFER_SHOT].frames ? &hd_objects[OBJ_PUFFER_SHOT]
+         : hd_objects[OBJ_SPIT].frames ? &hd_objects[OBJ_SPIT] : NULL;
       if (an)
       {
          const hd_image *im = anim_frame(an, b->age, 1);
@@ -812,6 +863,30 @@ static void continue_panel(const hd_state *s, int32_t i)
    center_in(buf, x, w, y + S(60), S(7), 0xf8c838u);
    if ((s->frame >> 4) & 1)
       center_in(start_text[hd_lang], x, w, y + ph - S(24), S(2), 0xffffffu);
+}
+
+/* The credits rolling up over the ending picture darkened (else the sky's darkest color): headings gold and bigger. */
+static void credits(const hd_state *s)
+{
+   int32_t i, y0 = S(HD_H + 10) - S(s->phase_t / 2);
+   if (hd_screens[SCREEN_ENDING].px)
+   {
+      memcpy(surf.px, hd_screens[SCREEN_ENDING].px, (size_t)HD_OUT_W * HD_OUT_H * 4);
+      dim(0, 0, HD_OUT_W, HD_OUT_H);
+   }
+   else
+      rect(0, 0, HD_OUT_W, HD_OUT_H, 0x100810u);
+   for (i = 0; i < hd_credit_count; i++)
+   {
+      int32_t y = y0 + S(i * CREDIT_LINE);
+      const char *t = hd_credits[i];
+      if (y < -S(CREDIT_LINE) || y > HD_OUT_H)
+         continue;
+      if (t[0] == '#' && t[1] == ' ')
+         center(t + 2, y, S(3), 0xf8c838u);
+      else if (t[0])
+         center(t, y + S(3), S(2), 0xffffffu);
+   }
 }
 
 /* "Hold A to skip" in the game's language. */
@@ -1042,6 +1117,8 @@ void hd_draw(const hd_state *s, uint32_t *out)
    int32_t zoom = s->zoom ? hd_clamp(s->zoom, 128, 512) : 256; /* 0 (an old or zeroed state) is 1x */
    int32_t cx = FX_INT(s->cam_x) + s->shake_x, cy = FX_INT(s->cam_y) + s->shake_y;
    hd_stage_select(s->stage);
+   if (s->boss_form != hd_boss_form_now())
+      hd_boss_form_use(s->boss_form);
    if (ready_gen != hd_content_gen)
       prepare();
    screen.px = out;
@@ -1065,6 +1142,11 @@ void hd_draw(const hd_state *s, uint32_t *out)
    }
    effects(s, &screen, zoom);
    surf = screen;
+   if (s->phase == PH_CREDITS)
+   {
+      credits(s);
+      return;
+   }
    if (screen_picture(s))
       return;
    hud(s);

@@ -208,6 +208,17 @@ Back to front in the list's order, up to 8. `speed` is the share of the camera's
 
 A **spore** flies, bobbing `bob` pixels: after the nearest player within `range` pixels at `speed` (rising or sinking slowly to their height), else to and fro; a wall turns it back. A **spitter** stands; it turns to a player within `range` (and 120 pixels up or down) and every `rate` frames lobs a shot at `shot_speed` that falls as it flies, bursts on walls and hurts the player it touches. Both are stomped or shot like a walker and take `health` hits. `hitbox` in pixels (4 to 400, the physics' `enemy_hitbox` by default), `health` 1 to 999, `speed` and `shot_speed` in hundredths of a pixel a frame, `bob` 0 to 200, `range` 0 to 4000, `rate` 30 to 1200.
 
+Four more, each optional, placed with `R`, `H`, `U` and `K`:
+
+```json
+"roller":   {"hitbox": [30, 30], "health": 3, "speed": 330, "range": 380},
+"hopper":   {"hitbox": [32, 30], "health": 2, "speed": 260, "jump": 720, "rate": 80, "range": 320},
+"puffer":   {"hitbox": [36, 44], "health": 4, "rate": 140, "shot_speed": 300, "spores": 3, "range": 340},
+"splitter": {"hitbox": [40, 38], "health": 6, "speed": 70, "range": 420}
+```
+
+A **roller** (`R`) waits curled up until a player comes within `range`, then rolls at them at `speed` and goes on, back the other way at each wall. A **hopper** (`H`) sits facing the nearest player and every `rate` frames leaps at them (`jump` up, `speed` across). A **puffer** (`U`) stands and every `rate` frames a player is near puffs a fan of `spores` (1 to 9) up into the air at `shot_speed`; they fall on the players. A **splitter** (`K`) crawls at a player within `range`; beaten (shot or stomped), it splits into two halves two thirds its size with half its health, a little faster, that are beaten for good. Their sprites face left: `roller` (`roll`, its fifth frame shown while it waits; `squashed`), `hopper` (`idle`, `jump`: rising then falling; `squashed`), `puffer` (`idle`, `puff` over its attack, `squashed`, `shot`: its spore, else the `spit`) and `splitter` (`crawl`, `split`: a whole one beaten, `squashed`: a half beaten).
+
 **`boss`** (a level's, in its entry of `levels`, or the manifest's with `level`): the level's big enemy, at its `X`. It waits until its whole picture is on the screen, then wakes up with a roar: its music starts, its name and a health bar show at the bottom and the camera stays on its arena (the screen with the boss on its right, its floor in view) until it is beaten. It rests `rest` frames pacing at the players, then does its `attacks` in turn, each after a windup:
 
 | Attack | What |
@@ -230,6 +241,20 @@ At half its health it gets angry (a roar, the bar blinking): it moves a third fa
 ```
 
 `hitbox` 4 to 400 pixels, `health` 1 to 999 (40), `speed` and `shot_speed` 10 to 2000 and 50 to 2000 (250, 450), `rest` 20 to 600 frames (80), `spit` 1 to 9 (3), `brood` 1 to 12 (5), `attacks` 1 to 8 of the table's (all but `advance` by default); the minion's `health` 1 to 99 (1) and `speed` 10 to 2000 (160). Its pictures face left: `idle` (looped), `windup` and `attack` (over the attack's two parts), `hurt` (a flinch at each hit while it rests, else it flashes white), `down`, the minions' `minion` and its shots' `shot` (else the `spit`). `music` plays from when it wakes up until it is beaten.
+
+A boss's `evolve` is its second form: beaten the first time, it evolves where it stands (a roar, the screen shaking, its brood and shots gone) into it, with a full bar of the new form's `health` and after a longer rest, and must be beaten again. It takes the same fields as the boss (not `minion` or `music`, and not another `evolve`); what it does not give stays the first form's, and its sprites without `minion` or `shot` use the first form's. A save state keeps the form in play.
+
+```json
+"boss": {"name": "NEUROVIRUS", "health": 500, ...,
+         "evolve": {"name": "NEUROVIRUS OMEGA", "hitbox": [130, 236], "health": 650, "rest": 30,
+                    "attacks": ["spit", "charge", "brood", "jump"], "sprites": {...}}}
+```
+
+**`credits`**: the lines that roll up the screen after the last level's ending (over the `ending` picture darkened), then the title; start or jump skips them after two seconds. Up to 200 lines of up to 63 bytes; one starting with `# ` is a heading (gold, bigger), an empty one a gap.
+
+```json
+"credits": ["# MADE BY", "Someone", "", "# THANKS", "Everyone who played it"]
+```
 
 **`sounds`** and **`music`**: a game's own sound, as WAV files (PCM 16 bits, or IMA ADPCM, a quarter of the size; 48000 Hz, mono or stereo). `tools/glhd adpcm IN.wav OUT.wav` makes a PCM WAV ADPCM; it is decoded once as the package loads, with integers, so the sound is the same on every computer:
 

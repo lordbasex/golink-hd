@@ -1939,6 +1939,191 @@ static void test_same_art(void)
    hd_content_builtin(); /* the shared pictures freed once */
 }
 
+/* The four more kinds: a roller rolls at the player, a hopper leaps, a puffer puffs spores up, a splitter splits in two halves. */
+static void test_more_kinds(void)
+{
+   static uint8_t zip[300000];
+   static char level[100000];
+   static hd_state s;
+   hd_input in[MAX_PLAYERS];
+   const char *err;
+   size_t n;
+   int32_t f, i, roller = -1, hopper = -1, puffer = -1, splitter = -1, rx0, leapt = 0, puffs = 0, halves = 0;
+   zfile files[2] = {{0}};
+   flat_level(level, sizeof level, 80, 30);
+   set_cell(level, 14, 26, 'R');
+   set_cell(level, 20, 26, 'H');
+   set_cell(level, 26, 26, 'U');
+   set_cell(level, 34, 26, 'K');
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"More\", \"level\": \"level.json\", \"health\": {\"hits\": 99, \"invulnerable\": 10},"
+                   " \"weapon\": {\"rate\": 4, \"speed\": 700, \"range\": 600},"
+                   " \"enemies\": {\"roller\": {\"hitbox\": [14, 14], \"health\": 2, \"speed\": 300, \"range\": 300},"
+                   " \"hopper\": {\"hitbox\": [14, 14], \"health\": 2, \"rate\": 40, \"range\": 600},"
+                   " \"puffer\": {\"hitbox\": [16, 16], \"health\": 3, \"rate\": 40, \"spores\": 4, \"range\": 600},"
+                   " \"splitter\": {\"hitbox\": [18, 18], \"health\": 4, \"speed\": 50, \"range\": 400}}}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  more kinds: %s\n", err);
+   hd_reset(&s);
+   memset(in, 0, sizeof in);
+   in[0].buttons = PAD_START;
+   hd_step(&s, in);
+   for (i = 0; i < MAX_ENEMIES; i++)
+   {
+      if (!s.e[i].alive)
+         continue;
+      if (s.e[i].kind == EK_ROLLER)
+         roller = i;
+      if (s.e[i].kind == EK_HOPPER)
+         hopper = i;
+      if (s.e[i].kind == EK_PUFFER)
+         puffer = i;
+      if (s.e[i].kind == EK_SPLITTER)
+         splitter = i;
+   }
+   CHECK(roller >= 0 && hopper >= 0 && puffer >= 0 && splitter >= 0);
+   if (roller < 0 || hopper < 0 || puffer < 0 || splitter < 0)
+      return;
+   CHECK(s.e[roller].hp == 2 && s.e[puffer].hp == 3 && s.e[splitter].hp == 4);
+   rx0 = FX_INT(s.e[roller].x);
+   in[0].buttons = 0;
+   for (f = 0; f < 200; f++)
+   {
+      hd_step(&s, in);
+      leapt |= s.e[hopper].alive == 1 && !s.e[hopper].ground && s.e[hopper].vy < 0;
+      puffs = hd_max(puffs, live_bolts(&s));
+   }
+   CHECK(s.e[roller].alive != 1 || FX_INT(s.e[roller].x) != rx0); /* it rolled */
+   CHECK(leapt);                                                   /* the hopper leapt */
+   CHECK(puffs >= 4);                                              /* a fan of 4 spores */
+   /* the splitter, shot down: two halves, smaller, half its health */
+   s.e[splitter].hp = 1;
+   s.e[splitter].awake = 1;
+   {
+      hd_shot *q = &s.shot[0];
+      memset(q, 0, sizeof *q);
+      q->life = 10;
+      q->x = s.e[splitter].x + FX(9);
+      q->y = s.e[splitter].y + FX(9);
+      q->damage = 1;
+   }
+   hd_step(&s, in);
+   for (i = 0; i < MAX_ENEMIES; i++)
+      if (s.e[i].alive == 1 && s.e[i].kind == EK_SPLITTER && s.e[i].seq == 1)
+      {
+         halves++;
+         CHECK(s.e[i].hp == 2);
+      }
+   CHECK(s.e[splitter].alive == 2 && halves == 2);
+   hd_content_builtin();
+}
+
+/* A boss with "evolve": beaten once it becomes its second form (its health, a bigger hitbox, its name), beaten again for good. */
+static void test_boss_evolves(void)
+{
+   static uint8_t zip[300000], save[HD_SAVE_SIZE];
+   static char level[100000];
+   static hd_state s, b;
+   hd_input in[MAX_PLAYERS];
+   const char *err;
+   size_t n;
+   int32_t f, boss = -1, i;
+   zfile files[2] = {{0}};
+   flat_level(level, sizeof level, 60, 30);
+   set_cell(level, 30, 26, 'X');
+   set_cell(level, 55, 26, 'F');
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Evolve\", \"level\": \"level.json\", \"health\": {\"hits\": 99},"
+                   " \"weapon\": {\"rate\": 4, \"speed\": 700, \"range\": 500},"
+                   " \"boss\": {\"name\": \"ONE\", \"hitbox\": [40, 40], \"health\": 10, \"attacks\": [\"spit\"], \"rest\": 30,"
+                   " \"evolve\": {\"name\": \"TWO\", \"hitbox\": [60, 70], \"health\": 20}}}";
+   files[1].name = "level.json";
+   files[1].text = level;
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  evolve: %s\n", err);
+   hd_reset(&s);
+   memset(in, 0, sizeof in);
+   in[0].buttons = PAD_START;
+   hd_step(&s, in);
+   for (i = 0; i < MAX_ENEMIES; i++)
+      if (s.e[i].alive && s.e[i].kind == EK_BOSS)
+         boss = i;
+   CHECK(boss >= 0);
+   if (boss < 0)
+      return;
+   for (f = 0; f < 3000 && !s.boss_form; f++)
+   {
+      in[0].buttons = PAD_RUN | ((f & 31) < 2 ? (FX_INT(s.p[0].x) < FX_INT(s.e[boss].x) ? PAD_RIGHT : PAD_LEFT) : 0);
+      hd_step(&s, in);
+   }
+   CHECK(s.boss_form == 1 && !s.boss_beaten && s.e[boss].alive == 1);
+   CHECK(s.boss_max == 20 && hd_kinds[EK_BOSS].h == 70 && strcmp(hd_boss.name, "TWO") == 0);
+   CHECK(hd_boss.attacks == 1 && hd_boss.rest == 30); /* what it does not say stays */
+   CHECK(!hd_goal_open(&s));
+   /* a save state in the second form brings it back */
+   hd_save(&s, save);
+   hd_reset(&b);
+   CHECK(hd_kinds[EK_BOSS].h == 40);
+   CHECK(hd_load(&b, save, HD_SAVE_SIZE) == 1 && hd_kinds[EK_BOSS].h == 70);
+   for (f = 0; f < 4000 && !s.boss_beaten; f++)
+   {
+      in[0].buttons = PAD_RUN | ((f & 31) < 2 ? (FX_INT(s.p[0].x) < FX_INT(s.e[boss].x) ? PAD_RIGHT : PAD_LEFT) : 0);
+      hd_step(&s, in);
+   }
+   CHECK(s.boss_beaten && hd_goal_open(&s));
+   files[0].text = "{\"format\": 3, \"title\": \"Evolve\", \"level\": \"level.json\","
+                   " \"boss\": {\"evolve\": {\"evolve\": {}}}}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "evolve again") != NULL);
+   hd_content_builtin();
+}
+
+/* Credits: after the last level they roll, start skips them, then the title. */
+static void test_credits(void)
+{
+   static uint8_t zip[300000];
+   static char one[100000];
+   static hd_state s;
+   hd_input in[MAX_PLAYERS];
+   const char *err;
+   size_t n;
+   int32_t f, rolled = 0;
+   zfile files[2] = {{0}};
+   goal_level(one, sizeof one, 50);
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Credits\", \"levels\": [{\"level\": \"one.json\"}],"
+                   " \"credits\": [\"# MADE BY\", \"SOMEONE\", \"\", \"# THANKS\", \"EVERYONE\"]}";
+   files[1].name = "one.json";
+   files[1].text = one;
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   if (err)
+      printf("  credits: %s\n", err);
+   CHECK(hd_credit_count == 5 && strcmp(hd_credits[0], "# MADE BY") == 0);
+   hd_reset(&s);
+   memset(in, 0, sizeof in);
+   in[0].buttons = PAD_START;
+   hd_step(&s, in);
+   for (f = 0; f < 4000 && s.phase != PH_TITLE; f++)
+   {
+      in[0].buttons = s.phase == PH_CREDITS ? (f & 1 ? PAD_START : 0) : PAD_RIGHT;
+      hd_step(&s, in);
+      rolled |= s.phase == PH_CREDITS;
+   }
+   CHECK(rolled && s.phase == PH_TITLE);
+   files[0].text = "{\"format\": 3, \"title\": \"Credits\", \"levels\": [{\"level\": \"one.json\"}], \"credits\": [1]}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "credits") != NULL);
+   hd_content_builtin();
+   CHECK(hd_credit_count == 0);
+}
+
 int main(void)
 {
    hd_static_init();
@@ -1975,6 +2160,9 @@ int main(void)
    test_dash();
    test_lives();
    test_same_art();
+   test_more_kinds();
+   test_boss_evolves();
+   test_credits();
    test_adpcm();
    test_api();
    if (failures)

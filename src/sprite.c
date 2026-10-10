@@ -283,6 +283,11 @@ const char *hd_sprites_load(const hd_zip *zip, const json *sprites)
          { "spore", "fly", OBJ_SPORE_FLY }, { "spore", "pop", OBJ_SPORE_POP },
          { "spitter", "idle", OBJ_SPITTER_IDLE }, { "spitter", "spit", OBJ_SPITTER_SPIT }, { "spitter", "squashed", OBJ_SPITTER_SQUASHED },
          { "spit", NULL, OBJ_SPIT },
+         { "roller", "roll", OBJ_ROLLER_ROLL }, { "roller", "squashed", OBJ_ROLLER_SQUASHED },
+         { "hopper", "idle", OBJ_HOPPER_IDLE }, { "hopper", "jump", OBJ_HOPPER_JUMP }, { "hopper", "squashed", OBJ_HOPPER_SQUASHED },
+         { "puffer", "idle", OBJ_PUFFER_IDLE }, { "puffer", "puff", OBJ_PUFFER_PUFF }, { "puffer", "squashed", OBJ_PUFFER_SQUASHED },
+         { "puffer", "shot", OBJ_PUFFER_SHOT },
+         { "splitter", "crawl", OBJ_SPLITTER_CRAWL }, { "splitter", "split", OBJ_SPLITTER_SPLIT }, { "splitter", "squashed", OBJ_SPLITTER_SQUASHED },
       };
       size_t k;
       for (k = 0; k < sizeof objs / sizeof objs[0]; k++)

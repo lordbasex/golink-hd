@@ -175,7 +175,8 @@ static void reset_level(hd_state *s)
    }
    memset(s->bolt, 0, sizeof s->bolt);
    s->bolt_next = 0;
-   s->boss = s->boss_max = s->boss_angry = s->boss_beaten = s->arena = 0;
+   s->boss = s->boss_max = s->boss_angry = s->boss_beaten = s->arena = s->boss_form = 0;
+   hd_boss_form_use(0);
    s->music_boss = 0;
    s->cam_x = 0;
    s->cam_y = FX(MAP_H * TILE - HD_H);
@@ -714,11 +715,15 @@ static void player_step(hd_state *s, int32_t i)
 /* An enemy's hitbox: the built-in walker's, or its kind's (format 3). */
 static int32_t enemy_w(const hd_enemy *e)
 {
+   if (e->kind == EK_SPLITTER && e->seq)
+      return hd_max(4, hd_kinds[EK_SPLITTER].w * 2 / 3); /* a splitter's half */
    return e->kind == EK_WALKER ? EW : hd_kinds[e->kind].w;
 }
 
 static int32_t enemy_h(const hd_enemy *e)
 {
+   if (e->kind == EK_SPLITTER && e->seq)
+      return hd_max(4, hd_kinds[EK_SPLITTER].h * 2 / 3);
    return e->kind == EK_WALKER ? EH : hd_kinds[e->kind].h;
 }
 
@@ -873,6 +878,148 @@ static void spitter_step(hd_state *s, hd_enemy *e)
       e->alive = 0;
 }
 
+/* A player near enough for a kind to see: within its range across, and a few rows up or down. */
+static int32_t sees(const hd_state *s, const hd_enemy *e, int32_t range, int32_t *dx)
+{
+   int32_t dy = 0, who = nearest(s, e, dx, &dy);
+   return who >= 0 && hd_abs(*dx) < range && hd_abs(dy) < 160;
+}
+
+/* A roller waits curled up until a player comes near, then rolls at them and on, back the other way at a wall. */
+static void roller_step(hd_state *s, hd_enemy *e)
+{
+   const hd_enemy_kind *k = &hd_kinds[EK_ROLLER];
+   int32_t dx = 0;
+   if (e->act < 0)
+   {
+      e->vx = 0;
+      body_move(e);
+      if (sees(s, e, k->range, &dx))
+      {
+         e->act = 0;
+         e->face = dx > 0 ? 1 : -1;
+      }
+   }
+   else
+   {
+      if (e->ground)
+         e->vx = e->face * k->speed;
+      body_move(e);
+      if (!e->vx)
+         e->face = -e->face; /* a wall */
+   }
+   if (FX_INT(e->y) > MAP_H * TILE + 32)
+      e->alive = 0;
+}
+
+/* A hopper sits, facing the nearest player, and every `rate` frames leaps at them. */
+static void hopper_step(hd_state *s, hd_enemy *e)
+{
+   const hd_enemy_kind *k = &hd_kinds[EK_HOPPER];
+   int32_t dx = 0, seen = sees(s, e, k->range, &dx);
+   if (e->ground)
+   {
+      e->vx = 0;
+      e->act = -1;
+      if (seen)
+         e->face = dx > 0 ? 1 : -1;
+      if (++e->t >= k->rate && seen)
+      {
+         e->vy = -k->jump;
+         e->vx = e->face * k->speed;
+         e->act = 0;
+         e->t = 0;
+         hd_play(s, SFX_JUMP, screen_x(s, FX_INT(e->x)));
+      }
+   }
+   body_move(e);
+   if (FX_INT(e->y) > MAP_H * TILE + 32)
+      e->alive = 0;
+}
+
+/* A puffer stands and, every `rate` frames a player is near, puffs a fan of spores up into the air that fall on them. */
+static void puffer_step(hd_state *s, hd_enemy *e)
+{
+   const hd_enemy_kind *k = &hd_kinds[EK_PUFFER];
+   int32_t dx = 0, seen = sees(s, e, k->range, &dx), i;
+   e->vx = 0;
+   body_move(e);
+   if (e->act < 0)
+   {
+      if (seen)
+         e->face = dx > 0 ? 1 : -1;
+      if (++e->t >= k->rate && seen)
+      {
+         e->act = 0;
+         e->act_t = 0;
+         e->t = 0;
+      }
+      return;
+   }
+   if (++e->act_t == SPIT_AT)
+   {
+      int32_t x = FX_INT(e->x) + k->w / 2, y = FX_INT(e->y) + k->h / 5;
+      for (i = 0; i < k->count; i++)
+      {
+         /* spread across, leaning to the side it faces */
+         int32_t vx = FX_FRAC((2 * i - (k->count - 1)) * 70, 100) + e->face * FX_FRAC(60, 100);
+         bolt(s, x, y, vx, -k->shot_speed, FX_FRAC(5, 100), 300, 0);
+         s->bolt[(s->bolt_next + MAX_BOLTS - 1) % MAX_BOLTS].puff = 1;
+      }
+      hd_play(s, SFX_SPIT, screen_x(s, x));
+   }
+   if (e->act_t >= SPIT_END)
+      e->act = -1;
+   if (FX_INT(e->y) > MAP_H * TILE + 32)
+      e->alive = 0;
+}
+
+/* A splitter crawls at a player near it; a half (seq 1) is a little faster. */
+static void splitter_step(hd_state *s, hd_enemy *e)
+{
+   const hd_enemy_kind *k = &hd_kinds[EK_SPLITTER];
+   int32_t dx = 0, seen = sees(s, e, k->range, &dx);
+   if (e->ground)
+   {
+      if (seen)
+         e->face = dx > 0 ? 1 : -1;
+      e->vx = seen ? e->face * (e->seq ? k->speed * 3 / 2 : k->speed) : 0;
+   }
+   body_move(e);
+   if (FX_INT(e->y) > MAP_H * TILE + 32)
+      e->alive = 0;
+}
+
+/* A splitter beaten splits: two halves hop out of it, one each way (when there is room for them). */
+static void split(hd_state *s, const hd_enemy *e)
+{
+   const hd_enemy_kind *k = &hd_kinds[EK_SPLITTER];
+   int32_t i, made = 0, h2 = hd_max(4, k->h * 2 / 3);
+   if (e->kind != EK_SPLITTER || e->seq)
+      return;
+   for (i = 0; i < MAX_ENEMIES && made < 2; i++)
+   {
+      hd_enemy *c = &s->e[i];
+      if (c->alive)
+         continue;
+      memset(c, 0, sizeof *c);
+      c->alive = 1;
+      c->awake = 1;
+      c->kind = EK_SPLITTER;
+      c->seq = 1;
+      c->hp = hd_max(1, k->health / 2);
+      c->face = made ? 1 : -1;
+      c->x = e->x + FX(made ? k->w / 3 : 0);
+      c->y = e->y + FX(k->h - h2);
+      c->vx = c->face * FX(2);
+      c->vy = FX(-4);
+      c->act = -1;
+      c->home_x = FX_INT(c->x);
+      c->home_y = FX_INT(c->y);
+      made++;
+   }
+}
+
 /* A boss's minion runs at the nearest player, hopping now and then and over what is in its way. */
 static void minion_step(hd_state *s, hd_enemy *e)
 {
@@ -1008,6 +1155,44 @@ static void boss_down(hd_state *s, hd_enemy *e)
    hd_play(s, SFX_BOSS_DOWN, screen_x(s, cx));
 }
 
+/*
+ * A boss with an evolved form, beaten the first time: it evolves where it
+ * stands (its feet on the ground, its middle where it was), with the new
+ * form's health in a full bar, calm again, after a longer rest; its brood
+ * and shots go.
+ */
+static void evolve(hd_state *s, hd_enemy *e)
+{
+   int32_t ow = hd_kinds[EK_BOSS].w, oh = hd_kinds[EK_BOSS].h, i, cx, cy;
+   s->boss_form = 1;
+   hd_boss_form_use(1);
+   e->x -= FX((hd_kinds[EK_BOSS].w - ow) / 2);
+   e->y -= FX(hd_kinds[EK_BOSS].h - oh);
+   e->hp = hd_kinds[EK_BOSS].health;
+   s->boss_max = e->hp;
+   s->boss_angry = 0;
+   e->act = -1;
+   e->act_t = 0;
+   e->seq = 0;
+   e->vx = 0;
+   e->t = hd_boss.rest + 90;
+   e->flash = 60;
+   s->shake = 60;
+   s->hitstop = 30;
+   for (i = 0; i < MAX_ENEMIES; i++)
+      if (s->e[i].alive == 1 && s->e[i].kind == EK_MINION)
+      {
+         s->e[i].alive = 2;
+         s->e[i].squash = 30;
+      }
+   memset(s->bolt, 0, sizeof s->bolt);
+   cx = FX_INT(e->x) + hd_kinds[EK_BOSS].w / 2;
+   cy = FX_INT(e->y) + hd_kinds[EK_BOSS].h / 2;
+   for (i = 0; i < 6; i++)
+      burst(s, cx + (i - 3) * 24, cy + (i & 1) * 40 - 20, 24, i & 1 ? 0xfff8f070u : 0xffc080ffu, FX(5), 3);
+   hd_play(s, SFX_ROAR, screen_x(s, cx));
+}
+
 /* A hit on an enemy of a format 3 kind (a walker's stays in fights and shots_step): `damage` of its health. */
 static void kind_hit(hd_state *s, hd_enemy *e, int32_t damage)
 {
@@ -1018,7 +1203,10 @@ static void kind_hit(hd_state *s, hd_enemy *e, int32_t damage)
    {
       if (e->hp <= 0)
       {
-         boss_down(s, e);
+         if (!s->boss_form && hd_boss_forms[1].cfg.on)
+            evolve(s, e);
+         else
+            boss_down(s, e);
          return;
       }
       if (!s->boss_angry && e->hp * 2 <= s->boss_max)
@@ -1034,6 +1222,7 @@ static void kind_hit(hd_state *s, hd_enemy *e, int32_t damage)
    }
    if (e->hp <= 0)
    {
+      split(s, e);
       e->alive = 2;
       e->squash = 30;
       burst(s, ex + w / 2, ey + h / 2, 10, 0xffb070f0u, FX(2), 1);
@@ -1224,6 +1413,10 @@ static void enemy_step(hd_state *s, hd_enemy *e)
    case EK_SPITTER: spitter_step(s, e); return;
    case EK_BOSS: boss_step(s, e); return;
    case EK_MINION: minion_step(s, e); return;
+   case EK_ROLLER: roller_step(s, e); return;
+   case EK_HOPPER: hopper_step(s, e); return;
+   case EK_PUFFER: puffer_step(s, e); return;
+   case EK_SPLITTER: splitter_step(s, e); return;
    default: break;
    }
    e->vy = hd_min(e->vy + ENEMY_GRAVITY, ENEMY_FALL_MAX);
@@ -1292,6 +1485,7 @@ static void fights(hd_state *s)
          }
          else if (p->vy > 0 && py + PH - FX_INT(p->vy) <= ey + 6)
          {
+            split(s, e);
             e->alive = 2;
             e->squash = 30;
             p->y = FX(ey - PH);
@@ -1541,6 +1735,8 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
    int32_t i;
    uint32_t any = 0;
    hd_stage_select(s->stage); /* the level the state plays (a save state may bring another) */
+   if (s->boss_form != hd_boss_form_now())
+      hd_boss_form_use(s->boss_form); /* its boss's form too */
    s->frame++;
    if (s->show.on)
    {
@@ -1642,6 +1838,14 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       return;
    }
 
+   if (s->phase == PH_CREDITS)
+   {
+      /* the credits roll; nothing else moves (start or jump skips them after two seconds) */
+      if (++s->phase_t >= CREDITS_FRAMES || (s->phase_t > 120 && (any & (PAD_START | PAD_JUMP))))
+         over_to_title(s);
+      return;
+   }
+
    /* start pauses for whoever is playing; it brings in whoever is not */
    for (i = 0; i < MAX_PLAYERS; i++)
    {
@@ -1694,6 +1898,13 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       }
       if (s->phase_t >= CLEAR_FRAMES)
       {
+         if (hd_credit_count)
+         {
+            /* the game is won: the credits roll */
+            s->phase = PH_CREDITS;
+            s->phase_t = 0;
+            return;
+         }
          over_to_title(s);
          return;
       }

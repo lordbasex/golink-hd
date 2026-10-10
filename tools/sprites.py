@@ -211,6 +211,7 @@ def main() -> None:
     ap.add_argument("--shell", type=float, default=0, help="scale so the colored half measures this many game pixels (an image AI draws each strip at its own size)")
     ap.add_argument("--shell-frames", type=int, default=0, help="measure the colored half only in the first N frames (a character that breaks apart, like a dissolve)")
     ap.add_argument("--separate", action="store_true", help="with --frames: frames reach into each other's columns (a spray, a burst); split them by blobs, not by columns")
+    ap.add_argument("--drop-strays", type=float, default=0, help="drop a frame's blobs smaller than this share of its biggest one that lie by the frame's left or right edge (a neighbour's limb tip given to it); not for sprays")
     args = ap.parse_args()
 
     img = Image.open(args.src).convert("RGBA")
@@ -225,6 +226,18 @@ def main() -> None:
         mask = alpha[:, x0:x1] > 0 if args.separate and args.frames else keep_character(alpha[:, x0:x1])
         clean[:, x0:x1] = np.where(mask, alpha[:, x0:x1], 0)
     alpha = clean
+    if args.drop_strays:
+        for x0, x1 in runs:
+            labels, n = ndimage.label(alpha[:, x0:x1] > ALPHA_MIN)
+            if n < 2:
+                continue
+            sizes = ndimage.sum(np.ones_like(labels), labels, range(1, n + 1))
+            edge = max(4, (x1 - x0) // 12)
+            for k, objs in enumerate(ndimage.find_objects(labels)):
+                if sizes[k] >= args.drop_strays * sizes.max():
+                    continue
+                if objs[1].start < edge or objs[1].stop > (x1 - x0) - edge:
+                    alpha[:, x0:x1][labels == k + 1] = 0
     rgba = rgba.copy()
     rgba[..., 3] = alpha
     img = Image.fromarray(rgba, "RGBA")

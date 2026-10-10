@@ -419,6 +419,20 @@ Next image: the COLON zone's boss sprite sheet. FAGO REX, a giant bacteriophage 
 
 - The 24 effects were done on the M1 (MOSS-SoundEffect, 30 steps, from 7 to 35 minutes each); `build.py` gives the engine the ones it plays (jump, vitamin, germ squash, hurt, ready, checkpoint, victory, menu, shoot, virus pop, knockout, super, yawn), the rest wait for the bosses and the enemies to come.
 
+- Second round of playing (the user, on an iPhone): the levels were too short ("muy rápidos entre que inicia el nivel y está el jefe"), the heroes too slow, a hit gave no time to recover, the lives looked endless, and the backgrounds showed a cut. Each zone became two long acts (`build.py`: 1200 to 1600 cells each, a checkpoint every 180, bridges over long pits, brick stairs, towers, gauntlets, quiet stretches; the first act ends with a mid-boss, the second with the zone's boss, sharing the first act's art with `same_art`), the heroes walk at 2.6 pixels a frame, a hit gives 2 seconds unhurt, each player has 3 lives and then 10 seconds to continue, and `layers.py` makes every background layer repeat with no seam (textures.py's fold with a wide overlap and a soft join; the AI's wide pictures do not end where they start). The user asked for the game to last 40 to 60 minutes, for "many new enemies: bacteria, parasites, fungi, cancer cells", a mid-boss per zone, an evolution of the final boss and the credits.
+- New enemies and bosses, sent one after another in the same conversation (each prompt ends with the sheet rules used for the bosses: same style, 6 frames in one row, same size and ground line, transparent background, no text):
+
+| File | What was asked |
+|---|---|
+| `enemy_bacteria.png` | a rod-shaped bacteria with whip flagella and boxing tape; frames 1-4 rolling curled into a ball, 5 uncurled, 6 squashed |
+| `enemy_parasite.png` | a flea-like parasite with a hooked mouth and springy legs; crouch, leap, in the air, landing, idle, defeated |
+| `enemy_fungus.png` | a grumpy spotted mushroom; idle, sway, cap swelling, puffing spores, deflating, wilted |
+| `enemy_cancer.png` | a lumpy purple cell with mismatched eyes; 4 crawling, splitting in two, burst |
+| `miniboss_<zone>.png` | CAPITÁN COLI (a bacterium with a captain's hat and flagella like a whip), LA TENIA (a tapeworm with a crown of hooks), HONGÓN (a fat yeast fungus budding mushrooms), MOHO NEGRO (a fuzzy black mold), TUMORÓN (a lump of fused cells with many eyes), EL PRIÓN (a misfolded protein like crumpled origami); twice the heroes' height, the bosses' 6 frames |
+| `boss_brain_omega.png` | NEUROVIRUS OMEGA, the final boss evolved: the same virus, four times the heroes' height, its brain cracked open with lightning |
+
+  A queue run in the page stopped when Chrome left the tab in the background (its timers slow down to about once a minute), and a picture loaded only when scrolled into view; the agent then drove it a step at a time from outside (scroll to the end, wait for the new picture with no "Creando" or stop button, download it, send the next prompt). `cut.sh` cuts the enemies at their own heights (the cancer cell by blobs: its split is wide), the mid-bosses 170 pixels tall and OMEGA 290.
+
 ## Cleaning up
 
 When the game's audio is done, the generated files are copied off the M1 and `~/ai` (the models, the virtual environment and the outputs) is removed there, as the user asked.

@@ -120,7 +120,7 @@ enum
    T_ENEMY /* where an enemy starts; empty once the level is built */
 };
 
-enum { PH_TITLE = 0, PH_PLAY, PH_CLEAR, PH_INTRO, PH_OVER };
+enum { PH_TITLE = 0, PH_PLAY, PH_CLEAR, PH_INTRO, PH_OVER, PH_CREDITS };
 
 enum
 {
@@ -227,9 +227,12 @@ extern hd_dash_config hd_dash;
  * goes after the nearest player; a spitter stands and spits arcs at
  * players in front of it; a boss is a level's big enemy with a health bar,
  * attacks in turn and a brood of small ones (minions) it lets out now and
- * then; the level's goal opens when it is beaten.
+ * then; the level's goal opens when it is beaten. A roller rolls at the
+ * players and on, turning at walls; a hopper leaps at them; a puffer stands
+ * and puffs a fan of spores up into the air; a splitter crawls at them and,
+ * beaten, splits into two smaller ones (seq 1) that are beaten for good.
  */
-enum { EK_WALKER = 0, EK_SPORE, EK_SPITTER, EK_BOSS, EK_MINION, EK_COUNT };
+enum { EK_WALKER = 0, EK_SPORE, EK_SPITTER, EK_BOSS, EK_MINION, EK_ROLLER, EK_HOPPER, EK_PUFFER, EK_SPLITTER, EK_COUNT };
 typedef struct
 {
    int32_t w, h;   /* hitbox */
@@ -239,6 +242,8 @@ typedef struct
    int32_t shot_speed; /* 16.16 pixels a frame */
    int32_t range;  /* pixels: how near a player must be */
    int32_t bob;    /* a spore's bobbing, in pixels */
+   int32_t jump;   /* a hopper's leap, 16.16 pixels a frame up */
+   int32_t count;  /* a puffer's spores a puff */
 } hd_enemy_kind;
 extern hd_enemy_kind hd_kinds[EK_COUNT];
 
@@ -309,7 +314,7 @@ typedef struct
    int32_t act, act_t;     /* a boss's or a spitter's attack (-1: resting) and frames into it */
    int32_t face;           /* -1 left, 1 right */
    int32_t ground;         /* standing on something */
-   int32_t seq;            /* a boss's attacks done so far (the next in its list) */
+   int32_t seq;            /* a boss's attacks done so far (the next in its list); a splitter's half: 1 */
 } hd_enemy;
 
 /* An enemy's shot: flying (life > 0), falling in an arc when it has gravity. */
@@ -320,6 +325,7 @@ typedef struct
    int32_t gravity;      /* 16.16 pixels a frame squared */
    int32_t age;
    int32_t big;          /* a boss's (drawn bigger) */
+   int32_t puff;         /* a puffer's spore (its own picture) */
 } hd_bolt;
 
 /* A weapon's shot: flying (hit 0) or bursting where it hit (hit > 0, frames left). */
@@ -392,6 +398,7 @@ typedef struct
    int32_t boss_max;     /* its health when it woke up (the bar) */
    int32_t boss_angry;   /* it lost half its health */
    int32_t boss_beaten;  /* the goal is open */
+   int32_t boss_form;    /* the boss's form in play: 0 the level's, 1 the one it evolved into */
    int32_t arena;        /* the camera's left edge while the boss fights (pixels), 0: none */
    int32_t music_boss;   /* the level's boss music plays (format 3's levels) */
    hd_channel ch[MAX_CHANNELS];
@@ -467,6 +474,18 @@ void hd_level_build(void);
 
 /* content.c: what the loaded game is */
 extern char hd_title[64];
+/*
+ * Format 3's "credits": lines that roll up the screen after the last
+ * level's ending, before the title (start or jump skips them after two
+ * seconds). A line starting with "# " is a heading; an empty one a gap.
+ */
+#define CREDITS_MAX 200
+#define CREDIT_LEN 64
+#define CREDIT_LINE 20 /* logical pixels a line */
+extern char hd_credits[CREDITS_MAX][CREDIT_LEN];
+extern int32_t hd_credit_count;
+/* frames the credits roll: from below the screen until the last line is gone above it, a pixel each two frames */
+#define CREDITS_FRAMES ((HD_H + hd_credit_count * CREDIT_LINE + 20) * 2)
 extern uint32_t hd_sky_top, hd_sky_bottom; /* 0xRRGGBB */
 extern uint8_t hd_content_id[32];         /* SHA-256 of the package; zeros for the built-in demo */
 extern int32_t hd_content_gen;            /* changes whenever the content does */
@@ -487,6 +506,9 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS]);
 int hd_cell(int32_t tx, int32_t ty);
 /* Whether the level's goal is open: always, but in a level with a boss only once it is beaten. */
 int hd_goal_open(const hd_state *s);
+/* Shows boss form f (0 the level's, 1 its evolved one) in hd_boss, hd_kinds[EK_BOSS] and the boss's pictures. */
+void hd_boss_form_use(int32_t f);
+int32_t hd_boss_form_now(void);
 #define SPIT_AT 24  /* frames into a spitter's attack when its shot leaves */
 #define SPIT_END 44 /* and when the attack ends */
 #define BOSS_WINDUP(s) ((s)->boss_angry ? 20 : 30) /* a boss's windup before each attack */

@@ -32,6 +32,11 @@
 - A level with `same_art: true` is another act of the level before it: its sky, layers, textures and music (not loaded again, no intro), with its own map and boss.
 - Levels may be 1792 cells wide (1024 before) and hold 224 enemies of their own (48 before); 32 more are kept for what a boss lets out.
 - Tests: lives and continue, acts sharing their art.
+- Four more enemies (format 3): a roller (`R`) rolls at the players and on, a hopper (`H`) leaps at them, a puffer (`U`) puffs a fan of spores up that fall on them, a splitter (`K`) splits into two smaller halves when beaten; their sprites; the puffer's spores in the state.
+- A boss's `evolve`: beaten once, it evolves into its second form (its own health, hitbox, attacks and pictures) and must be beaten again; the form in play is in the state.
+- `credits`: lines rolling up after the last level's ending, skipped with start.
+- Tests: the four enemies, a boss that evolves, the credits.
+- ANTÍDOTO: bacteria, parasites, fungi and cancer cells drawn by the image AI, a mix of them per zone; a mid-boss at the end of each zone's first act (CAPITÁN COLI, LA TENIA, HONGÓN, MOHO NEGRO, TUMORÓN, EL PRIÓN); NEUROVIRUS evolves into NEUROVIRUS OMEGA; the credits.
 - `tools/hdrun --every N --audio FILE.raw`: every Nth frame as PNG and the run's sound, to make a video with ffmpeg.
 
 ### Added

@@ -27,6 +27,8 @@
 #include "sprite.h"
 
 char hd_title[64];
+char hd_credits[CREDITS_MAX][CREDIT_LEN];
+int32_t hd_credit_count;
 hd_fx_config hd_fx;
 int32_t hd_lang;
 hd_image hd_portrait;
@@ -50,6 +52,7 @@ void hd_content_builtin(void)
    hd_kinds_default();
    hd_boss_free();
    memset(&hd_dash, 0, sizeof hd_dash);
+   hd_credit_count = 0;
    hd_level_build();
    strcpy(hd_title, "GO-LINK HD DEMO");
    hd_w = 640;
@@ -117,6 +120,10 @@ static uint8_t cell_of(char c)
    case 'E':
    case 'S':
    case 'P':
+   case 'R':
+   case 'H':
+   case 'U':
+   case 'K':
    case 'X': return T_ENEMY;
    case '.': return T_EMPTY;
    default: return 255;
@@ -151,11 +158,12 @@ static const char *load_level(const json *lv)
       {
          uint8_t t = cell_of(row->str[x]);
          if (t == 255)
-            return "the level has a cell that is not one of . # B = o C F E S P X";
+            return "the level has a cell that is not one of . # B = o C F E S P R H U K X";
          if (t == T_ENEMY)
          {
             char c = row->str[x];
-            int32_t kind = c == 'S' ? EK_SPORE : c == 'P' ? EK_SPITTER : c == 'X' ? EK_BOSS : EK_WALKER;
+            int32_t kind = c == 'S' ? EK_SPORE : c == 'P' ? EK_SPITTER : c == 'X' ? EK_BOSS : c == 'R' ? EK_ROLLER
+                         : c == 'H' ? EK_HOPPER : c == 'U' ? EK_PUFFER : c == 'K' ? EK_SPLITTER : EK_WALKER;
             int32_t w = kind == EK_WALKER ? EW : hd_kinds[kind].w, h = kind == EK_WALKER ? EH : hd_kinds[kind].h;
             if (hd_enemy_count >= MAX_LEVEL_ENEMIES)
                return "the level has more than 224 enemies";
@@ -734,6 +742,24 @@ static const char *load_stages(const hd_zip *zip, const json *levels)
    return NULL;
 }
 
+/* The manifest's "credits": a list of texts, each a line. */
+static const char *load_credits(const json *c)
+{
+   const json *it;
+   hd_credit_count = 0;
+   if (!c)
+      return NULL;
+   if (c->type != JSON_ARRAY || c->count > CREDITS_MAX)
+      return "manifest.json's credits must be a list of up to 200 lines";
+   for (it = c->child; it; it = it->next)
+   {
+      if (it->type != JSON_STRING || strlen(it->str) >= CREDIT_LEN)
+         return "each line of the credits must be a text of up to 63 bytes";
+      snprintf(hd_credits[hd_credit_count++], CREDIT_LEN, "%s", it->str);
+   }
+   return NULL;
+}
+
 static const char *load_package(const uint8_t *data, size_t size)
 {
    static char msg[160];
@@ -854,6 +880,8 @@ static const char *load_package(const uint8_t *data, size_t size)
       err = hd_textures_load(&zip, hd_json_get(man, "textures"));
    if (!err)
       err = hd_screens_load(&zip, hd_json_get(man, "screens"));
+   if (!err)
+      err = load_credits(hd_json_get(man, "credits"));
    if (!err)
       err = hd_sounds_load(&zip, hd_json_get(man, "sounds"), hd_json_get(man, "music"));
    if (!err && levels)
