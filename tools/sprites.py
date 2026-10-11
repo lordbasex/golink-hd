@@ -19,7 +19,8 @@ an image AI draws each strip at its own size (take the "shell" printed for
 the idle strip), and is put in a cell of
 the widest reach's width, its bottom on the cell's bottom and its body (the
 biggest strongly colored blob) on the cell's middle, so the body stays still
-while the limbs move. It prints the cell
+while the limbs move (--align shape finds the body by its silhouette
+instead: any creature, whatever its colors). It prints the cell
 size and the frame count as JSON for the package's manifest.
 """
 import argparse
@@ -28,7 +29,7 @@ import sys
 
 import numpy as np
 from PIL import Image
-from scipy import ndimage
+from scipy import ndimage, signal
 
 ALPHA_MIN = 24      # a pixel more transparent than this is background
 GAP_MIN = 6         # empty columns that separate two frames
@@ -190,6 +191,38 @@ def body_center(rgba: np.ndarray, x0: int, x1: int) -> float:
     return (bx.start + bx.stop) / 2.0
 
 
+def body_mask(part: np.ndarray, tallest: int) -> np.ndarray:
+    """A frame's body: its visible pixels without the thin bits (limbs, tentacles, speed lines, stars, drops)."""
+    solid = part > ALPHA_MIN
+    r = max(1, tallest // 30)
+    opened = ndimage.binary_opening(solid, structure=np.ones((3, 3)), iterations=r)
+    return opened if opened.sum() > solid.sum() // 5 else solid
+
+
+def shape_centers(alpha: np.ndarray, boxes: list, ref: int) -> list:
+    """Every frame's x as the reference frame's body center, found by shape: each frame, feet on the same
+    line, is slid sideways over the reference until their bodies overlap the most. For characters whose
+    body is not one strongly colored blob (a pale cell, a scarf or a nose brighter than the body), where
+    body_center would follow the wrong part and the body would jump from frame to frame."""
+    tallest = max(b[3] - b[1] for b in boxes)
+    masks = []
+    for x0, y0, x1, y1 in boxes:
+        m = np.zeros((tallest, x1 - x0), dtype=np.float32)
+        m[tallest - (y1 - y0):] = body_mask(alpha[y0:y1, x0:x1], tallest)
+        masks.append(m)
+    base = masks[ref]
+    _, xs = np.where(base > 0)
+    c_ref = float(xs.mean()) + 0.5
+    centers = []
+    for (x0, _, _, _), m in zip(boxes, masks):
+        # the overlap for every sideways shift, with the rows lined up (the feet stay on the floor)
+        full = signal.correlate(base, m, mode="full", method="fft")
+        row = full[m.shape[0] - 1]
+        lag = int(np.argmax(row)) - (m.shape[1] - 1)
+        centers.append(x0 + c_ref - lag)
+    return centers
+
+
 def merge(runs: list, want: int) -> list:
     """Joins the closest neighbours until there are `want` frames."""
     runs = list(runs)
@@ -211,6 +244,8 @@ def main() -> None:
     ap.add_argument("--shell", type=float, default=0, help="scale so the colored half measures this many game pixels (an image AI draws each strip at its own size)")
     ap.add_argument("--shell-frames", type=int, default=0, help="measure the colored half only in the first N frames (a character that breaks apart, like a dissolve)")
     ap.add_argument("--separate", action="store_true", help="with --frames: frames reach into each other's columns (a spray, a burst); split them by blobs, not by columns")
+    ap.add_argument("--align", choices=["color", "shape"], default="color", help="how each frame's body is found to keep it still: color (its biggest strongly colored blob, a capsule hero's colored half) or shape (slid over the --align-ref frame until their silhouettes overlap the most: any creature)")
+    ap.add_argument("--align-ref", type=int, default=0, help="with --align shape: the frame the others are lined up with")
     ap.add_argument("--drop-strays", type=float, default=0, help="drop a frame's blobs smaller than this share of its biggest one that lie by the frame's left or right edge (a neighbour's limb tip given to it); not for sprays")
     args = ap.parse_args()
 
@@ -256,7 +291,10 @@ def main() -> None:
         scale = args.shell / shell
     # every frame is placed by its body's center (not its box's): arms and
     # legs swing, the body does not jump left and right from frame to frame
-    centers = [x0 + body_center(rgba, x0, x1) for (x0, x1) in runs]
+    if args.align == "shape":
+        centers = shape_centers(alpha, boxes, args.align_ref)
+    else:
+        centers = [x0 + body_center(rgba, x0, x1) for (x0, x1) in runs]
     reach = max(max(c - b[0], b[2] - c) for c, b in zip(centers, boxes))
     cell_w = int(np.ceil(2 * reach * scale)) + 2 * args.pad
     cell_h = int(np.ceil(tallest * scale)) + 2 * args.pad

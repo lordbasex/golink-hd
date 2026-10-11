@@ -32,21 +32,24 @@ for item in red_granule:4:11 blue_granule:4:11 red_shot:4:18 blue_shot:4:18 red_
   [ -f source/$name.png ] || continue
   # a cancer cell splitting is wide and reaches into its neighbours' columns: split by blobs
   sep=""; [ "$name" = enemy_cancer ] && sep="--separate"
-  cut source/$name.png $OUT/$name.png --height "$(( height * RES ))" --frames "$frames" $sep
+  # a creature's body is kept still by its shape (its brightest color may be a tongue or an eye, not the body)
+  align=""; case $name in enemy_*) align="--align shape" ;; esac
+  cut source/$name.png $OUT/$name.png --height "$(( height * RES ))" --frames "$frames" $sep $align
 done
 # the bosses, big (two thirds of the screen), and their minions: the same sheets, small; split by blobs
 # (a spit or a sneeze reaches into the next frame's column: a straight cut left pieces of it in the wrong frame)
+# and lined up by their shape (a red nose or a scarf is not the body)
 for z in colon intestine stomach lungs heart brain; do
   [ -f source/boss_$z.png ] || continue
-  cut source/boss_$z.png $OUT/boss_$z.png --height "$(( 220 * RES ))" --frames 6 --separate
-  cut source/boss_$z.png $OUT/boss_${z}_minion.png --height "$(( 56 * RES ))" --frames 6 --separate
+  cut source/boss_$z.png $OUT/boss_$z.png --height "$(( 220 * RES ))" --frames 6 --separate --align shape
+  cut source/boss_$z.png $OUT/boss_${z}_minion.png --height "$(( 56 * RES ))" --frames 6 --separate --align shape
 done
 # the mid-bosses (half-way through each zone), a little smaller, and their minions
 for z in colon intestine stomach lungs heart brain; do
   [ -f source/miniboss_$z.png ] || continue
-  cut source/miniboss_$z.png $OUT/miniboss_$z.png --height "$(( 170 * RES ))" --frames 6 --separate
-  cut source/miniboss_$z.png $OUT/miniboss_${z}_minion.png --height "$(( 50 * RES ))" --frames 6 --separate
+  cut source/miniboss_$z.png $OUT/miniboss_$z.png --height "$(( 170 * RES ))" --frames 6 --separate --align shape
+  cut source/miniboss_$z.png $OUT/miniboss_${z}_minion.png --height "$(( 50 * RES ))" --frames 6 --separate --align shape
 done
 # the final boss's evolved form: bigger still (four fifths of the screen)
-[ -f source/boss_brain_omega.png ] && cut source/boss_brain_omega.png $OUT/boss_brain_omega.png --height "$(( 290 * RES ))" --frames 6 --separate --drop-strays 0.05
+[ -f source/boss_brain_omega.png ] && cut source/boss_brain_omega.png $OUT/boss_brain_omega.png --height "$(( 290 * RES ))" --frames 6 --separate --drop-strays 0.05 --align shape
 true

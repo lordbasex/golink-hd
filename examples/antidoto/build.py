@@ -566,7 +566,7 @@ def main():
     manifest = {
         "format": 3,
         "title": "ANTÍDOTO",
-        "version": "0.1.0",
+        "version": "0.1.1",
         "genre": "platformer",
         "players": 2,
         "screen": "16:9",
@@ -588,7 +588,7 @@ def main():
                                            "spit": thing("enemy_spitter", 6, 10, {"from": 2, "frames": 3}),
                                            "squashed": thing("enemy_spitter", 6, 8, {"from": 5, "frames": 1})}.items() if v} or None,
             "spit": thing("obj_spit", 1, 1),
-            "roller": {k: v for k, v in {"roll": thing("enemy_bacteria", 6, 12, {"from": 0, "frames": 5}),
+            "roller": {k: v for k, v in {"roll": thing("enemy_bacteria", 6, 12, {"from": 0, "frames": 4}),
                                           "squashed": thing("enemy_bacteria", 6, 8, {"from": 5, "frames": 1})}.items() if v} or None,
             "hopper": {k: v for k, v in {"idle": thing("enemy_parasite", 6, 4, {"from": 4, "frames": 1}),
                                           "jump": thing("enemy_parasite", 6, 8, {"from": 1, "frames": 2}),

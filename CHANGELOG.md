@@ -38,6 +38,7 @@
 - Tests: the four enemies, a boss that evolves, the credits.
 - ANTÍDOTO: bacteria, parasites, fungi and cancer cells drawn by the image AI, a mix of them per zone; a mid-boss at the end of each zone's first act (CAPITÁN COLI, LA TENIA, HONGÓN, MOHO NEGRO, TUMORÓN, EL PRIÓN); NEUROVIRUS evolves into NEUROVIRUS OMEGA; the credits.
 - `tools/hdrun --every N --audio FILE.raw`: every Nth frame as PNG and the run's sound, to make a video with ffmpeg.
+- `tools/sprites.py --align shape` (and `--align-ref N`): each frame is slid over the reference frame, feet on the same line, until their bodies (the silhouette without thin limbs, lines and drops) overlap the most, so a creature whose body is not one strongly colored blob stays still from frame to frame. ANTÍDOTO 0.1.1 cuts every enemy, mid-boss, boss and minion this way: their bodies jumped sideways between frames (the old way followed the brightest color, a tongue, an eye, a red nose or a scarf; GRIPÓN moved up to 270 pixels at 720p), and the bacterium's roll no longer shows its uncurled frame once a turn.
 
 ### Added
 - The API test games (`examples/`, written by `examples/make-api-test.py`): a 16:9 game that uses every picture, letter and effect of the package format with a dialog at each stop, and 4:3 and 9:16 ones; CI packs, checks and plays them (`tools/runs/api.txt`, `api.expected`).
