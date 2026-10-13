@@ -9,6 +9,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "hd.h"
+#ifndef HD_NO_3D
+#include "r3d.h"
+#endif
 #include "pack.h"
 #include "gfx.h"
 #include "bones.h"
@@ -609,6 +612,56 @@ static void test_showcase(void)
    CHECK(ha == hb);
    CHECK(memcmp(&a, &b, sizeof a) == 0);
 }
+
+#ifndef HD_NO_3D
+/* The 3D room: the same frames twice, and a save state in the middle continues exactly (on any number of cores). */
+static void test_3d(void)
+{
+   static hd_state a, b;
+   static uint8_t save[HD_SAVE_SIZE];
+   uint32_t ha, hb, h0;
+   hd_input in[MAX_PLAYERS];
+   int32_t f;
+   hd_res = 1;
+   hd_reset(&a);
+   hd_r3d_start(&a);
+   hd_reset(&b);
+   hd_r3d_start(&b);
+   ha = hb = 2166136261u;
+   for (f = 0; f < 40; f++)
+   {
+      memset(in, 0, sizeof in);
+      in[0].buttons = (f / 10) % 2 ? PAD_RIGHT | PAD_Y : PAD_LEFT | PAD_L;
+      hd_step(&a, in);
+      hd_draw(&a, fb);
+      ha = fnv(fb, sizeof(uint32_t) * HD_W * HD_H, ha);
+      hd_step(&b, in);
+      hd_draw(&b, fb);
+      hb = fnv(fb, sizeof(uint32_t) * HD_W * HD_H, hb);
+   }
+   CHECK(ha == hb);
+   CHECK(r3d_triangles() > 20000 && r3d_drawn() > 1000);
+   h0 = ha;
+   hd_save(&a, save);
+   memset(in, 0, sizeof in);
+   for (f = 0; f < 20; f++)
+   {
+      hd_step(&a, in);
+      hd_draw(&a, fb);
+      ha = fnv(fb, sizeof(uint32_t) * HD_W * HD_H, ha);
+   }
+   CHECK(hd_load(&b, save, HD_SAVE_SIZE) == 1);
+   hb = h0;
+   for (f = 0; f < 20; f++)
+   {
+      hd_step(&b, in);
+      hd_draw(&b, fb);
+      hb = fnv(fb, sizeof(uint32_t) * HD_W * HD_H, hb);
+   }
+   CHECK(ha == hb);
+   CHECK(a.show.on == 2 && memcmp(&a, &b, sizeof a) == 0);
+}
+#endif
 
 /* A package of format 2: a dark level with lights, colors, waves, zoom, outlines, sound and a dialog. */
 static void test_effects_package(void)
@@ -2150,6 +2203,9 @@ int main(void)
    test_bones();
    test_fx();
    test_showcase();
+#ifndef HD_NO_3D
+   test_3d();
+#endif
    test_effects_package();
    test_goal_height();
    test_physics();

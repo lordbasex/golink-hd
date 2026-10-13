@@ -521,7 +521,7 @@ static void vox_fill(const r3d_solid *s)
                   int64_t cy = (s->y0 + s->y1) / 2, ry = hd_max(1, s->r1), rx = hd_max(1, s->r0);
                   int64_t dy = py - cy;
                   /* (px/rx)^2 + (dy/ry)^2 + (pz/rx)^2 <= 1, scaled by 2^14 */
-                  int64_t q = ((px << 7) / rx) * ((px << 7) / rx) + ((dy << 7) / ry) * ((dy << 7) / ry) + ((pz << 7) / rx) * ((pz << 7) / rx);
+                  int64_t q = ((px * 128) / rx) * ((px * 128) / rx) + ((dy * 128) / ry) * ((dy * 128) / ry) + ((pz * 128) / rx) * ((pz * 128) / rx);
                   if (q > ((int64_t)1 << 28))
                      continue;
                }
@@ -954,7 +954,7 @@ static int32_t clip(const frame_k *k, cam_pt *poly, int32_t n)
             cam_pt c;
             if (a->x > b->x || (a->x == b->x && (a->y > b->y || (a->y == b->y && a->z > b->z))))
                p = b, q = a, dp = db, dq = da;
-            t = (dp << 16) / (dp - dq);
+            t = (dp * 65536) / (dp - dq);
             c.x = mix_at(p->x, q->x, t);
             c.y = mix_at(p->y, q->y, t);
             c.z = mix_at(p->z, q->z, t);
@@ -1092,9 +1092,9 @@ static void setup_rows(void *ctx, int32_t first, int32_t last)
          int64_t v0 = t->v[a][0], v1 = t->v[a][1], v2 = t->v[a][2];
          if ((a == A_U || a == A_T) && t->tex < 0)
             continue;
-         t->a[a].at0 = v0 << 16;
-         t->a[a].dx = (((v1 - v0) * (y2 - y0) - (v2 - v0) * (y1 - y0)) << 16) / area;
-         t->a[a].dy = (((v2 - v0) * (x1 - x0) - (v1 - v0) * (x2 - x0)) << 16) / area;
+         t->a[a].at0 = v0 * 65536;
+         t->a[a].dx = (((v1 - v0) * (y2 - y0) - (v2 - v0) * (y1 - y0)) * 65536) / area;
+         t->a[a].dy = (((v2 - v0) * (x1 - x0) - (v1 - v0) * (x2 - x0)) * 65536) / area;
       }
       t->y0 = hd_max(0, (hd_min(t->y[0], hd_min(t->y[1], t->y[2])) - 8) >> 4);
       t->y1 = hd_min(s->h - 1, (hd_max(t->y[0], hd_max(t->y[1], t->y[2])) + 8) >> 4);

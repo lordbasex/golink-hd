@@ -38,6 +38,10 @@ L and R (or Select) change scenes, with a pixelate and fade between them:
 | Sea | Waves, underwater colors, muffled sound (low pass), bubbles, fish and weed turning | the D-pad swims |
 | Colors | The demo's level in night, sepia, underwater, sunset and grey grading, zoomed from 0.5x to 2x, with bloom and blur | left and right colors, up and down zoom, Y bloom, B blur |
 
+## 3D
+
+The engine also draws 3D worlds: low-poly scenes in software with integers only (textures painted in code, light baked with the sun's soft shadows, the sky and lamps, a filmic curve), on the same API and save states. `golinkhd_load_demo(e, 2)` (`tools/hdrun LIB --demo 3d`) is a lived-in flat seen from above like a scale model: left and right turn the view, up and down tilt it, L and R zoom, A, B, X and Y move it. [docs/3d.md](docs/3d.md) is the reference and a step-by-step guide to make a 3D game; `make NO_3D=1` builds the engine without it.
+
 ## Game packages (.glhd)
 
 A package is a zip (stored or deflate) with:
@@ -339,7 +343,7 @@ make bench           # milliseconds per frame of each scene
 - **Deterministic.** Game logic uses only integers and 16.16 fixed point, never `float`, and one seeded random generator kept in the state. The same inputs give the same frames and the same sound on every CPU and in WebAssembly.
 - **One state struct.** The whole game is `hd_state` (`src/hd.h`), made only of 32-bit integers. Art, level and sounds are built once at start and only read afterwards.
 - **Save states are portable and versioned.** A save state is a header (`GLHD`, the layout version, the size, a checksum, the game's SHA-256) and the state's words in little endian. A save state of another version, of another game or a damaged one is refused, never misread, and the values loaded are brought back into safe ranges. `HD_STATE_VERSION` goes up whenever `hd_state` changes.
-- **Software rendering** into a 640 × 360 XRGB8888 frame buffer, so every build draws the same pixels. The frontend scales it (×3 is 1080p, ×6 is 4K).
+- **Software rendering** into a 640 × 360 XRGB8888 frame buffer, so every build draws the same pixels. The frontend scales it (×3 is 1080p, ×6 is 4K). 3D worlds are drawn in software too, with integers only ([docs/3d.md](docs/3d.md)).
 - **Sound** at 48 kHz stereo, 800 samples per frame, from a 32 channel mixer whose channels live in the state.
 - **Budgets:** under 4 ms per frame on the host. `make bench` measures each scene (step, draw and sound) on a 2019 Intel Mac Pro: platformer 0.6 ms, Mode 7 0.5, road 0.3, cave (lights, bloom, A*, bones) 2.6, sea (waves, grade, low pass) 1.0, and colors with grading, zoom, bloom and blur all at once 4.1. Alone, on 640 × 360: grade 0.2 ms, bloom 1.5, blur 0.8, waves 0.15, pixelate 0.3, fade 0.4, lights 0.4.
 
@@ -356,6 +360,7 @@ make bench           # milliseconds per frame of each scene
 | `src/text.c` | The font (UTF-8, Spanish and Portuguese accents) and dialog boxes |
 | `src/path.c` | A* pathfinding on a grid |
 | `src/showcase.c` | The showcase demo |
+| `src/3d/` | 3D: the renderer and the bake (`r3d.c`, `r3d.h`), textures painted in code (`tex3d.c`), the flat demo (`room3d.c`); see [docs/3d.md](docs/3d.md) |
 | `src/audio.c` | Sound effects made in code, the music sequencer and the mixer |
 | `src/art.c`, `src/level.c` | The demo's pixel art and level, made in code |
 | `src/save.c` | Save states |
