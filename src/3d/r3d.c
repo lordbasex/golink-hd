@@ -1,36 +1,111 @@
 /* Copyright (c) 2026 Federico Pereira <lord.basex@gmail.com> */
 /*
- * The 3D renderer (r3d.h): triangles lit per face, clipped to the view in
- * camera space, projected with 4 bits of subpixel precision and filled with
- * a depth buffer (1/z, which is linear on screen). Integer math only; the
- * filling runs on up to 4 cores by bands of rows (par.c), each band drawing
- * every triangle in the same order, so the picture never depends on the
- * number of cores.
+ * The 3D renderer (r3d.h). Integer math only, so every build draws the same
+ * pixels:
+ *   - building: pieces become triangles in world space, big faces cut into
+ *     cells (r3d_detail) so the baked light can show shadows on them, each
+ *     corner with its texture coordinates;
+ *   - baking: the solid pieces fill a grid of 5 cm cubes; from every corner
+ *     of every triangle rays walk that grid toward the sun (a few, for soft
+ *     edges), around it for the sky (the corners and the floor under a table
+ *     get less) and toward each lamp; the light found is kept in the corner;
+ *   - drawing: triangles turned toward the eye are clipped to the view in
+ *     camera space, projected with 4 bits of subpixel precision and filled
+ *     with a depth buffer (1/z), their texture, light and color interpolated
+ *     across them (affine: the cells are small), then a filmic curve turns
+ *     light into the screen's colors. The filling runs on up to 4 cores by
+ *     bands of rows (par.c), each band drawing every triangle in the same
+ *     order, so the picture never depends on the number of cores.
  */
+#include <stdlib.h>
 #include <string.h>
 #include "r3d.h"
 
-/* ---- the scene's triangles, built once ---- */
+/* ---- textures ---- */
+
+typedef struct
+{
+   int32_t wlog, hlog;
+   uint32_t *px;
+} r3d_tex;
+
+static r3d_tex texs[R3D_MAX_TEX];
+static int32_t tex_count;
+
+int32_t r3d_tex_add(int32_t wlog, int32_t hlog, uint32_t *px)
+{
+   if (tex_count >= R3D_MAX_TEX || wlog < 0 || wlog > 11 || hlog < 0 || hlog > 11 || !px)
+      return -1;
+   texs[tex_count].wlog = wlog;
+   texs[tex_count].hlog = hlog;
+   texs[tex_count].px = px;
+   return tex_count++;
+}
+
+uint32_t *r3d_tex_pixels(int32_t id)
+{
+   return id >= 0 && id < tex_count ? texs[id].px : NULL;
+}
+
+/* ---- the world's triangles, built once ---- */
+
+enum { TF_GLOW = 1, TF_DECAL = 2, TF_FIT = 4 };
 
 typedef struct
 {
    r3d_vec v[3];
-   int32_t nx, ny, nz; /* the face's normal, 16384 long (2.14) */
+   int32_t u[3], t[3];                /* texels, 8 bits of fraction */
+   int32_t lr[3], lg[3], lb[3];       /* the baked light of each corner, 256 = 1.0 */
+   int32_t nx, ny, nz;                /* the face's normal, 16384 long (2.14) */
    uint32_t color;
-   int32_t glow;
+   int32_t cr, cg, cb;                /* the color as light, 256 = white */
+   int32_t tex, flags, glow;
 } r3d_tri;
 
 static r3d_tri tris[R3D_MAX_TRIS];
 static int32_t tri_count, mesh_first;
+static void lin3(uint32_t c, int32_t *r, int32_t *g, int32_t *b);
+static uint32_t sky_top, sky_bottom;
+/* a width that makes hd_rows split any number of rows over the cores */
+#define PAR_WIDE (1 << 16)
 static int32_t place_x, place_y, place_z, place_c = TRIG_ONE, place_s;
-static int32_t glow_on;
+static int32_t cur_tex = -1, cur_tpm, cur_glow, cur_occlude = 1, cur_decal, cur_cell;
+
+/* What stops light: boxes (world-aligned bounds), upright cylinders and balls. */
+enum { SOLID_BOX = 0, SOLID_CYL, SOLID_BALL };
+typedef struct
+{
+   int32_t kind;
+   int32_t x0, y0, z0, x1, y1, z1; /* bounds */
+   int32_t cx, cz, r0, r1;         /* a cylinder: center, radius at the bottom and the top; a ball: radii in r0 (xz), r1 (y) */
+} r3d_solid;
+
+static r3d_solid solids[R3D_MAX_SOLIDS];
+static int32_t solid_count;
+
+typedef struct
+{
+   r3d_vec at;
+   int32_t radius, strength;
+   uint32_t color;
+} r3d_lamp;
+
+static r3d_lamp lamps[R3D_MAX_LIGHTS];
+static int32_t lamp_count;
 
 void r3d_clear(void)
 {
    tri_count = 0;
    mesh_first = 0;
+   solid_count = 0;
+   lamp_count = 0;
    r3d_place(0, 0, 0, 0);
-   glow_on = 0;
+   cur_tex = -1;
+   cur_tpm = 0;
+   cur_glow = 0;
+   cur_occlude = 1;
+   cur_decal = 0;
+   cur_cell = 0;
 }
 
 void r3d_place(int32_t x, int32_t y, int32_t z, int32_t yaw)
@@ -55,9 +130,30 @@ r3d_mesh r3d_end(void)
    return m;
 }
 
-void r3d_glow(int32_t on)
+void r3d_material(int32_t tex, int32_t texels_per_m)
 {
-   glow_on = on ? 1 : 0;
+   cur_tex = tex >= 0 && tex < tex_count ? tex : -1;
+   cur_tpm = texels_per_m;
+}
+
+void r3d_glow(int32_t strength)
+{
+   cur_glow = hd_max(0, strength);
+}
+
+void r3d_occlude(int32_t on)
+{
+   cur_occlude = on ? 1 : 0;
+}
+
+void r3d_decal(int32_t on)
+{
+   cur_decal = on ? 1 : 0;
+}
+
+void r3d_detail(int32_t cell)
+{
+   cur_cell = hd_max(0, cell);
 }
 
 int32_t r3d_triangles(void)
@@ -106,6 +202,12 @@ static void unit(int64_t x, int64_t y, int64_t z, int32_t *ox, int32_t *oy, int3
    *oz = (int32_t)(z * TRIG_ONE / len);
 }
 
+static int32_t length(r3d_vec a, r3d_vec b)
+{
+   int64_t x = (int64_t)b.x - a.x, y = (int64_t)b.y - a.y, z = (int64_t)b.z - a.z;
+   return (int32_t)isqrt64((uint64_t)(x * x + y * y + z * z));
+}
+
 static r3d_vec to_world(r3d_vec p)
 {
    r3d_vec w;
@@ -124,13 +226,39 @@ static r3d_vec vec(int32_t x, int32_t y, int32_t z)
    return v;
 }
 
-/* A triangle in the place's axes, turned to face `hint` (any length; zero keeps the order). */
-static void add_tri(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t hx, int64_t hy, int64_t hz)
+static r3d_vec lerp(r3d_vec a, r3d_vec b, int32_t i, int32_t n)
+{
+   return vec(a.x + (int32_t)(((int64_t)b.x - a.x) * i / n), a.y + (int32_t)(((int64_t)b.y - a.y) * i / n),
+              a.z + (int32_t)(((int64_t)b.z - a.z) * i / n));
+}
+
+/* Texture coordinates of a point along the piece's own axes, by the face's main direction (8 bits of fraction). */
+static void world_uv(r3d_vec p, int32_t nx, int32_t ny, int32_t nz, int32_t *u, int32_t *t)
+{
+   int32_t ax = hd_abs(nx), ay = hd_abs(ny), az = hd_abs(nz);
+   int64_t a, b;
+   if (ay >= ax && ay >= az)
+      a = p.x, b = p.z;
+   else if (ax >= az)
+      a = p.z, b = -(int64_t)p.y;
+   else
+      a = p.x, b = -(int64_t)p.y;
+   *u = (int32_t)((a * cur_tpm) >> 8);
+   *t = (int32_t)((b * cur_tpm) >> 8);
+}
+
+/*
+ * A triangle in the place's axes, turned to face `hint` (any length; zero
+ * keeps the order); uv: its corners' texture coordinates, or NULL to lay
+ * the texture along the piece's axes.
+ */
+static void add_tri_uv(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t hx, int64_t hy, int64_t hz, const int32_t *uv)
 {
    r3d_tri *t;
+   r3d_vec p[3];
    int64_t ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z, vx = c.x - a.x, vy = c.y - a.y, vz = c.z - a.z;
    int64_t nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-   int32_t ix, iy, iz, jx, jy, jz;
+   int32_t ix, iy, iz, jx, jy, jz, k, flip = 0, ord[3] = { 0, 1, 2 };
    if (tri_count >= R3D_MAX_TRIS)
       return;
    unit(nx, ny, nz, &ix, &iy, &iz);
@@ -139,14 +267,27 @@ static void add_tri(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t hx,
    unit(hx, hy, hz, &jx, &jy, &jz);
    if ((int64_t)ix * jx + (int64_t)iy * jy + (int64_t)iz * jz < 0)
    {
-      r3d_vec k = b;
-      b = c;
-      c = k;
+      flip = 1;
+      ord[1] = 2;
+      ord[2] = 1;
+      ix = -ix, iy = -iy, iz = -iz;
    }
+   p[0] = a;
+   p[1] = flip ? c : b;
+   p[2] = flip ? b : c;
    t = &tris[tri_count++];
-   t->v[0] = to_world(a);
-   t->v[1] = to_world(b);
-   t->v[2] = to_world(c);
+   memset(t, 0, sizeof *t);
+   for (k = 0; k < 3; k++)
+   {
+      t->v[k] = to_world(p[k]);
+      if (uv)
+      {
+         t->u[k] = uv[ord[k] * 2];
+         t->t[k] = uv[ord[k] * 2 + 1];
+      }
+      else
+         world_uv(p[k], ix, iy, iz, &t->u[k], &t->t[k]);
+   }
    ux = t->v[1].x - t->v[0].x;
    uy = t->v[1].y - t->v[0].y;
    uz = t->v[1].z - t->v[0].z;
@@ -155,18 +296,90 @@ static void add_tri(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t hx,
    vz = t->v[2].z - t->v[0].z;
    unit(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx, &t->nx, &t->ny, &t->nz);
    t->color = color & 0xffffffu;
-   t->glow = glow_on;
+   lin3(t->color, &t->cr, &t->cg, &t->cb);
+   t->tex = cur_tex;
+   t->glow = cur_glow;
+   t->flags = (cur_glow ? TF_GLOW : 0) | (cur_decal ? TF_DECAL : 0);
+   for (k = 0; k < 3; k++)
+      t->lr[k] = t->lg[k] = t->lb[k] = 256;
 }
 
+static void add_tri(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t hx, int64_t hy, int64_t hz)
+{
+   add_tri_uv(a, b, c, color, hx, hy, hz, NULL);
+}
+
+/*
+ * A quad (a b c d around it), cut into cells of cur_cell; with a stretched
+ * texture (texels_per_m 0) the whole quad shows the texture once.
+ */
 static void add_quad(r3d_vec a, r3d_vec b, r3d_vec c, r3d_vec d, uint32_t color, int64_t hx, int64_t hy, int64_t hz)
 {
-   add_tri(a, b, c, color, hx, hy, hz);
-   add_tri(a, c, d, color, hx, hy, hz);
+   int32_t n = 1, m = 1, i, j, fit = cur_tex >= 0 && cur_tpm == 0, tw = 0, th = 0;
+   /* faces that look down are never lit by much nor seen from above: no cells for them */
+   if (cur_cell > 0 && hy >= 0)
+   {
+      n = hd_clamp((hd_max(length(a, b), length(d, c)) + cur_cell - 1) / cur_cell, 1, 48);
+      m = hd_clamp((hd_max(length(a, d), length(b, c)) + cur_cell - 1) / cur_cell, 1, 48);
+   }
+   if (fit)
+   {
+      tw = 256 << texs[cur_tex].wlog;
+      th = 256 << texs[cur_tex].hlog;
+   }
+   for (j = 0; j < m; j++)
+      for (i = 0; i < n; i++)
+      {
+         r3d_vec p00 = lerp(lerp(a, b, i, n), lerp(d, c, i, n), j, m);
+         r3d_vec p10 = lerp(lerp(a, b, i + 1, n), lerp(d, c, i + 1, n), j, m);
+         r3d_vec p11 = lerp(lerp(a, b, i + 1, n), lerp(d, c, i + 1, n), j + 1, m);
+         r3d_vec p01 = lerp(lerp(a, b, i, n), lerp(d, c, i, n), j + 1, m);
+         if (fit)
+         {
+            /* the texture's top row along d -> c, so a picture on a wall stands up */
+            int32_t u0 = tw * i / n, u1 = tw * (i + 1) / n, v0 = th - th * j / m - 1, v1 = th - th * (j + 1) / m;
+            int32_t uv1[6] = { u0, v0, u1, v0, u1, v1 }, uv2[6] = { u0, v0, u1, v1, u0, v1 };
+            add_tri_uv(p00, p10, p11, color, hx, hy, hz, uv1);
+            add_tri_uv(p00, p11, p01, color, hx, hy, hz, uv2);
+         }
+         else
+         {
+            add_tri(p00, p10, p11, color, hx, hy, hz);
+            add_tri(p00, p11, p01, color, hx, hy, hz);
+         }
+      }
 }
 
 void r3d_quad(r3d_vec a, r3d_vec b, r3d_vec c, r3d_vec d, uint32_t color)
 {
    add_quad(a, b, c, d, color, 0, 0, 0);
+}
+
+static void add_solid(int32_t kind, r3d_vec lo, r3d_vec hi, int32_t r0, int32_t r1)
+{
+   r3d_solid *s;
+   r3d_vec c[8], w;
+   int32_t i;
+   if (!cur_occlude || cur_decal || solid_count >= R3D_MAX_SOLIDS)
+      return;
+   s = &solids[solid_count++];
+   s->kind = kind;
+   for (i = 0; i < 8; i++)
+      c[i] = to_world(vec(i & 1 ? hi.x : lo.x, i & 2 ? hi.y : lo.y, i & 4 ? hi.z : lo.z));
+   s->x0 = s->x1 = c[0].x;
+   s->y0 = s->y1 = c[0].y;
+   s->z0 = s->z1 = c[0].z;
+   for (i = 1; i < 8; i++)
+   {
+      s->x0 = hd_min(s->x0, c[i].x), s->x1 = hd_max(s->x1, c[i].x);
+      s->y0 = hd_min(s->y0, c[i].y), s->y1 = hd_max(s->y1, c[i].y);
+      s->z0 = hd_min(s->z0, c[i].z), s->z1 = hd_max(s->z1, c[i].z);
+   }
+   w = to_world(vec((lo.x + hi.x) / 2, lo.y, (lo.z + hi.z) / 2));
+   s->cx = w.x;
+   s->cz = w.z;
+   s->r0 = r0;
+   s->r1 = r1;
 }
 
 void r3d_box(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_t y1, int32_t z1, uint32_t color, int32_t flags)
@@ -175,24 +388,27 @@ void r3d_box(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_t y1, int32_t
    r3d_vec p000 = vec(x0, y0, z0), p100 = vec(x1, y0, z0), p010 = vec(x0, y1, z0), p110 = vec(x1, y1, z0);
    r3d_vec p001 = vec(x0, y0, z1), p101 = vec(x1, y0, z1), p011 = vec(x0, y1, z1), p111 = vec(x1, y1, z1);
    if (!(flags & R3D_SKIP_BOTTOM))
-      add_quad(p000, p100, p101, p001, color, 0, -o, 0);
+      add_quad(p001, p101, p100, p000, color, 0, -o, 0);
    if (!(flags & R3D_SKIP_TOP))
       add_quad(p010, p110, p111, p011, color, 0, o, 0);
    if (!(flags & R3D_SKIP_Z))
    {
-      add_quad(p000, p100, p110, p010, color, 0, 0, -o);
+      add_quad(p100, p000, p010, p110, color, 0, 0, -o);
       add_quad(p001, p101, p111, p011, color, 0, 0, o);
    }
    if (!(flags & R3D_SKIP_X))
    {
       add_quad(p000, p001, p011, p010, color, -o, 0, 0);
-      add_quad(p100, p101, p111, p110, color, o, 0, 0);
+      add_quad(p101, p100, p110, p111, color, o, 0, 0);
    }
+   if (!(flags & R3D_INSIDE))
+      add_solid(SOLID_BOX, p000, p111, 0, 0);
 }
 
 void r3d_cylinder(int32_t x, int32_t y, int32_t z, int32_t r, int32_t r_top, int32_t h, int32_t sides, uint32_t color)
 {
-   int32_t i;
+   int32_t i, cell = cur_cell;
+   int32_t rm = hd_max(r, r_top);
    sides = hd_clamp(sides, 3, 32);
    for (i = 0; i < sides; i++)
    {
@@ -202,13 +418,17 @@ void r3d_cylinder(int32_t x, int32_t y, int32_t z, int32_t r, int32_t r_top, int
       r3d_vec b1 = vec(x + (int32_t)(((int64_t)r * c1) >> 14), y, z + (int32_t)(((int64_t)r * s1) >> 14));
       r3d_vec t0 = vec(x + (int32_t)(((int64_t)r_top * c0) >> 14), y + h, z + (int32_t)(((int64_t)r_top * s0) >> 14));
       r3d_vec t1 = vec(x + (int32_t)(((int64_t)r_top * c1) >> 14), y + h, z + (int32_t)(((int64_t)r_top * s1) >> 14));
-      add_tri(b0, b1, t1, color, hd_cos(am), 0, hd_sin(am));
+      cur_cell = 0;
       if (r_top > 0)
-         add_tri(b0, t1, t0, color, hd_cos(am), 0, hd_sin(am));
+         add_quad(b1, b0, t0, t1, color, hd_cos(am), 0, hd_sin(am));
+      else
+         add_tri(b0, b1, t1, color, hd_cos(am), 0, hd_sin(am));
       if (r_top > 0)
          add_tri(vec(x, y + h, z), t0, t1, color, 0, 1, 0);
       add_tri(vec(x, y, z), b0, b1, color, 0, -1, 0);
+      cur_cell = cell;
    }
+   add_solid(SOLID_CYL, vec(x - rm, y, z - rm), vec(x + rm, y + h, z + rm), r, r_top);
 }
 
 void r3d_ball(int32_t x, int32_t y, int32_t z, int32_t rx, int32_t ry, int32_t rz, int32_t rings, uint32_t color)
@@ -225,17 +445,14 @@ void r3d_ball(int32_t x, int32_t y, int32_t z, int32_t rx, int32_t ry, int32_t r
       {
          int32_t a0 = j * ANGLE_FULL / seg, a1 = (j + 1) * ANGLE_FULL / seg;
          r3d_vec p[4];
-         int32_t k, la[4], lo[4];
-         la[0] = la0, lo[0] = a0;
-         la[1] = la0, lo[1] = a1;
-         la[2] = la1, lo[2] = a1;
-         la[3] = la1, lo[3] = a0;
+         int32_t k, lo[4], ring[4], hh[4];
+         lo[0] = a0, ring[0] = cr0, hh[0] = cy0;
+         lo[1] = a1, ring[1] = cr0, hh[1] = cy0;
+         lo[2] = a1, ring[2] = cr1, hh[2] = cy1;
+         lo[3] = a0, ring[3] = cr1, hh[3] = cy1;
          for (k = 0; k < 4; k++)
-         {
-            int32_t ring = (la[k] == la0) ? cr0 : cr1, h = (la[k] == la0) ? cy0 : cy1;
-            p[k] = vec(x + (int32_t)(((int64_t)rx * ring >> 14) * hd_cos(lo[k]) >> 14), y + (int32_t)(((int64_t)ry * h) >> 14),
-                       z + (int32_t)(((int64_t)rz * ring >> 14) * hd_sin(lo[k]) >> 14));
-         }
+            p[k] = vec(x + (int32_t)((((int64_t)rx * ring[k]) >> 14) * hd_cos(lo[k]) >> 14), y + (int32_t)(((int64_t)ry * hh[k]) >> 14),
+                       z + (int32_t)((((int64_t)rz * ring[k]) >> 14) * hd_sin(lo[k]) >> 14));
          {
             int64_t hx = (int64_t)p[0].x + p[1].x + p[2].x + p[3].x - 4LL * x;
             int64_t hy = (int64_t)p[0].y + p[1].y + p[2].y + p[3].y - 4LL * y;
@@ -245,72 +462,467 @@ void r3d_ball(int32_t x, int32_t y, int32_t z, int32_t rx, int32_t ry, int32_t r
          }
       }
    }
+   add_solid(SOLID_BALL, vec(x - rx, y - ry, z - rz), vec(x + rx, y + ry, z + rz), hd_max(rx, rz), ry);
+}
+
+void r3d_light(int32_t x, int32_t y, int32_t z, int32_t radius, uint32_t color, int32_t strength)
+{
+   if (lamp_count >= R3D_MAX_LIGHTS)
+      return;
+   lamps[lamp_count].at = to_world(vec(x, y, z));
+   lamps[lamp_count].radius = hd_max(radius, FX_ONE / 4);
+   lamps[lamp_count].color = color & 0xffffffu;
+   lamps[lamp_count].strength = strength;
+   lamp_count++;
+}
+
+/* ---- baking: the voxel grid and the rays ---- */
+
+#define VOX_MAX (480 * 96 * 480)
+static uint8_t vox[VOX_MAX / 8];
+static int32_t vox_x0, vox_y0, vox_z0, vox_nx, vox_ny, vox_nz, vox_size;
+
+static int vox_get(int32_t i, int32_t j, int32_t k)
+{
+   int32_t n;
+   if (i < 0 || j < 0 || k < 0 || i >= vox_nx || j >= vox_ny || k >= vox_nz)
+      return 0;
+   n = (k * vox_ny + j) * vox_nx + i;
+   return (vox[n >> 3] >> (n & 7)) & 1;
+}
+
+static void vox_fill(const r3d_solid *s)
+{
+   int32_t i0 = (s->x0 - vox_x0) / vox_size, i1 = (s->x1 - vox_x0 - 1) / vox_size;
+   int32_t j0 = (s->y0 - vox_y0) / vox_size, j1 = (s->y1 - vox_y0 - 1) / vox_size;
+   int32_t k0 = (s->z0 - vox_z0) / vox_size, k1 = (s->z1 - vox_z0 - 1) / vox_size;
+   int32_t i, j, k, h = hd_max(1, s->y1 - s->y0);
+   i0 = hd_max(i0, 0), j0 = hd_max(j0, 0), k0 = hd_max(k0, 0);
+   i1 = hd_min(i1, vox_nx - 1), j1 = hd_min(j1, vox_ny - 1), k1 = hd_min(k1, vox_nz - 1);
+   for (k = k0; k <= k1; k++)
+      for (j = j0; j <= j1; j++)
+         for (i = i0; i <= i1; i++)
+         {
+            int32_t n;
+            if (s->kind != SOLID_BOX)
+            {
+               /* the cube's center inside the round shape */
+               int64_t px = vox_x0 + (int64_t)i * vox_size + vox_size / 2 - s->cx;
+               int64_t py = vox_y0 + (int64_t)j * vox_size + vox_size / 2;
+               int64_t pz = vox_z0 + (int64_t)k * vox_size + vox_size / 2 - s->cz;
+               if (s->kind == SOLID_CYL)
+               {
+                  int64_t r = s->r0 + ((int64_t)(s->r1 - s->r0) * (py - s->y0)) / h;
+                  if (px * px + pz * pz > r * r)
+                     continue;
+               }
+               else
+               {
+                  int64_t cy = (s->y0 + s->y1) / 2, ry = hd_max(1, s->r1), rx = hd_max(1, s->r0);
+                  int64_t dy = py - cy;
+                  /* (px/rx)^2 + (dy/ry)^2 + (pz/rx)^2 <= 1, scaled by 2^14 */
+                  int64_t q = ((px << 7) / rx) * ((px << 7) / rx) + ((dy << 7) / ry) * ((dy << 7) / ry) + ((pz << 7) / rx) * ((pz << 7) / rx);
+                  if (q > ((int64_t)1 << 28))
+                     continue;
+               }
+            }
+            n = (k * vox_ny + j) * vox_nx + i;
+            vox[n >> 3] |= (uint8_t)(1 << (n & 7));
+         }
+}
+
+static void vox_build(const r3d_light_cfg *c)
+{
+   int32_t i, x1, y1, z1;
+   int64_t cells;
+   memset(vox, 0, sizeof vox);
+   if (!tri_count)
+   {
+      vox_nx = vox_ny = vox_nz = 0;
+      return;
+   }
+   vox_x0 = x1 = tris[0].v[0].x;
+   vox_y0 = y1 = tris[0].v[0].y;
+   vox_z0 = z1 = tris[0].v[0].z;
+   for (i = 0; i < tri_count; i++)
+   {
+      int32_t k;
+      for (k = 0; k < 3; k++)
+      {
+         vox_x0 = hd_min(vox_x0, tris[i].v[k].x), x1 = hd_max(x1, tris[i].v[k].x);
+         vox_y0 = hd_min(vox_y0, tris[i].v[k].y), y1 = hd_max(y1, tris[i].v[k].y);
+         vox_z0 = hd_min(vox_z0, tris[i].v[k].z), z1 = hd_max(z1, tris[i].v[k].z);
+      }
+   }
+   if (c->hi.x > c->lo.x)
+   {
+      vox_x0 = c->lo.x, x1 = c->hi.x;
+      vox_y0 = c->lo.y, y1 = c->hi.y;
+      vox_z0 = c->lo.z, z1 = c->hi.z;
+   }
+   /* 5 cm cubes, bigger when the world does not fit */
+   vox_size = FX_ONE / 20;
+   for (;;)
+   {
+      vox_nx = (x1 - vox_x0) / vox_size + 2;
+      vox_ny = (y1 - vox_y0) / vox_size + 2;
+      vox_nz = (z1 - vox_z0) / vox_size + 2;
+      cells = (int64_t)vox_nx * vox_ny * vox_nz;
+      if (cells <= VOX_MAX)
+         break;
+      vox_size = vox_size * 5 / 4;
+   }
+   for (i = 0; i < solid_count; i++)
+      vox_fill(&solids[i]);
+}
+
+/* Whether a ray from p (16.16 meters) along d (2.14) is clear for `reach` (16.16 meters). */
+static int ray_clear(r3d_vec p, int32_t dx, int32_t dy, int32_t dz, int32_t reach)
+{
+   int32_t step = vox_size / 2, walked;
+   int64_t x = (int64_t)p.x - vox_x0, y = (int64_t)p.y - vox_y0, z = (int64_t)p.z - vox_z0;
+   int64_t sx = ((int64_t)dx * step) >> 14, sy = ((int64_t)dy * step) >> 14, sz = ((int64_t)dz * step) >> 14;
+   for (walked = 0; walked < reach; walked += step)
+   {
+      x += sx, y += sy, z += sz;
+      if (x < 0 || y < 0 || z < 0 || y >= (int64_t)vox_ny * vox_size)
+      {
+         if (y >= (int64_t)vox_ny * vox_size || y < 0)
+            return 1; /* out of the world above or below: the sky */
+      }
+      if (vox_get((int32_t)(x / vox_size), (int32_t)(y / vox_size), (int32_t)(z / vox_size)))
+         return 0;
+   }
+   return 1;
+}
+
+/* 26 directions around a point (a cube's neighbours), 16384 long. */
+static int32_t dirs[26][3];
+static int dirs_ready;
+
+static void dirs_build(void)
+{
+   int32_t n = 0, x, y, z;
+   for (x = -1; x <= 1; x++)
+      for (y = -1; y <= 1; y++)
+         for (z = -1; z <= 1; z++)
+            if (x || y || z)
+            {
+               unit(x, y, z, &dirs[n][0], &dirs[n][1], &dirs[n][2]);
+               n++;
+            }
+   dirs_ready = 1;
+}
+
+/* 0xRRGGBB to light, 256 = white (squared: close to the screen's gamma). */
+static void lin3(uint32_t c, int32_t *r, int32_t *g, int32_t *b)
+{
+   int32_t cr = (c >> 16) & 0xff, cg = (c >> 8) & 0xff, cb = c & 0xff;
+   *r = cr * cr * 256 / 65025;
+   *g = cg * cg * 256 / 65025;
+   *b = cb * cb * 256 / 65025;
+}
+
+static void light_point(const r3d_light_cfg *c, r3d_vec p, int32_t nx, int32_t ny, int32_t nz, int32_t *lr, int32_t *lg, int32_t *lb, int shadows)
+{
+   int32_t sr, sg, sb, kr, kg, kb, gr, gg, gb, l, k, sun = 0, sky = 0, sky_w = 0;
+   int32_t sx, sy, sz, ndl;
+   int64_t r = 0, g = 0, b = 0;
+   r3d_vec q;
+   q.x = p.x + (int32_t)(((int64_t)nx * (vox_size + vox_size / 4)) >> 14);
+   q.y = p.y + (int32_t)(((int64_t)ny * (vox_size + vox_size / 4)) >> 14);
+   q.z = p.z + (int32_t)(((int64_t)nz * (vox_size + vox_size / 4)) >> 14);
+   lin3(c->sun_color, &sr, &sg, &sb);
+   lin3(c->sky_color, &kr, &kg, &kb);
+   lin3(c->ground_color, &gr, &gg, &gb);
+   unit(c->sun.x, c->sun.y, c->sun.z, &sx, &sy, &sz);
+   ndl = (int32_t)(((int64_t)nx * sx + (int64_t)ny * sy + (int64_t)nz * sz) >> 14);
+   if (ndl > 0)
+   {
+      /* five rays around the sun's direction: a soft edge */
+      static const int32_t jit[5][2] = { { 0, 0 }, { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
+      int32_t soft = c->sun_soft * 12;
+      for (k = 0; k < 5; k++)
+      {
+         int32_t dx, dy, dz;
+         if (!shadows)
+         {
+            sun += 256;
+            continue;
+         }
+         /* lean the ray across the sun's direction (on two axes perpendicular to it) */
+         unit((int64_t)sx * 4 + (int64_t)jit[k][0] * soft, (int64_t)sy * 4, (int64_t)sz * 4 + (int64_t)jit[k][1] * soft, &dx, &dy, &dz);
+         sun += ray_clear(q, dx, dy, dz, FX(12)) ? 256 : 0;
+      }
+      sun = sun / 5;
+      l = (int32_t)(((int64_t)ndl * sun) >> 14) * c->sun_strength >> 8; /* 0..256 */
+      r += (int64_t)sr * l;
+      g += (int64_t)sg * l;
+      b += (int64_t)sb * l;
+   }
+   /* the sky (and the ground's bounce) from every direction the face sees, less where things are near */
+   for (k = 0; k < 26; k++)
+   {
+      int32_t w = (int32_t)(((int64_t)nx * dirs[k][0] + (int64_t)ny * dirs[k][1] + (int64_t)nz * dirs[k][2]) >> 14);
+      if (w <= 0)
+         continue;
+      sky_w += w;
+      if (!shadows || ray_clear(q, dirs[k][0], dirs[k][1], dirs[k][2], c->ao_reach))
+         sky += w;
+   }
+   {
+      int32_t ao = sky_w ? (int32_t)((int64_t)sky * 256 / sky_w) : 256;
+      int32_t up = (ny + TRIG_ONE) >> 7, down = 256 - up; /* 0..256 */
+      int32_t ks = (int32_t)(((int64_t)c->sky_strength * ao) >> 8), gs = (int32_t)(((int64_t)c->ground_strength * ao) >> 8);
+      r += ((int64_t)kr * ks * (128 + up / 2) >> 8) + ((int64_t)gr * gs * down >> 8);
+      g += ((int64_t)kg * ks * (128 + up / 2) >> 8) + ((int64_t)gg * gs * down >> 8);
+      b += ((int64_t)kb * ks * (128 + up / 2) >> 8) + ((int64_t)gb * gs * down >> 8);
+   }
+   /* the lamps */
+   for (k = 0; k < lamp_count && shadows; k++)
+   {
+      const r3d_lamp *m = &lamps[k];
+      int32_t d = length(q, m->at), dx, dy, dz, n;
+      int64_t att;
+      int32_t mr, mg, mb;
+      if (d >= m->radius || d <= 0)
+         continue;
+      unit((int64_t)m->at.x - q.x, (int64_t)m->at.y - q.y, (int64_t)m->at.z - q.z, &dx, &dy, &dz);
+      n = (int32_t)(((int64_t)nx * dx + (int64_t)ny * dy + (int64_t)nz * dz) >> 14);
+      if (n <= 0)
+         continue;
+      /* clear up to the lamp's own body */
+      if (!ray_clear(q, dx, dy, dz, d - FX_ONE / 8))
+         continue;
+      att = 256 - ((int64_t)d * 256 / m->radius);
+      att = att * att >> 8;
+      lin3(m->color, &mr, &mg, &mb);
+      att = (att * m->strength >> 8) * n >> 14;
+      r += mr * att;
+      g += mg * att;
+      b += mb * att;
+   }
+   *lr = (int32_t)hd_min(4095, (int32_t)(r >> 8));
+   *lg = (int32_t)hd_min(4095, (int32_t)(g >> 8));
+   *lb = (int32_t)hd_min(4095, (int32_t)(b >> 8));
+}
+
+void r3d_bake(const r3d_light_cfg *c)
+{
+   int32_t i, k;
+   dirs_build();
+   vox_build(c);
+   for (i = 0; i < tri_count; i++)
+   {
+      r3d_tri *t = &tris[i];
+      if (t->flags & (TF_GLOW | TF_DECAL))
+         continue;
+      for (k = 0; k < 3; k++)
+         light_point(c, t->v[k], t->nx, t->ny, t->nz, &t->lr[k], &t->lg[k], &t->lb[k], 1);
+   }
+}
+
+/* ---- the screen's colors: linear light to 0..255 through a filmic curve ---- */
+
+#define TONE_IN 16384 /* 4096 is 1.0 */
+static uint8_t tone[TONE_IN];
+static uint16_t srgb_lin[256]; /* 0..255 to 0..4096 (squared) */
+static int tone_ready;
+
+static void tone_build(void)
+{
+   int32_t i;
+   for (i = 0; i < 256; i++)
+      srgb_lin[i] = (uint16_t)(i * i * 4096 / 65025);
+   for (i = 0; i < TONE_IN; i++)
+   {
+      /* x (2.51 x + 0.03) / (x (2.43 x + 0.59) + 0.14), x = i / 4096, with a little more exposure */
+      int64_t x = (int64_t)i * 3 / 2;
+      int64_t num = x * ((251 * x) / 100 + 4096 * 3 / 100);
+      int64_t den = x * ((243 * x) / 100 + 4096 * 59 / 100) + (int64_t)4096 * 4096 * 14 / 100;
+      int64_t y = den ? num * 4096 / den : 0; /* 0..4096 */
+      if (y > 4096)
+         y = 4096;
+      tone[i] = (uint8_t)hd_min(255, (int32_t)isqrt64((uint64_t)(y * 65025 / 4096)));
+   }
+   tone_ready = 1;
 }
 
 /* ---- drawing ---- */
 
-/* A triangle on screen: 28.4 pixels, 1/z per corner, its color lit. */
+/* One value across a triangle as a plane on screen: its value at corner 0 and its steps per subpixel, 16 bits of fraction. */
 typedef struct
 {
-   int32_t x[3], y[3], iz[3];
-   int32_t y0, y1; /* the rows it covers */
-   uint32_t color;
+   int64_t at0, dx, dy;
+} attr;
+
+enum { A_Z = 0, A_R, A_G, A_B, A_U, A_T, A_COUNT };
+
+/* A triangle on screen: 28.4 pixels, its corners' values, then (after setup) its planes. */
+typedef struct
+{
+   int32_t x[3], y[3];
+   int32_t v[A_COUNT][3]; /* 1/z, light r g b, texture u t */
+   int32_t y0, y1, xa, xb; /* the pixels it covers */
+   int32_t tex, flags;
+   attr a[A_COUNT];
 } r3d_px;
 
+/*
+ * The frame's triangles, in stretches: the world is emitted on EMIT_PARTS
+ * cores at once, each part into its own stretch, and the instances after
+ * them in one more; every pass reads the stretches in order, so the result
+ * is the same as on one core.
+ */
+#define EMIT_PARTS 4
+#define SEGS (EMIT_PARTS + 1)
 static r3d_px drawn[R3D_MAX_DRAWN];
-static int32_t drawn_count;
+static int32_t seg_first[SEGS], seg_n[SEGS], drawn_count;
 static uint32_t zbuf[HD_OUT_MAX_W * HD_OUT_MAX_H];
+static uint32_t aa_src[HD_OUT_MAX_W * HD_OUT_MAX_H];
+
+typedef struct
+{
+   r3d_px *buf;
+   int32_t n, cap;
+} emit_out;
+
+/* The world's triangles in runs of CHUNK, each run's bounds: a run out of view is skipped whole, and runs are drawn nearest first. */
+#define CHUNK 64
+#define CHUNKS_MAX (R3D_MAX_TRIS / CHUNK + 1)
+static r3d_vec chunk_lo[CHUNKS_MAX], chunk_hi[CHUNKS_MAX];
+static int32_t chunks_for = -1;
+typedef struct
+{
+   int64_t key; /* distance from the eye, squared */
+   int32_t chunk;
+} chunk_order;
+static chunk_order order[CHUNKS_MAX];
 
 int32_t r3d_drawn(void)
 {
    return drawn_count;
 }
 
-/* The frame's constants: the camera's turn, the lens, the light. */
+static void chunks_build(void)
+{
+   int32_t c, i, k;
+   for (c = 0; c * CHUNK < tri_count; c++)
+   {
+      r3d_vec lo = tris[c * CHUNK].v[0], hi = lo;
+      for (i = c * CHUNK; i < hd_min(tri_count, (c + 1) * CHUNK); i++)
+         for (k = 0; k < 3; k++)
+         {
+            const r3d_vec *p = &tris[i].v[k];
+            lo.x = hd_min(lo.x, p->x), hi.x = hd_max(hi.x, p->x);
+            lo.y = hd_min(lo.y, p->y), hi.y = hd_max(hi.y, p->y);
+            lo.z = hd_min(lo.z, p->z), hi.z = hd_max(hi.z, p->z);
+         }
+      chunk_lo[c] = lo;
+      chunk_hi[c] = hi;
+   }
+   chunks_for = tri_count;
+}
+
+/* The frame's constants: the camera's turn, the lens. */
 typedef struct
 {
    const r3d_view *v;
    int32_t cy, sy, cp, sp; /* yaw and pitch */
    int32_t w, h, f;        /* the surface and the focal length, pixels */
-   int32_t lx, ly, lz;     /* the light, 2.14 */
-   int32_t fog_span;
+   int32_t e;              /* the exposure */
 } frame_k;
 
-/* A point of the camera's space: x right, y up, z ahead; 16.16 meters. */
+/* A point of the camera's space (x right, y up, z ahead; 16.16 meters) with what it carries. */
 typedef struct
 {
    int32_t x, y, z;
+   int32_t u, t, lr, lg, lb;
 } cam_pt;
 
-static cam_pt to_camera(const frame_k *k, r3d_vec p)
+static void to_camera(const frame_k *k, r3d_vec p, cam_pt *c)
 {
-   cam_pt c;
    int64_t dx = (int64_t)p.x - k->v->eye.x, dy = (int64_t)p.y - k->v->eye.y, dz = (int64_t)p.z - k->v->eye.z;
    int64_t x = (dx * k->cy - dz * k->sy) >> 14;
    int64_t z = (dx * k->sy + dz * k->cy) >> 14;
-   int64_t y2 = (dy * k->cp + z * k->sp) >> 14;
-   int64_t z2 = (z * k->cp - dy * k->sp) >> 14;
-   c.x = (int32_t)x;
-   c.y = (int32_t)y2;
-   c.z = (int32_t)z2;
-   return c;
+   c->x = (int32_t)x;
+   c->y = (int32_t)((dy * k->cp + z * k->sp) >> 14);
+   c->z = (int32_t)((z * k->cp - dy * k->sp) >> 14);
+}
+
+static void frame_setup(frame_k *k, const hd_surface *s, const r3d_view *v)
+{
+   int32_t half = hd_max(1, v->fov / 2), t;
+   k->v = v;
+   k->cy = hd_cos(v->yaw);
+   k->sy = hd_sin(v->yaw);
+   k->cp = hd_cos(v->pitch);
+   k->sp = hd_sin(v->pitch);
+   k->w = s->w;
+   k->h = s->h;
+   k->e = v->exposure > 0 ? v->exposure : 256;
+   /* focal = (h / 2) / tan(fov / 2) */
+   t = hd_sin(half);
+   k->f = t ? (int32_t)(((int64_t)(s->h / 2) * hd_cos(half)) / t) : s->h;
+}
+
+int r3d_project(const hd_surface *s, const r3d_view *v, r3d_vec p, int32_t *x, int32_t *y)
+{
+   frame_k k;
+   cam_pt c;
+   frame_setup(&k, s, v);
+   to_camera(&k, p, &c);
+   if (c.z < v->near_z)
+      return 0;
+   *x = (int32_t)(k.w / 2 + ((int64_t)c.x * k.f) / c.z);
+   *y = (int32_t)(k.h / 2 - ((int64_t)c.y * k.f) / c.z);
+   return 1;
 }
 
 /* The five planes the view keeps: in front of near, and inside the screen's four edges (one pixel of margin). */
-static int64_t plane(const frame_k *k, int32_t i, cam_pt p)
+static int64_t plane(const frame_k *k, int32_t i, const cam_pt *p)
 {
    int64_t hw = k->w / 2 + 1, hh = k->h / 2 + 1;
    switch (i)
    {
-   case 0: return (int64_t)p.z - k->v->near_z;
-   case 1: return (int64_t)p.x * k->f + (int64_t)p.z * hw;
-   case 2: return (int64_t)p.z * hw - (int64_t)p.x * k->f;
-   case 3: return (int64_t)p.z * hh - (int64_t)p.y * k->f;
-   default: return (int64_t)p.y * k->f + (int64_t)p.z * hh;
+   case 0: return (int64_t)p->z - k->v->near_z;
+   case 1: return (int64_t)p->x * k->f + (int64_t)p->z * hw;
+   case 2: return (int64_t)p->z * hw - (int64_t)p->x * k->f;
+   case 3: return (int64_t)p->z * hh - (int64_t)p->y * k->f;
+   default: return (int64_t)p->y * k->f + (int64_t)p->z * hh;
    }
 }
 
+/* Whether a box of the world is wholly outside one of the view's planes. */
+static int box_hidden(const frame_k *k, r3d_vec lo, r3d_vec hi)
+{
+   cam_pt c[8];
+   int32_t i, j;
+   for (i = 0; i < 8; i++)
+   {
+      r3d_vec p;
+      p.x = i & 1 ? hi.x : lo.x;
+      p.y = i & 2 ? hi.y : lo.y;
+      p.z = i & 4 ? hi.z : lo.z;
+      to_camera(k, p, &c[i]);
+   }
+   for (j = 0; j < 5; j++)
+   {
+      for (i = 0; i < 8; i++)
+         if (plane(k, j, &c[i]) >= 0)
+            break;
+      if (i == 8)
+         return 1;
+   }
+   return 0;
+}
+
 #define POLY_MAX 9
+
+static int32_t mix_at(int32_t a, int32_t b, int64_t t)
+{
+   return a + (int32_t)(((int64_t)(b - a) * t) >> 16);
+}
 
 static int32_t clip(const frame_k *k, cam_pt *poly, int32_t n)
 {
@@ -318,13 +930,18 @@ static int32_t clip(const frame_k *k, cam_pt *poly, int32_t n)
    int32_t i, j, m;
    for (i = 0; i < 5 && n >= 3; i++)
    {
+      int32_t out = 0;
+      for (j = 0; j < n; j++)
+         out += plane(k, i, &poly[j]) < 0;
+      if (!out)
+         continue; /* nothing crosses this plane */
       m = 0;
       for (j = 0; j < n; j++)
       {
-         cam_pt a = poly[j], b = poly[(j + 1) % n];
+         const cam_pt *a = &poly[j], *b = &poly[(j + 1) % n];
          int64_t da = plane(k, i, a), db = plane(k, i, b);
          if (da >= 0 && m < POLY_MAX)
-            tmp[m++] = a;
+            tmp[m++] = *a;
          if (((da >= 0) != (db >= 0)) && m < POLY_MAX)
          {
             /*
@@ -332,14 +949,20 @@ static int32_t clip(const frame_k *k, cam_pt *poly, int32_t n)
              * the same end of the edge: two triangles that share it get
              * the same point, so no crack opens between them
              */
-            cam_pt p = a, q = b, c;
+            const cam_pt *p = a, *q = b;
             int64_t dp = da, dq = db, t;
-            if (a.x > b.x || (a.x == b.x && (a.y > b.y || (a.y == b.y && a.z > b.z))))
+            cam_pt c;
+            if (a->x > b->x || (a->x == b->x && (a->y > b->y || (a->y == b->y && a->z > b->z))))
                p = b, q = a, dp = db, dq = da;
             t = (dp << 16) / (dp - dq);
-            c.x = p.x + (int32_t)(((int64_t)(q.x - p.x) * t) >> 16);
-            c.y = p.y + (int32_t)(((int64_t)(q.y - p.y) * t) >> 16);
-            c.z = p.z + (int32_t)(((int64_t)(q.z - p.z) * t) >> 16);
+            c.x = mix_at(p->x, q->x, t);
+            c.y = mix_at(p->y, q->y, t);
+            c.z = mix_at(p->z, q->z, t);
+            c.u = mix_at(p->u, q->u, t);
+            c.t = mix_at(p->t, q->t, t);
+            c.lr = mix_at(p->lr, q->lr, t);
+            c.lg = mix_at(p->lg, q->lg, t);
+            c.lb = mix_at(p->lb, q->lb, t);
             tmp[m++] = c;
          }
       }
@@ -349,69 +972,68 @@ static int32_t clip(const frame_k *k, cam_pt *poly, int32_t n)
    return n;
 }
 
-static uint32_t shade(const frame_k *k, const r3d_tri *t, int32_t nx, int32_t ny, int32_t nz, int64_t depth)
-{
-   const r3d_view *v = k->v;
-   uint32_t c = t->color;
-   if (!t->glow)
-   {
-      int32_t d = (int32_t)(((int64_t)nx * k->lx + (int64_t)ny * k->ly + (int64_t)nz * k->lz) >> 14);
-      /* a little more light from above than from below, so faces that look away from the sun still read */
-      int32_t amb = v->ambient + ((ny * (v->ambient / 4)) >> 14);
-      int32_t l = amb + (d > 0 ? (v->diffuse * d) >> 14 : 0);
-      int32_t r = hd_min(255, (int32_t)((c >> 16) & 0xff) * l >> 8);
-      int32_t g = hd_min(255, (int32_t)((c >> 8) & 0xff) * l >> 8);
-      int32_t b = hd_min(255, (int32_t)(c & 0xff) * l >> 8);
-      c = (uint32_t)(r << 16 | g << 8 | b);
-   }
-   if (v->fog_far > v->fog_near && depth > v->fog_near)
-   {
-      int32_t f = depth >= v->fog_far ? 256 : (int32_t)(((depth - v->fog_near) << 8) / k->fog_span);
-      c = gfx_mix(c, v->fog, f);
-   }
-   return c;
-}
-
-static void emit(const frame_k *k, const r3d_tri *t, const r3d_vec w[3], int32_t nx, int32_t ny, int32_t nz)
+/*
+ * One triangle of the world, at w (world space) with the normal n, toward
+ * the screen: cr cg cb its color as light (256 = white), light its corners'
+ * light (NULL: the baked one).
+ */
+static void emit(emit_out *o, const frame_k *k, const r3d_tri *t, const r3d_vec w[3], int32_t nx, int32_t ny, int32_t nz, int32_t cr, int32_t cg, int32_t cb,
+                 const int32_t *light)
 {
    cam_pt poly[POLY_MAX];
    int32_t n, i, inside = 1;
-   int64_t depth;
-   uint32_t color;
    /* only faces turned toward the eye */
    if (((int64_t)k->v->eye.x - w[0].x) * nx + ((int64_t)k->v->eye.y - w[0].y) * ny + ((int64_t)k->v->eye.z - w[0].z) * nz <= 0)
       return;
    for (i = 0; i < 3; i++)
-      poly[i] = to_camera(k, w[i]);
+      to_camera(k, w[i], &poly[i]);
    for (i = 0; i < 5 && inside; i++)
-      if (plane(k, i, poly[0]) < 0 && plane(k, i, poly[1]) < 0 && plane(k, i, poly[2]) < 0)
+      if (plane(k, i, &poly[0]) < 0 && plane(k, i, &poly[1]) < 0 && plane(k, i, &poly[2]) < 0)
          inside = 0;
    if (!inside)
       return;
-   depth = ((int64_t)poly[0].z + poly[1].z + poly[2].z) / 3;
-   color = shade(k, t, nx, ny, nz, depth);
+   for (i = 0; i < 3; i++)
+   {
+      int32_t lr = light ? light[0] : t->lr[i], lg = light ? light[1] : t->lg[i], lb = light ? light[2] : t->lb[i];
+      poly[i].u = t->u[i];
+      poly[i].t = t->t[i];
+      if (t->flags & TF_DECAL)
+      {
+         /* a decal keeps its color as it is: the pixel multiplies what is under it */
+         poly[i].lr = cr, poly[i].lg = cg, poly[i].lb = cb;
+         continue;
+      }
+      if (t->flags & TF_GLOW)
+         lr = lg = lb = t->glow;
+      /* the light times the face's color and the exposure: what the pixel multiplies its texture by */
+      poly[i].lr = hd_min(1023, (int32_t)((((int64_t)lr * cr) >> 8) * k->e >> 8));
+      poly[i].lg = hd_min(1023, (int32_t)((((int64_t)lg * cg) >> 8) * k->e >> 8));
+      poly[i].lb = hd_min(1023, (int32_t)((((int64_t)lb * cb) >> 8) * k->e >> 8));
+   }
    n = clip(k, poly, 3);
    for (i = 1; i + 1 < n; i++)
    {
       r3d_px *d;
       int32_t j, idx[3];
-      if (drawn_count >= R3D_MAX_DRAWN)
+      if (o->n >= o->cap)
          return;
-      d = &drawn[drawn_count];
+      d = &o->buf[o->n++];
       idx[0] = 0, idx[1] = i, idx[2] = i + 1;
       for (j = 0; j < 3; j++)
       {
-         cam_pt p = poly[idx[j]];
-         int64_t z = p.z < k->v->near_z ? k->v->near_z : p.z;
-         d->x[j] = (int32_t)((int64_t)k->w * 8 + ((int64_t)p.x * k->f * 16) / z);
-         d->y[j] = (int32_t)((int64_t)k->h * 8 - ((int64_t)p.y * k->f * 16) / z);
-         d->iz[j] = (int32_t)(((int64_t)1 << 38) / z);
+         const cam_pt *p = &poly[idx[j]];
+         int64_t z = p->z < k->v->near_z ? k->v->near_z : p->z;
+         d->x[j] = (int32_t)((int64_t)k->w * 8 + ((int64_t)p->x * k->f * 16) / z);
+         d->y[j] = (int32_t)((int64_t)k->h * 8 - ((int64_t)p->y * k->f * 16) / z);
+         d->v[A_Z][j] = (int32_t)(((int64_t)1 << 38) / z);
+         d->v[A_R][j] = p->lr;
+         d->v[A_G][j] = p->lg;
+         d->v[A_B][j] = p->lb;
+         d->v[A_U][j] = p->u;
+         d->v[A_T][j] = p->t;
       }
-      d->y0 = hd_max(0, (hd_min(d->y[0], hd_min(d->y[1], d->y[2])) - 8) >> 4);
-      d->y1 = hd_min(k->h - 1, (hd_max(d->y[0], hd_max(d->y[1], d->y[2])) + 8) >> 4);
-      d->color = color;
-      if (d->y0 <= d->y1)
-         drawn_count++;
+      d->tex = t->tex;
+      d->flags = t->flags;
    }
 }
 
@@ -420,72 +1042,186 @@ typedef struct
    hd_surface *s;
 } fill_job;
 
-static void fill_rows(void *ctx, int32_t row0, int32_t row1)
+/* The i-th triangle of the frame, across the stretches. */
+static r3d_px *drawn_at(int32_t i)
 {
-   fill_job *job = (fill_job *)ctx;
-   hd_surface *s = job->s;
-   int32_t i;
-   for (i = 0; i < drawn_count; i++)
+   int32_t p;
+   for (p = 0; p < SEGS; p++)
    {
-      const r3d_px *t = &drawn[i];
-      int64_t x0 = t->x[0], y0 = t->y[0], x1 = t->x[1], y1 = t->y[1], x2 = t->x[2], y2 = t->y[2];
-      int64_t z0 = t->iz[0], z1 = t->iz[1], z2 = t->iz[2];
-      int64_t area, dzdx, dzdy, k;
-      int32_t ya = hd_max(row0, t->y0), yb = hd_min(row1 - 1, t->y1), xa, xb, y, x;
-      if (ya > yb)
-         continue;
+      if (i < seg_n[p])
+         return &drawn[seg_first[p] + i];
+      i -= seg_n[p];
+   }
+   return NULL;
+}
+
+/* The planes of triangles first..last-1 (each on its own, so on several cores). */
+static void setup_rows(void *ctx, int32_t first, int32_t last)
+{
+   const hd_surface *s = ((fill_job *)ctx)->s;
+   int32_t i, a;
+   for (i = first; i < last; i++)
+   {
+      r3d_px *t = drawn_at(i);
+      int64_t x0 = t->x[0], y0 = t->y[0], x1 = t->x[1], y1 = t->y[1], x2 = t->x[2], y2 = t->y[2], area, k;
       area = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0);
+      t->y0 = 1, t->y1 = 0; /* nothing to draw, until it is set up */
       if (!area)
          continue;
       if (area < 0)
       {
-         k = x1, x1 = x2, x2 = k;
-         k = y1, y1 = y2, y2 = k;
-         k = z1, z1 = z2, z2 = k;
+         /* turn it so its area is positive: corners 1 and 2 swap */
+         k = t->x[1], t->x[1] = t->x[2], t->x[2] = (int32_t)k;
+         k = t->y[1], t->y[1] = t->y[2], t->y[2] = (int32_t)k;
+         for (a = 0; a < A_COUNT; a++)
+            k = t->v[a][1], t->v[a][1] = t->v[a][2], t->v[a][2] = (int32_t)k;
+         x1 = t->x[1], y1 = t->y[1], x2 = t->x[2], y2 = t->y[2];
          area = -area;
       }
-      /* 1/z across the screen: a plane, 16 extra bits of fraction, per subpixel */
-      dzdx = (((z1 - z0) * (y2 - y0) - (z2 - z0) * (y1 - y0)) << 16) / area;
-      dzdy = (((z2 - z0) * (x1 - x0) - (z1 - z0) * (x2 - x0)) << 16) / area;
-      xa = (int32_t)hd_max(0, (int32_t)((hd_min((int32_t)x0, hd_min((int32_t)x1, (int32_t)x2)) - 8) >> 4));
-      xb = (int32_t)hd_min(s->w - 1, (int32_t)((hd_max((int32_t)x0, hd_max((int32_t)x1, (int32_t)x2)) + 8) >> 4));
-      for (y = ya; y <= yb; y++)
+      if (t->tex >= 0)
       {
-         int64_t py = (int64_t)y * 16 + 8, px = (int64_t)xa * 16 + 8;
-         int64_t w0 = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1);
-         int64_t w1 = (x0 - x2) * (py - y2) - (y0 - y2) * (px - x2);
-         int64_t w2 = (x1 - x0) * (py - y0) - (y1 - y0) * (px - x0);
-         int64_t s0 = -(y2 - y1) * 16, s1 = -(y0 - y2) * 16, s2 = -(y1 - y0) * 16;
-         int64_t zf = (z0 << 16) + dzdx * (px - x0) + dzdy * (py - y0), zs = dzdx * 16;
-         uint32_t *row = s->px + (int64_t)y * s->w, *zrow = zbuf + (int64_t)y * s->w;
-         for (x = xa; x <= xb; x++, w0 += s0, w1 += s1, w2 += s2, zf += zs)
+         /* the texture repeats: move its coordinates near zero so the pixels' sums stay small */
+         int32_t tw = 256 << texs[t->tex].wlog, th = 256 << texs[t->tex].hlog;
+         int32_t mu = hd_min(t->v[A_U][0], hd_min(t->v[A_U][1], t->v[A_U][2])), mt = hd_min(t->v[A_T][0], hd_min(t->v[A_T][1], t->v[A_T][2]));
+         int32_t su = (int32_t)(((int64_t)mu - (mu < 0 ? tw - 1 : 0)) / tw * tw), st = (int32_t)(((int64_t)mt - (mt < 0 ? th - 1 : 0)) / th * th);
+         for (a = 0; a < 3; a++)
+            t->v[A_U][a] -= su, t->v[A_T][a] -= st;
+      }
+      for (a = 0; a < A_COUNT; a++)
+      {
+         int64_t v0 = t->v[a][0], v1 = t->v[a][1], v2 = t->v[a][2];
+         if ((a == A_U || a == A_T) && t->tex < 0)
+            continue;
+         t->a[a].at0 = v0 << 16;
+         t->a[a].dx = (((v1 - v0) * (y2 - y0) - (v2 - v0) * (y1 - y0)) << 16) / area;
+         t->a[a].dy = (((v2 - v0) * (x1 - x0) - (v1 - v0) * (x2 - x0)) << 16) / area;
+      }
+      t->y0 = hd_max(0, (hd_min(t->y[0], hd_min(t->y[1], t->y[2])) - 8) >> 4);
+      t->y1 = hd_min(s->h - 1, (hd_max(t->y[0], hd_max(t->y[1], t->y[2])) + 8) >> 4);
+      t->xa = hd_max(0, (hd_min(t->x[0], hd_min(t->x[1], t->x[2])) - 8) >> 4);
+      t->xb = hd_min(s->w - 1, (hd_max(t->x[0], hd_max(t->x[1], t->x[2])) + 8) >> 4);
+   }
+}
+
+/* A value of a plane at a subpixel offset, then shifted down to `frac` bits of fraction for the row's 32-bit sums. */
+static int32_t plane_at(const attr *a, int64_t ox, int64_t oy, int32_t drop)
+{
+   return (int32_t)((a->at0 + a->dx * ox + a->dy * oy) >> drop);
+}
+
+static void fill_one(hd_surface *s, const r3d_px *t, int32_t row0, int32_t row1)
+{
+   int64_t x0 = t->x[0], y0 = t->y[0], x1 = t->x[1], y1 = t->y[1], x2 = t->x[2], y2 = t->y[2];
+   int32_t ya = hd_max(row0, t->y0), yb = hd_min(row1 - 1, t->y1), xa = t->xa, xb = t->xb, y, x;
+   const r3d_tex *tx = t->tex >= 0 ? &texs[t->tex] : NULL;
+   uint32_t umask = tx ? ((1u << tx->wlog) - 1) : 0, vmask = tx ? ((1u << tx->hlog) - 1) : 0, wlog = tx ? (uint32_t)tx->wlog : 0;
+   const uint32_t *tpx = tx ? tx->px : NULL;
+   int decal = t->flags & TF_DECAL;
+   /* each edge: its value at (xa, row) and its step per pixel */
+   int64_t s0 = -(y2 - y1) * 16, s1 = -(y0 - y2) * 16, s2 = -(y1 - y0) * 16;
+   /* the sums' steps per pixel: 1/z with 4 bits of fraction, light 16, texture 8 */
+   int32_t zs = (int32_t)((t->a[A_Z].dx * 16) >> 12), rs = (int32_t)(t->a[A_R].dx * 16), gs = (int32_t)(t->a[A_G].dx * 16), bs = (int32_t)(t->a[A_B].dx * 16);
+   int32_t us = tx ? (int32_t)((t->a[A_U].dx * 16) >> 8) : 0, ts = tx ? (int32_t)((t->a[A_T].dx * 16) >> 8) : 0;
+   for (y = ya; y <= yb; y++)
+   {
+      int64_t py = (int64_t)y * 16 + 8, px = (int64_t)xa * 16 + 8, oy = py - y0, ox;
+      int64_t we[3], se[3];
+      int32_t xs = xa, xe = xb, e, zf, rf, gf, bf, uf = 0, tf = 0;
+      uint32_t *row = s->px + (int64_t)y * s->w, *zrow = zbuf + (int64_t)y * s->w;
+      we[0] = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1);
+      we[1] = (x0 - x2) * (py - y2) - (y0 - y2) * (px - x2);
+      we[2] = (x1 - x0) * (py - y0) - (y1 - y0) * (px - x0);
+      se[0] = s0, se[1] = s1, se[2] = s2;
+      /* where the row is inside every edge: from xs to xe */
+      for (e = 0; e < 3; e++)
+      {
+         if (se[e] == 0)
          {
-            uint32_t z;
-            if ((w0 | w1 | w2) < 0)
-               continue;
-            z = (uint32_t)(zf >> 16);
-            if (z > zrow[x])
-            {
-               zrow[x] = z;
-               row[x] = t->color;
-            }
+            if (we[e] < 0)
+               xe = xs - 1;
+         }
+         else if (se[e] > 0)
+         {
+            if (we[e] < 0)
+               xs = hd_max(xs, xa + (int32_t)hd_min((int64_t)(xb - xa + 1), (-we[e] + se[e] - 1) / se[e]));
+         }
+         else if (we[e] < 0)
+            xe = xs - 1;
+         else
+            xe = hd_min(xe, xa + (int32_t)hd_min((int64_t)(xb - xa), we[e] / -se[e]));
+      }
+      if (xs > xe)
+         continue;
+      ox = (int64_t)xs * 16 + 8 - x0;
+      zf = plane_at(&t->a[A_Z], ox, oy, 12);
+      rf = plane_at(&t->a[A_R], ox, oy, 0);
+      gf = plane_at(&t->a[A_G], ox, oy, 0);
+      bf = plane_at(&t->a[A_B], ox, oy, 0);
+      if (tx)
+      {
+         uf = plane_at(&t->a[A_U], ox, oy, 8);
+         tf = plane_at(&t->a[A_T], ox, oy, 8);
+      }
+      for (x = xs; x <= xe; x++, zf += zs, rf += rs, gf += gs, bf += bs, uf += us, tf += ts)
+      {
+         uint32_t z = (uint32_t)(zf >> 4), texel = 0xffffffffu;
+         int32_t lr, lg, lb;
+         if (decal ? z + 64 < zrow[x] : z <= zrow[x])
+            continue;
+         if (tx)
+            texel = tpx[(((uint32_t)tf >> 16) & vmask) << wlog | (((uint32_t)uf >> 16) & umask)];
+         lr = rf >> 16, lg = gf >> 16, lb = bf >> 16;
+         if (decal)
+         {
+            /* darken toward the decal's color by its texture's alpha */
+            uint32_t d = row[x], a = texel >> 24, inv = 255 - a;
+            uint32_t r = ((d >> 16) & 0xff) * (inv + a * (uint32_t)hd_clamp(lr, 0, 256) / 256) / 255;
+            uint32_t g = ((d >> 8) & 0xff) * (inv + a * (uint32_t)hd_clamp(lg, 0, 256) / 256) / 255;
+            uint32_t b = (d & 0xff) * (inv + a * (uint32_t)hd_clamp(lb, 0, 256) / 256) / 255;
+            row[x] = r << 16 | g << 8 | b;
+            continue;
+         }
+         if ((texel >> 24) < 128)
+            continue; /* the texture's holes */
+         zrow[x] = z;
+         {
+            int32_t r = (srgb_lin[(texel >> 16) & 0xff] * hd_max(0, lr)) >> 8;
+            int32_t g = (srgb_lin[(texel >> 8) & 0xff] * hd_max(0, lg)) >> 8;
+            int32_t b = (srgb_lin[texel & 0xff] * hd_max(0, lb)) >> 8;
+            row[x] = (uint32_t)tone[hd_min(r, TONE_IN - 1)] << 16 | (uint32_t)tone[hd_min(g, TONE_IN - 1)] << 8 | tone[hd_min(b, TONE_IN - 1)];
          }
       }
    }
 }
 
-static void emit_all(const frame_k *k, const r3d_mesh *m, const r3d_instance *ins)
+static void fill_rows(void *ctx, int32_t row0, int32_t row1)
+{
+   hd_surface *s = ((fill_job *)ctx)->s;
+   int32_t p, i;
+   for (p = 0; p < SEGS; p++)
+      for (i = 0; i < seg_n[p]; i++)
+      {
+         const r3d_px *t = &drawn[seg_first[p] + i];
+         if (t->y0 <= t->y1 && t->y1 >= row0 && t->y0 < row1)
+            fill_one(s, t, row0, row1);
+      }
+}
+
+/* A mesh's triangles toward the screen (an instance's, or a stretch of the world's). */
+static void emit_range(emit_out *o, const frame_k *k, int32_t first, int32_t end, const r3d_instance *ins)
 {
    int32_t i, j;
    int32_t c = ins ? hd_cos(ins->yaw) : TRIG_ONE, sn = ins ? hd_sin(ins->yaw) : 0;
-   for (i = m->first; i < m->first + m->count && i < tri_count; i++)
+   const r3d_light_cfg *lc = k->v->light;
+   end = hd_min(end, tri_count);
+   for (i = first; i < end; i++)
    {
       const r3d_tri *t = &tris[i];
       r3d_vec w[3];
-      int32_t nx = t->nx, ny = t->ny, nz = t->nz;
+      int32_t rx, rz, light[3], cr = t->cr, cg = t->cg, cb = t->cb;
       if (!ins)
       {
-         emit(k, t, t->v, nx, ny, nz);
+         emit(o, k, t, t->v, t->nx, t->ny, t->nz, cr, cg, cb, NULL);
          continue;
       }
       for (j = 0; j < 3; j++)
@@ -494,48 +1230,200 @@ static void emit_all(const frame_k *k, const r3d_mesh *m, const r3d_instance *in
          w[j].y = ins->at.y + t->v[j].y;
          w[j].z = ins->at.z + (int32_t)(((int64_t)t->v[j].z * c - (int64_t)t->v[j].x * sn) >> 14);
       }
+      rx = (int32_t)(((int64_t)t->nx * c + (int64_t)t->nz * sn) >> 14);
+      rz = (int32_t)(((int64_t)t->nz * c - (int64_t)t->nx * sn) >> 14);
+      if (ins->tint >> 24)
+         lin3(gfx_mix(t->color, ins->tint & 0xffffffu, (int32_t)(ins->tint >> 24)), &cr, &cg, &cb);
+      /* what moves is lit by the sun and the sky as it goes, without shadows */
+      if (lc && !(t->flags & (TF_GLOW | TF_DECAL)))
+         light_point(lc, w[0], rx, t->ny, rz, &light[0], &light[1], &light[2], 0);
+      else
+         light[0] = light[1] = light[2] = 256;
+      emit(o, k, t, w, rx, t->ny, rz, cr, cg, cb, light);
+   }
+}
+
+typedef struct
+{
+   const frame_k *k;
+   int32_t first, end;          /* the scene's triangles */
+   int32_t from[EMIT_PARTS + 1]; /* each part's runs in `order` */
+   emit_out out[EMIT_PARTS];
+} emit_job;
+
+static void emit_parts(void *ctx, int32_t first, int32_t last)
+{
+   emit_job *j = (emit_job *)ctx;
+   int32_t p, c;
+   for (p = first; p < last; p++)
+      for (c = j->from[p]; c < j->from[p + 1]; c++)
       {
-         int32_t rx = (int32_t)(((int64_t)nx * c + (int64_t)nz * sn) >> 14);
-         int32_t rz = (int32_t)(((int64_t)nz * c - (int64_t)nx * sn) >> 14);
-         if (ins->tint >> 24)
+         int32_t ch = order[c].chunk;
+         emit_range(&j->out[p], j->k, hd_max(j->first, ch * CHUNK), hd_min(j->end, (ch + 1) * CHUNK), NULL);
+      }
+}
+
+static int order_cmp(const void *a, const void *b)
+{
+   const chunk_order *x = (const chunk_order *)a, *y = (const chunk_order *)b;
+   if (x->key != y->key)
+      return x->key < y->key ? -1 : 1;
+   return x->chunk - y->chunk;
+}
+
+/*
+ * The world's triangles toward the screen: the runs in view, nearest first
+ * (what is hidden behind them then fails the depth test before it costs
+ * anything), split between the cores.
+ */
+static void emit_world(const frame_k *k, const r3d_mesh *scene)
+{
+   emit_job j;
+   int32_t c, p, n = 0, end = hd_min(scene->first + scene->count, tri_count), cap = R3D_MAX_DRAWN / SEGS;
+   for (c = scene->first / CHUNK; c * CHUNK < end; c++)
+   {
+      int64_t dx, dy, dz;
+      if (box_hidden(k, chunk_lo[c], chunk_hi[c]))
+         continue;
+      dx = ((int64_t)chunk_lo[c].x + chunk_hi[c].x) / 2 - k->v->eye.x;
+      dy = ((int64_t)chunk_lo[c].y + chunk_hi[c].y) / 2 - k->v->eye.y;
+      dz = ((int64_t)chunk_lo[c].z + chunk_hi[c].z) / 2 - k->v->eye.z;
+      order[n].key = (dx >> 8) * (dx >> 8) + (dy >> 8) * (dy >> 8) + (dz >> 8) * (dz >> 8);
+      order[n].chunk = c;
+      n++;
+   }
+   qsort(order, (size_t)n, sizeof order[0], order_cmp);
+   j.k = k;
+   j.first = scene->first;
+   j.end = end;
+   for (p = 0; p <= EMIT_PARTS; p++)
+      j.from[p] = n * p / EMIT_PARTS;
+   for (p = 0; p < EMIT_PARTS; p++)
+   {
+      j.out[p].buf = drawn + p * cap;
+      j.out[p].n = 0;
+      j.out[p].cap = cap;
+   }
+   hd_rows(PAR_WIDE, EMIT_PARTS, emit_parts, &j);
+   for (p = 0; p < EMIT_PARTS; p++)
+   {
+      seg_first[p] = p * cap;
+      seg_n[p] = j.out[p].n;
+   }
+}
+
+/* Softens the edges: a pixel that differs a lot from its neighbours takes some of them. */
+static void smooth_rows(void *ctx, int32_t y0, int32_t y1)
+{
+   hd_surface *s = ((fill_job *)ctx)->s;
+   int32_t x, y, w = s->w, h = s->h;
+   for (y = hd_max(1, y0); y < hd_min(h - 1, y1); y++)
+   {
+      const uint32_t *r = aa_src + (int64_t)y * w;
+      uint32_t *o = s->px + (int64_t)y * w;
+      for (x = 1; x < w - 1; x++)
+      {
+         uint32_t c = r[x], n = r[x - w], sd = r[x + w], e = r[x + 1], wv = r[x - 1];
+         int32_t lc = (int32_t)((c >> 16 & 0xff) * 2 + (c >> 8 & 0xff) * 5 + (c & 0xff)) >> 3;
+         int32_t ln = (int32_t)((n >> 16 & 0xff) * 2 + (n >> 8 & 0xff) * 5 + (n & 0xff)) >> 3;
+         int32_t ls = (int32_t)((sd >> 16 & 0xff) * 2 + (sd >> 8 & 0xff) * 5 + (sd & 0xff)) >> 3;
+         int32_t le = (int32_t)((e >> 16 & 0xff) * 2 + (e >> 8 & 0xff) * 5 + (e & 0xff)) >> 3;
+         int32_t lw = (int32_t)((wv >> 16 & 0xff) * 2 + (wv >> 8 & 0xff) * 5 + (wv & 0xff)) >> 3;
+         int32_t hi = hd_max(lc, hd_max(hd_max(ln, ls), hd_max(le, lw))), lo = hd_min(lc, hd_min(hd_min(ln, ls), hd_min(le, lw)));
+         if (hi - lo > 24)
          {
-            r3d_tri tt = *t;
-            tt.color = gfx_mix(t->color, ins->tint & 0xffffffu, (int32_t)(ins->tint >> 24));
-            emit(k, &tt, w, rx, ny, rz);
+            uint32_t rb = ((c & 0xff00ffu) * 4 + (n & 0xff00ffu) + (sd & 0xff00ffu) + (e & 0xff00ffu) + (wv & 0xff00ffu)) >> 3;
+            uint32_t g = ((c & 0xff00u) * 4 + (n & 0xff00u) + (sd & 0xff00u) + (e & 0xff00u) + (wv & 0xff00u)) >> 3;
+            o[x] = (rb & 0xff00ffu) | (g & 0xff00u);
          }
-         else
-            emit(k, t, w, rx, ny, rz);
       }
    }
 }
+
+/* The sky, top to bottom, and an empty depth buffer. */
+static void clear_rows(void *ctx, int32_t y0, int32_t y1)
+{
+   fill_job *job = (fill_job *)ctx;
+   hd_surface *s = job->s;
+   int32_t x, y;
+   for (y = y0; y < y1; y++)
+   {
+      uint32_t c = gfx_mix(sky_top, sky_bottom, y * 256 / hd_max(1, s->h - 1));
+      uint32_t *row = s->px + (int64_t)y * s->w;
+      for (x = 0; x < s->w; x++)
+         row[x] = c;
+      memset(zbuf + (int64_t)y * s->w, 0, sizeof(uint32_t) * (size_t)s->w);
+   }
+}
+
+#ifdef R3D_PROF
+#include <stdio.h>
+#include <time.h>
+static double prof_t[8], prof_sum[8];
+static int prof_n;
+static void prof_mark(int i)
+{
+   struct timespec t;
+   timespec_get(&t, TIME_UTC);
+   prof_t[i] = t.tv_sec * 1000.0 + t.tv_nsec / 1e6;
+   if (i > 0)
+      prof_sum[i] += prof_t[i] - prof_t[i - 1];
+   if (i == 6 && ++prof_n % 200 == 0)
+   {
+      fprintf(stderr, "clear %.2f emit %.2f inst %.2f setup %.2f fill %.2f smooth %.2f (ms, %d tris)\n", prof_sum[1] / 200, prof_sum[2] / 200,
+              prof_sum[3] / 200, prof_sum[4] / 200, prof_sum[5] / 200, prof_sum[6] / 200, (int)drawn_count);
+      memset(prof_sum, 0, sizeof prof_sum);
+   }
+}
+#define PROF(i) prof_mark(i)
+#else
+#define PROF(i) ((void)0)
+#endif
 
 void r3d_draw(hd_surface *s, const r3d_view *v, const r3d_mesh *scene, const r3d_instance *inst, int32_t count)
 {
    frame_k k;
    fill_job job;
-   int32_t i, half = hd_max(1, v->fov / 2), t;
-   k.v = v;
-   k.cy = hd_cos(v->yaw);
-   k.sy = hd_sin(v->yaw);
-   k.cp = hd_cos(v->pitch);
-   k.sp = hd_sin(v->pitch);
-   k.w = s->w;
-   k.h = s->h;
-   /* focal = (h / 2) / tan(fov / 2) */
-   t = hd_sin(half);
-   k.f = t ? (int32_t)(((int64_t)(s->h / 2) * hd_cos(half)) / t) : s->h;
-   unit(v->sun.x, v->sun.y, v->sun.z, &k.lx, &k.ly, &k.lz);
-   k.fog_span = hd_max(1, v->fog_far - v->fog_near);
-   for (i = 0; i < s->w * s->h; i++)
-   {
-      s->px[i] = v->sky;
-      zbuf[i] = 0;
-   }
-   drawn_count = 0;
-   if (scene)
-      emit_all(&k, scene, NULL);
-   for (i = 0; i < count; i++)
-      emit_all(&k, &inst[i].mesh, &inst[i]);
+   int32_t i, cap = R3D_MAX_DRAWN / SEGS;
+   if (!tone_ready)
+      tone_build();
+   if (!dirs_ready)
+      dirs_build();
+   if (chunks_for != tri_count)
+      chunks_build();
+   frame_setup(&k, s, v);
    job.s = s;
-   hd_rows(s->w, s->h, fill_rows, &job);
+   sky_top = v->sky_top;
+   sky_bottom = v->sky_bottom;
+   PROF(0);
+   /* every pass on every core, even on a small screen: a 3D frame has more work per pixel than a 2D one */
+   hd_rows(PAR_WIDE, s->h, clear_rows, &job);
+   PROF(1);
+   memset(seg_n, 0, sizeof seg_n);
+   if (scene)
+      emit_world(&k, scene);
+   PROF(2);
+   {
+      emit_out o;
+      o.buf = drawn + EMIT_PARTS * cap;
+      o.n = 0;
+      o.cap = cap;
+      for (i = 0; i < count; i++)
+         emit_range(&o, &k, inst[i].mesh.first, inst[i].mesh.first + inst[i].mesh.count, &inst[i]);
+      seg_first[EMIT_PARTS] = EMIT_PARTS * cap;
+      seg_n[EMIT_PARTS] = o.n;
+   }
+   for (drawn_count = 0, i = 0; i < SEGS; i++)
+      drawn_count += seg_n[i];
+   PROF(3);
+   hd_rows(1 << 12, drawn_count, setup_rows, &job);
+   PROF(4);
+   hd_rows(PAR_WIDE, s->h, fill_rows, &job);
+   PROF(5);
+   if (v->smooth)
+   {
+      memcpy(aa_src, s->px, sizeof(uint32_t) * (size_t)s->w * (size_t)s->h);
+      hd_rows(PAR_WIDE, s->h, smooth_rows, &job);
+   }
+   PROF(6);
 }
