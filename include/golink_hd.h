@@ -124,7 +124,7 @@ GOLINKHD_API void golinkhd_destroy(golinkhd_engine *e);
 
 /* A game package (.glhd) in memory; 0 and a readable *error when it cannot be played (the engine keeps its demo). */
 GOLINKHD_API int golinkhd_load(golinkhd_engine *e, const uint8_t *package, size_t size, const char **error);
-/* Back to a built-in demo: 0 the platformer, 1 the showcase of every effect. */
+/* Back to a built-in demo: 0 the platformer, 1 the showcase of every effect, 2 the 3D room (the platformer on an engine built without 3D). */
 GOLINKHD_API void golinkhd_load_demo(golinkhd_engine *e, int32_t demo);
 GOLINKHD_API void golinkhd_get_info(golinkhd_engine *e, golinkhd_info *out);
 

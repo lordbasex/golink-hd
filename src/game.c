@@ -1738,6 +1738,13 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
    if (s->boss_form != hd_boss_form_now())
       hd_boss_form_use(s->boss_form); /* its boss's form too */
    s->frame++;
+#ifndef HD_NO_3D
+   if (s->show.on == 2)
+   {
+      hd_r3d_step(s, in);
+      return;
+   }
+#endif
    if (s->show.on)
    {
       hd_music_step(s);

@@ -1124,6 +1124,13 @@ void hd_draw(const hd_state *s, uint32_t *out)
    screen.px = out;
    screen.w = HD_OUT_W;
    screen.h = HD_OUT_H;
+#ifndef HD_NO_3D
+   if (s->show.on == 2)
+   {
+      hd_r3d_draw(s, &screen);
+      return;
+   }
+#endif
    if (s->show.on)
    {
       hd_show_draw(s, &screen);

@@ -458,6 +458,13 @@ static void enter_scene(hd_state *s, int32_t scene)
 void hd_show_sanitize(hd_show *w)
 {
    int32_t i;
+#ifndef HD_NO_3D
+   if (w->on == 2)
+   {
+      hd_r3d_sanitize(w);
+      return;
+   }
+#endif
    w->on = w->on ? 1 : 0;
    w->scene = hd_clamp(w->scene, 0, SC_COUNT - 1);
    w->next = hd_clamp(w->next, 0, SC_COUNT - 1);

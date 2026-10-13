@@ -528,6 +528,17 @@ void hd_show_draw(const hd_state *s, void *screen);
 void hd_show_build(void);
 void hd_show_sanitize(hd_show *w);
 
+/*
+ * 3d/room3d.c: the 3D proof of concept (golinkhd_load_demo(e, 2)); it runs
+ * on the showcase's state with `on` 2. Built without 3D (NO_3D) it is the
+ * platformer demo instead.
+ */
+void hd_r3d_build(void);
+void hd_r3d_start(hd_state *s);
+void hd_r3d_step(hd_state *s, const hd_input in[MAX_PLAYERS]);
+void hd_r3d_draw(const hd_state *s, void *screen);
+void hd_r3d_sanitize(hd_show *w);
+
 /* audio.c */
 void hd_audio_build(void);
 /* A package's own effect in place of a built-in one (mono, HD_RATE). */

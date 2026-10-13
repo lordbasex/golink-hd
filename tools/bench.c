@@ -18,7 +18,7 @@ static double now_ms(void)
    return t.tv_sec * 1000.0 + t.tv_nsec / 1e6;
 }
 
-static uint32_t fb[HD_MAX_W * HD_MAX_H];
+static uint32_t fb[HD_OUT_MAX_W * HD_OUT_MAX_H];
 static int16_t audio[HD_SAMPLES_PER_FRAME * 2];
 static hd_state s;
 
@@ -85,5 +85,19 @@ int main(int argc, char **argv)
       printf("%-38s %6.2f ms average, %6.2f ms worst\n", names[sc], avg, worst);
       over |= avg > limit;
    }
+#ifndef HD_NO_3D
+   /* the 3D room, turning around, at each size (its budget is the frame's, 16.6 ms, see docs/3d.md) */
+   for (sc = 1; sc <= HD_RES_MAX; sc++)
+   {
+      char name[64];
+      hd_res = sc;
+      hd_reset(&s);
+      hd_r3d_start(&s);
+      avg = run(5, frames, &worst);
+      snprintf(name, sizeof name, "3d room (%d lines)", (int)(360 * sc));
+      printf("%-38s %6.2f ms average, %6.2f ms worst\n", name, avg, worst);
+   }
+   hd_res = 1;
+#endif
    return over;
 }
