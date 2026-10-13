@@ -24,13 +24,15 @@
 #include "gfx.h"
 #include "text.h"
 #include "r3d.h"
+#include "actor3d.h"
 
 #define CM(n) FX_FRAC(n, 100)
 #define M(n) FX(n)
 /* the flat sits away from 0 so the view's center stays positive (hd_show clamps it to 0..511) */
 #define BASE CM(4000)
 
-static r3d_mesh scene, person, shadow;
+static r3d_mesh scene;
+static actor3d_kit people[2];
 static const int32_t *T;
 static int32_t ready, poster[8];
 static r3d_light_cfg sunlight;
@@ -128,8 +130,8 @@ static void window_in(int32_t dir, int32_t pos, int32_t s0, int32_t s1, int32_t 
       if (bot)
          bx(s0 - 6, bot - 4, pos - 16, s1 + 6, bot, pos + 10, 0xf7f5f0);
       r3d_occlude(0);
-      r3d_glow(110);
-      bxf(s0 + 6, bot + (bot ? 0 : 2), pos - 1, s1 - 6, top - 6, pos + 1, 0x7fb2d6, R3D_PANE);
+      r3d_glass(90);
+      bxf(s0 + 6, bot + (bot ? 0 : 2), pos - 1, s1 - 6, top - 6, pos + 1, 0xa8d4ee, R3D_PANE);
    }
    else
    {
@@ -140,10 +142,10 @@ static void window_in(int32_t dir, int32_t pos, int32_t s0, int32_t s1, int32_t 
       if (bot)
          bx(pos - 10, bot - 4, s0 - 6, pos + 16, bot, s1 + 6, 0xf7f5f0);
       r3d_occlude(0);
-      r3d_glow(110);
-      bxf(pos - 1, bot + (bot ? 0 : 2), s0 + 6, pos + 1, top - 6, s1 - 6, 0x7fb2d6, R3D_SKIP_BOTTOM | R3D_SKIP_TOP | R3D_SKIP_Z);
+      r3d_glass(90);
+      bxf(pos - 1, bot + (bot ? 0 : 2), s0 + 6, pos + 1, top - 6, s1 - 6, 0xa8d4ee, R3D_SKIP_BOTTOM | R3D_SKIP_TOP | R3D_SKIP_Z);
    }
-   r3d_glow(0);
+   r3d_glass(0);
    r3d_occlude(1);
 }
 
@@ -762,9 +764,9 @@ static void bathroom(void)
    bx(0, 0, 0, 170, 56, 130, 0xf8f9fa);
    bx(8, 30, 8, 162, 56, 122, 0xdfe7ec);
    r3d_occlude(0);
-   r3d_glow(120);
-   bxf(0, 56, 0, 4, 190, 70, 0xcfe3ee, R3D_SKIP_TOP | R3D_SKIP_BOTTOM | R3D_SKIP_Z);
-   r3d_glow(0);
+   r3d_glass(70);
+   bxf(0, 56, 0, 4, 190, 70, 0xdcefff, R3D_SKIP_TOP | R3D_SKIP_BOTTOM | R3D_SKIP_Z);
+   r3d_glass(0);
    r3d_occlude(1);
    cyl(150, 56, 120, 2, 2, 120, 4, 0xc0c0c0);
    cyl(150, 176, 112, 8, 8, 2, 10, 0xc0c0c0);
@@ -958,25 +960,14 @@ static void city(void)
    }
 }
 
-/* The person who works here: a simple body to show what moves, with its own soft shadow. */
-static void build_person(void)
+/* The two people who live here, with their soft shadows: one works at the desk, one walks around the living room. */
+static void build_people(void)
 {
+   static const actor3d_look worker = { 0xe0ac69, 0x3d2817, 0xf4a261, 0xffffff, 0x2b2d42, 0x1d3557, 0x222222 };
+   static const actor3d_look flatmate = { 0x8d5524, 0x111111, 0x2a9d8f, 0xe9c46a, 0x6c757d, 0xe63946, 0x8d5524 };
+   r3d_mesh shadow;
    r3d_place(0, 0, 0, 0);
    r3d_detail(0);
-   r3d_begin();
-   mat(TEX3D_FABRIC, 128);
-   bx(-12, 0, -6, -2, 80, 6, 0x2b2d42);          /* legs */
-   bx(2, 0, -6, 12, 80, 6, 0x2b2d42);
-   bx(-14, 0, -8, -1, 8, 10, 0xf1f1f1);          /* slippers */
-   bx(1, 0, -8, 14, 8, 10, 0xf1f1f1);
-   bx(-18, 80, -10, 18, 140, 10, 0xf4a261);      /* a hoodie */
-   bx(-24, 88, -6, -18, 136, 6, 0xf4a261);
-   bx(18, 88, -6, 24, 136, 6, 0xf4a261);
-   plain();
-   ball(0, 158, 0, 12, 14, 12, 4, 0xe0ac69);      /* head and hair */
-   ball(0, 166, 2, 13, 9, 13, 4, 0x3d2817);
-   bx(-6, 154, -12, 6, 158, -11, 0x3d2817);       /* glasses */
-   person = r3d_end();
    r3d_begin();
    r3d_decal(1);
    r3d_occlude(0);
@@ -986,6 +977,10 @@ static void build_person(void)
    r3d_occlude(1);
    plain();
    shadow = r3d_end();
+   actor3d_build(&people[0], &worker, T[TEX3D_FABRIC]);
+   actor3d_build(&people[1], &flatmate, T[TEX3D_FABRIC]);
+   people[0].shadow = shadow;
+   people[1].shadow = shadow;
 }
 
 void hd_r3d_build(void)
@@ -1013,15 +1008,15 @@ void hd_r3d_build(void)
    poster[6] = tex3d_poster(2, 3);
    poster[7] = tex3d_poster(3, 0);
    r3d_clear();
-   r3d_detail(CM(40));
+   r3d_detail(CM(60));
    r3d_begin();
    /* floors */
-   floor_of(0, 0, 750, 400, TEX3D_PARQUET, 96, 0xffffff);
+   floor_of(0, 0, 750, 400, TEX3D_PARQUET, 160, 0xffffff);
    floor_of(750, 0, 1200, 400, TEX3D_PATTERN, 128, 0xffffff);
    floor_of(0, 400, 1200, 500, TEX3D_PLANKS, 96, 0xffffff);
    floor_of(0, 500, 450, 900, TEX3D_PLANKS, 96, 0xf0e6dc);
    floor_of(450, 500, 700, 900, TEX3D_TILES, 160, 0xffffff);
-   floor_of(700, 500, 1200, 900, TEX3D_PARQUET, 96, 0xd8cbbd);
+   floor_of(700, 500, 1200, 900, TEX3D_PARQUET, 160, 0xd8cbbd);
    /* outer walls (light outside, each room's color inside) */
    wall(0, 0, 0, 750, 0xf2efe9, 0xf3e3d3, liv_s, 2);
    wall(0, 0, 750, 1200, 0xf2efe9, 0xf6f3ea, kit_s, 1);
@@ -1073,7 +1068,7 @@ void hd_r3d_build(void)
    sunlight.ground_strength = 80;
    sunlight.ao_reach = CM(70);
    r3d_bake(&sunlight);
-   build_person();
+   build_people();
    ready = 1;
 }
 
@@ -1124,7 +1119,9 @@ void hd_r3d_draw(const hd_state *s, void *screen)
    hd_surface *sf = (hd_surface *)screen;
    const hd_show *w = &s->show;
    r3d_view v;
-   r3d_instance inst[2];
+   r3d_instance inst[ACT_INSTANCES * 2];
+   actor3d_pose pose;
+   int32_t n, leg;
    char line[96];
    int32_t scale = hd_res, dist = CM(w->rpos), sp = hd_sin(w->kv), cp = hd_cos(w->kv);
    hd_r3d_build();
@@ -1142,14 +1139,28 @@ void hd_r3d_draw(const hd_state *s, void *screen)
    v.exposure = 256;
    v.smooth = 1;
    v.light = &sunlight;
-   memset(inst, 0, sizeof inst);
-   inst[0].mesh = person;
-   inst[0].at.x = BASE + CM(960) + (int32_t)(((int64_t)CM(8) * hd_sin((w->t * 24) & 4095)) >> 14);
-   inst[0].at.z = BASE + CM(700);
-   inst[0].yaw = 2048 + 200;
-   inst[1].mesh = shadow;
-   inst[1].at = inst[0].at;
-   r3d_draw(sf, &v, &scene, inst, 2);
+   /* at the desk: sitting and typing, now and then a look at the other screen */
+   memset(&pose, 0, sizeof pose);
+   pose.at.x = BASE + CM(960);
+   pose.at.z = BASE + CM(770);
+   pose.yaw = 2048 + 200;
+   pose.sit = 1;
+   pose.type = 1;
+   pose.phase = (w->t * 40) & 4095;
+   pose.look = ((w->t / 240) & 1) ? 180 : 0;
+   pose.nod = -80;
+   n = actor3d_place(&people[0], &pose, inst);
+   /* in the living room: walking up and down between the TV and the sofa, turning at each end */
+   memset(&pose, 0, sizeof pose);
+   leg = w->t % 600; /* 300 frames each way */
+   pose.at.x = BASE + CM(200);
+   pose.at.z = BASE + CM(70) + (int32_t)((int64_t)CM(250) * (leg < 300 ? leg : 600 - leg) / 300);
+   pose.yaw = leg < 300 ? 2048 : 0;
+   pose.walk = 16384;
+   pose.phase = (w->t * 64) & 4095;
+   pose.wave = ((w->t / 600) % 3) == 1 && leg < 60;
+   n += actor3d_place(&people[1], &pose, inst + n);
+   r3d_draw(sf, &v, &scene, inst, n);
    snprintf(line, sizeof line, hd_lang == 1 ? "3D  %d TRI\xc3\x81NGULOS, %d EN PANTALLA" : hd_lang == 2 ? "3D  %d TRI\xc3\x82NGULOS, %d NA TELA" : "3D  %d TRIANGLES, %d ON SCREEN",
             (int)r3d_triangles(), (int)r3d_drawn());
    text_draw(sf, line, 8 * scale, 8 * scale, scale, 0xffffff, 1, -1);

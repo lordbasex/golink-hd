@@ -183,7 +183,7 @@ static void make_fabric(void)
    for (y = 0; y < 64; y++)
       for (x = 0; x < 64; x++)
       {
-         int32_t warp = ((x / 2 + y / 2) & 1) ? 18 : -10, n = (int32_t)(hash3(x, y, 17) % 14);
+         int32_t warp = ((x / 2 + y / 2) & 1) ? 5 : -4, n = (int32_t)(hash3(x, y, 17) % 8);
          int32_t v = 205 + warp + n + (fbm(x, y, 64, 16, 19) - 128) / 8;
          px_fabric[y * 64 + x] = rgb(v, v, v);
       }
@@ -196,7 +196,7 @@ static void make_knit(void)
       for (x = 0; x < 64; x++)
       {
          int32_t xx = x % 8, yy = (y + (xx < 4 ? xx : 7 - xx)) % 6;
-         int32_t v = 215 - yy * 12 + (int32_t)(hash3(x, y, 23) % 10) - (xx == 0 || xx == 4 ? 20 : 0);
+         int32_t v = 220 - yy * 5 + (int32_t)(hash3(x, y, 23) % 6) - (xx == 0 || xx == 4 ? 10 : 0);
          px_knit[y * 64 + x] = rgb(v, v, v);
       }
 }

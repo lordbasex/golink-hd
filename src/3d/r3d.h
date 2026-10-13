@@ -23,7 +23,9 @@
 #include "gfx.h"
 
 #define R3D_MAX_TRIS 196608
-#define R3D_MAX_DRAWN 98304 /* triangles on screen in one frame, after clipping */
+#define R3D_MAX_DRAWN 65536 /* triangles on screen in one frame, after clipping */
+#define R3D_MAX_LM_FACES 16384 /* faces with a light map */
+#define R3D_LM_TEXELS (1 << 21) /* light map texels (5 cm each): about 5,000 square meters */
 #define R3D_MAX_TEX 96
 #define R3D_MAX_LIGHTS 96
 #define R3D_MAX_SOLIDS 24576
@@ -65,6 +67,8 @@ void r3d_material(int32_t tex, int32_t texels_per_m);
 void r3d_glow(int32_t strength);
 /* The next pieces stop light and cast shadows (1, the default) or not (0: glass, thin things). */
 void r3d_occlude(int32_t on);
+/* The next pieces are see-through (glass): 0 off, else how much they cover, 1..255; they are drawn after everything else. */
+void r3d_glass(int32_t cover);
 /* The next pieces darken what is under them instead of covering it (a shadow, a stain); their texture's alpha is how much. */
 void r3d_decal(int32_t on);
 /* Faces bigger than `cell` (16.16 meters) are cut into cells so the baked light can show shadows on them; 0 never. */
@@ -127,7 +131,14 @@ typedef struct
    r3d_vec at;
    int32_t yaw;
    uint32_t tint; /* 0 as built, else 0xAARRGGBB mixed toward RGB by A */
+   int32_t rot[9]; /* a whole turn (r3d_rotation), rows of 2.14; all zero: only the yaw */
 } r3d_instance;
+
+/* A turn as a matrix: yaw around y, then pitch around x (the top toward +z... the bottom toward -z), then roll around z. */
+void r3d_rotation(int32_t yaw, int32_t pitch, int32_t roll, int32_t out[9]);
+/* a then b: out = a x b. */
+void r3d_rot_mul(const int32_t a[9], const int32_t b[9], int32_t out[9]);
+r3d_vec r3d_rot_apply(const int32_t m[9], r3d_vec v);
 
 /* The world (every triangle in `scene`) and the instances, seen from the view, into the surface. */
 void r3d_draw(hd_surface *s, const r3d_view *v, const r3d_mesh *scene, const r3d_instance *inst, int32_t count);

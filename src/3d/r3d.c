@@ -49,7 +49,7 @@ uint32_t *r3d_tex_pixels(int32_t id)
 
 /* ---- the world's triangles, built once ---- */
 
-enum { TF_GLOW = 1, TF_DECAL = 2, TF_FIT = 4 };
+enum { TF_GLOW = 1, TF_DECAL = 2, TF_FIT = 4, TF_GLASS = 8 };
 
 typedef struct
 {
@@ -59,8 +59,33 @@ typedef struct
    int32_t nx, ny, nz;                /* the face's normal, 16384 long (2.14) */
    uint32_t color;
    int32_t cr, cg, cb;                /* the color as light, 256 = white */
-   int32_t tex, flags, glow;
+   int32_t tex, flags, glow, glass;
+   /*
+    * A face with a light map (lm >= 0): its corners' place in it (texels, 8
+    * bits of fraction), and the sun's light on them without shadows (the map
+    * says how much of it arrives, and how much of the sky).
+    */
+   int32_t lm, ls[3], lt[3];
+   int32_t sr[3], sg[3], sb[3];
 } r3d_tri;
+
+/*
+ * Light maps: big faces get a small picture of their light, a texel each
+ * 5 cm, with two values per texel: how much sun arrives (bits 0-7) and how
+ * much sky (bits 16-23). Shadows then are as sharp as the voxel grid, not
+ * as the triangles.
+ */
+typedef struct
+{
+   r3d_vec a, b, c, d; /* the face's corners in the world, around it */
+   int32_t w, h, base; /* texels across (a -> b) and up (a -> d), its first texel in lm_px */
+   int32_t tri;        /* one of its triangles, for its normal */
+} r3d_lmface;
+
+static r3d_lmface lm_faces[R3D_MAX_LM_FACES];
+static uint32_t lm_px[R3D_LM_TEXELS];
+static int32_t lm_face_count, lm_used;
+#define LM_TEXEL (FX_ONE / 20)
 
 static r3d_tri tris[R3D_MAX_TRIS];
 static int32_t tri_count, mesh_first;
@@ -69,7 +94,7 @@ static uint32_t sky_top, sky_bottom;
 /* a width that makes hd_rows split any number of rows over the cores */
 #define PAR_WIDE (1 << 16)
 static int32_t place_x, place_y, place_z, place_c = TRIG_ONE, place_s;
-static int32_t cur_tex = -1, cur_tpm, cur_glow, cur_occlude = 1, cur_decal, cur_cell;
+static int32_t cur_tex = -1, cur_tpm, cur_glow, cur_occlude = 1, cur_decal, cur_cell, cur_lm = -1, cur_glass;
 
 /* What stops light: boxes (world-aligned bounds), upright cylinders and balls. */
 enum { SOLID_BOX = 0, SOLID_CYL, SOLID_BALL };
@@ -99,6 +124,10 @@ void r3d_clear(void)
    mesh_first = 0;
    solid_count = 0;
    lamp_count = 0;
+   lm_face_count = 0;
+   lm_used = 0;
+   cur_lm = -1;
+   cur_glass = 0;
    r3d_place(0, 0, 0, 0);
    cur_tex = -1;
    cur_tpm = 0;
@@ -144,6 +173,40 @@ void r3d_glow(int32_t strength)
 void r3d_occlude(int32_t on)
 {
    cur_occlude = on ? 1 : 0;
+}
+
+void r3d_glass(int32_t cover)
+{
+   cur_glass = hd_clamp(cover, 0, 255);
+}
+
+void r3d_rotation(int32_t yaw, int32_t pitch, int32_t roll, int32_t out[9])
+{
+   int32_t cy = hd_cos(yaw), sy = hd_sin(yaw), cp = hd_cos(pitch), sp = hd_sin(pitch), cr = hd_cos(roll), sr = hd_sin(roll);
+   int32_t ry[9], rx[9], rz[9], t[9];
+   ry[0] = cy, ry[1] = 0, ry[2] = sy, ry[3] = 0, ry[4] = TRIG_ONE, ry[5] = 0, ry[6] = -sy, ry[7] = 0, ry[8] = cy;
+   rx[0] = TRIG_ONE, rx[1] = 0, rx[2] = 0, rx[3] = 0, rx[4] = cp, rx[5] = -sp, rx[6] = 0, rx[7] = sp, rx[8] = cp;
+   rz[0] = cr, rz[1] = -sr, rz[2] = 0, rz[3] = sr, rz[4] = cr, rz[5] = 0, rz[6] = 0, rz[7] = 0, rz[8] = TRIG_ONE;
+   r3d_rot_mul(ry, rx, t);
+   r3d_rot_mul(t, rz, out);
+}
+
+void r3d_rot_mul(const int32_t a[9], const int32_t b[9], int32_t out[9])
+{
+   int32_t i, j, r[9];
+   for (i = 0; i < 3; i++)
+      for (j = 0; j < 3; j++)
+         r[i * 3 + j] = (int32_t)(((int64_t)a[i * 3] * b[j] + (int64_t)a[i * 3 + 1] * b[3 + j] + (int64_t)a[i * 3 + 2] * b[6 + j]) >> 14);
+   memcpy(out, r, sizeof r);
+}
+
+r3d_vec r3d_rot_apply(const int32_t m[9], r3d_vec v)
+{
+   r3d_vec o;
+   o.x = (int32_t)(((int64_t)m[0] * v.x + (int64_t)m[1] * v.y + (int64_t)m[2] * v.z) >> 14);
+   o.y = (int32_t)(((int64_t)m[3] * v.x + (int64_t)m[4] * v.y + (int64_t)m[5] * v.z) >> 14);
+   o.z = (int32_t)(((int64_t)m[6] * v.x + (int64_t)m[7] * v.y + (int64_t)m[8] * v.z) >> 14);
+   return o;
 }
 
 void r3d_decal(int32_t on)
@@ -252,7 +315,7 @@ static void world_uv(r3d_vec p, int32_t nx, int32_t ny, int32_t nz, int32_t *u, 
  * keeps the order); uv: its corners' texture coordinates, or NULL to lay
  * the texture along the piece's axes.
  */
-static void add_tri_uv(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t hx, int64_t hy, int64_t hz, const int32_t *uv)
+static void add_tri_uv(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t hx, int64_t hy, int64_t hz, const int32_t *uv, const int32_t *lmuv)
 {
    r3d_tri *t;
    r3d_vec p[3];
@@ -299,14 +362,23 @@ static void add_tri_uv(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t 
    lin3(t->color, &t->cr, &t->cg, &t->cb);
    t->tex = cur_tex;
    t->glow = cur_glow;
-   t->flags = (cur_glow ? TF_GLOW : 0) | (cur_decal ? TF_DECAL : 0);
+   t->flags = (cur_glow ? TF_GLOW : 0) | (cur_decal ? TF_DECAL : 0) | (cur_glass ? TF_GLASS : 0);
+   t->glass = cur_glass;
+   t->lm = (lmuv && !cur_glow && !cur_decal) ? cur_lm : -1;
    for (k = 0; k < 3; k++)
+   {
       t->lr[k] = t->lg[k] = t->lb[k] = 256;
+      if (t->lm >= 0)
+      {
+         t->ls[k] = lmuv[ord[k] * 2];
+         t->lt[k] = lmuv[ord[k] * 2 + 1];
+      }
+   }
 }
 
 static void add_tri(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t hx, int64_t hy, int64_t hz)
 {
-   add_tri_uv(a, b, c, color, hx, hy, hz, NULL);
+   add_tri_uv(a, b, c, color, hx, hy, hz, NULL, NULL);
 }
 
 /*
@@ -322,10 +394,36 @@ static void add_quad(r3d_vec a, r3d_vec b, r3d_vec c, r3d_vec d, uint32_t color,
       n = hd_clamp((hd_max(length(a, b), length(d, c)) + cur_cell - 1) / cur_cell, 1, 48);
       m = hd_clamp((hd_max(length(a, d), length(b, c)) + cur_cell - 1) / cur_cell, 1, 48);
    }
+   int32_t lw = 0, lh = 0;
    if (fit)
    {
       tw = 256 << texs[cur_tex].wlog;
       th = 256 << texs[cur_tex].hlog;
+   }
+   /* a light map for a big face that can be lit (not looking down, not glowing, not a decal) */
+   cur_lm = -1;
+   if (cur_cell > 0 && hy >= 0 && !cur_glow && !cur_decal && !cur_glass && lm_face_count < R3D_MAX_LM_FACES)
+   {
+      int32_t la = hd_max(length(a, b), length(d, c)), lb = hd_max(length(a, d), length(b, c));
+      if (la >= LM_TEXEL * 3 && lb >= LM_TEXEL * 3)
+      {
+         lw = hd_clamp((la + LM_TEXEL - 1) / LM_TEXEL, 2, 400);
+         lh = hd_clamp((lb + LM_TEXEL - 1) / LM_TEXEL, 2, 400);
+         if (lm_used + lw * lh <= R3D_LM_TEXELS)
+         {
+            r3d_lmface *f = &lm_faces[lm_face_count];
+            f->a = to_world(a);
+            f->b = to_world(b);
+            f->c = to_world(c);
+            f->d = to_world(d);
+            f->w = lw;
+            f->h = lh;
+            f->base = lm_used;
+            f->tri = tri_count;
+            lm_used += lw * lh;
+            cur_lm = lm_face_count++;
+         }
+      }
    }
    for (j = 0; j < m; j++)
       for (i = 0; i < n; i++)
@@ -334,20 +432,31 @@ static void add_quad(r3d_vec a, r3d_vec b, r3d_vec c, r3d_vec d, uint32_t color,
          r3d_vec p10 = lerp(lerp(a, b, i + 1, n), lerp(d, c, i + 1, n), j, m);
          r3d_vec p11 = lerp(lerp(a, b, i + 1, n), lerp(d, c, i + 1, n), j + 1, m);
          r3d_vec p01 = lerp(lerp(a, b, i, n), lerp(d, c, i, n), j + 1, m);
+         /* where the cell's corners are in the light map */
+         int32_t s0 = lw * 256 * i / n, s1 = lw * 256 * (i + 1) / n, q0 = lh * 256 * j / m, q1 = lh * 256 * (j + 1) / m;
+         int32_t lm1[6] = { s0, q0, s1, q0, s1, q1 }, lm2[6] = { s0, q0, s1, q1, s0, q1 };
+         const int32_t *l1 = cur_lm >= 0 ? lm1 : NULL, *l2 = cur_lm >= 0 ? lm2 : NULL;
          if (fit)
          {
             /* the texture's top row along d -> c, so a picture on a wall stands up */
             int32_t u0 = tw * i / n, u1 = tw * (i + 1) / n, v0 = th - th * j / m - 1, v1 = th - th * (j + 1) / m;
             int32_t uv1[6] = { u0, v0, u1, v0, u1, v1 }, uv2[6] = { u0, v0, u1, v1, u0, v1 };
-            add_tri_uv(p00, p10, p11, color, hx, hy, hz, uv1);
-            add_tri_uv(p00, p11, p01, color, hx, hy, hz, uv2);
+            add_tri_uv(p00, p10, p11, color, hx, hy, hz, uv1, l1);
+            add_tri_uv(p00, p11, p01, color, hx, hy, hz, uv2, l2);
          }
          else
          {
-            add_tri(p00, p10, p11, color, hx, hy, hz);
-            add_tri(p00, p11, p01, color, hx, hy, hz);
+            add_tri_uv(p00, p10, p11, color, hx, hy, hz, NULL, l1);
+            add_tri_uv(p00, p11, p01, color, hx, hy, hz, NULL, l2);
          }
       }
+   if (cur_lm >= 0 && lm_faces[cur_lm].tri >= tri_count)
+   {
+      /* no triangle came out of it (a degenerate face): give its texels back */
+      lm_used -= lw * lh;
+      lm_face_count--;
+   }
+   cur_lm = -1;
 }
 
 void r3d_quad(r3d_vec a, r3d_vec b, r3d_vec c, r3d_vec d, uint32_t color)
@@ -360,7 +469,7 @@ static void add_solid(int32_t kind, r3d_vec lo, r3d_vec hi, int32_t r0, int32_t 
    r3d_solid *s;
    r3d_vec c[8], w;
    int32_t i;
-   if (!cur_occlude || cur_decal || solid_count >= R3D_MAX_SOLIDS)
+   if (!cur_occlude || cur_decal || cur_glass || solid_count >= R3D_MAX_SOLIDS)
       return;
    s = &solids[solid_count++];
    s->kind = kind;
@@ -623,8 +732,18 @@ static void lin3(uint32_t c, int32_t *r, int32_t *g, int32_t *b)
    *b = cb * cb * 256 / 65025;
 }
 
-static void light_point(const r3d_light_cfg *c, r3d_vec p, int32_t nx, int32_t ny, int32_t nz, int32_t *lr, int32_t *lg, int32_t *lb, int shadows)
+enum { LP_SHADOWS = 0, LP_NONE, LP_MAPPED };
+
+/*
+ * The light at a point facing n: LP_SHADOWS all of it with the sun's and the
+ * sky's shadows, LP_NONE without shadows (what moves), LP_MAPPED for a face
+ * with a light map: the sun's part apart in sun_out (its shadow is in the
+ * map) and the sky without its corners (in the map too); lamps are always
+ * in, with their shadows except for LP_NONE.
+ */
+static void light_point(const r3d_light_cfg *c, r3d_vec p, int32_t nx, int32_t ny, int32_t nz, int32_t *lr, int32_t *lg, int32_t *lb, int mode, int32_t *sun_out)
 {
+   int shadows = mode == LP_SHADOWS;
    int32_t sr, sg, sb, kr, kg, kb, gr, gg, gb, l, k, sun = 0, sky = 0, sky_w = 0;
    int32_t sx, sy, sz, ndl;
    int64_t r = 0, g = 0, b = 0;
@@ -656,10 +775,21 @@ static void light_point(const r3d_light_cfg *c, r3d_vec p, int32_t nx, int32_t n
       }
       sun = sun / 5;
       l = (int32_t)(((int64_t)ndl * sun) >> 14) * c->sun_strength >> 8; /* 0..256 */
-      r += (int64_t)sr * l;
-      g += (int64_t)sg * l;
-      b += (int64_t)sb * l;
+      if (mode == LP_MAPPED)
+      {
+         sun_out[0] = (int32_t)hd_min(4095, (int32_t)(((int64_t)sr * l) >> 8));
+         sun_out[1] = (int32_t)hd_min(4095, (int32_t)(((int64_t)sg * l) >> 8));
+         sun_out[2] = (int32_t)hd_min(4095, (int32_t)(((int64_t)sb * l) >> 8));
+      }
+      else
+      {
+         r += (int64_t)sr * l;
+         g += (int64_t)sg * l;
+         b += (int64_t)sb * l;
+      }
    }
+   else if (mode == LP_MAPPED)
+      sun_out[0] = sun_out[1] = sun_out[2] = 0;
    /* the sky (and the ground's bounce) from every direction the face sees, less where things are near */
    for (k = 0; k < 26; k++)
    {
@@ -679,7 +809,7 @@ static void light_point(const r3d_light_cfg *c, r3d_vec p, int32_t nx, int32_t n
       b += ((int64_t)kb * ks * (128 + up / 2) >> 8) + ((int64_t)gb * gs * down >> 8);
    }
    /* the lamps */
-   for (k = 0; k < lamp_count && shadows; k++)
+   for (k = 0; k < lamp_count && mode != LP_NONE; k++)
    {
       const r3d_lamp *m = &lamps[k];
       int32_t d = length(q, m->at), dx, dy, dz, n;
@@ -707,19 +837,121 @@ static void light_point(const r3d_light_cfg *c, r3d_vec p, int32_t nx, int32_t n
    *lb = (int32_t)hd_min(4095, (int32_t)(b >> 8));
 }
 
-void r3d_bake(const r3d_light_cfg *c)
+/* How much sun (0..255) and sky (0..255) reach a point of a light-mapped face. */
+static uint32_t lm_texel(const r3d_light_cfg *c, r3d_vec p, int32_t nx, int32_t ny, int32_t nz)
 {
+   static const int32_t jit[5][2] = { { 0, 0 }, { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
+   int32_t sx, sy, sz, k, sun = 0, sky = 0, sky_w = 0, soft = c->sun_soft * 12;
+   r3d_vec q;
+   q.x = p.x + (int32_t)(((int64_t)nx * (vox_size + vox_size / 4)) >> 14);
+   q.y = p.y + (int32_t)(((int64_t)ny * (vox_size + vox_size / 4)) >> 14);
+   q.z = p.z + (int32_t)(((int64_t)nz * (vox_size + vox_size / 4)) >> 14);
+   unit(c->sun.x, c->sun.y, c->sun.z, &sx, &sy, &sz);
+   for (k = 0; k < 5; k++)
+   {
+      int32_t dx, dy, dz;
+      unit((int64_t)sx * 4 + (int64_t)jit[k][0] * soft, (int64_t)sy * 4, (int64_t)sz * 4 + (int64_t)jit[k][1] * soft, &dx, &dy, &dz);
+      sun += ray_clear(q, dx, dy, dz, FX(12)) ? 51 : 0;
+   }
+   for (k = 0; k < 26; k++)
+   {
+      int32_t w = (int32_t)(((int64_t)nx * dirs[k][0] + (int64_t)ny * dirs[k][1] + (int64_t)nz * dirs[k][2]) >> 14);
+      if (w <= 0)
+         continue;
+      sky_w += w;
+      if (ray_clear(q, dirs[k][0], dirs[k][1], dirs[k][2], c->ao_reach))
+         sky += w;
+   }
+   sky = sky_w ? (int32_t)((int64_t)sky * 255 / sky_w) : 255;
+   return (uint32_t)hd_clamp(sun, 0, 255) | (uint32_t)hd_clamp(sky, 0, 255) << 16;
+}
+
+typedef struct
+{
+   const r3d_light_cfg *c;
+} bake_job;
+
+/* The light maps of faces first..last-1 (each on its own, so on several cores). */
+static void bake_faces(void *ctx, int32_t first, int32_t last)
+{
+   const r3d_light_cfg *c = ((bake_job *)ctx)->c;
+   int32_t f, i, j;
+   for (f = first; f < last; f++)
+   {
+      const r3d_lmface *lf = &lm_faces[f];
+      const r3d_tri *t = &tris[lf->tri];
+      for (j = 0; j < lf->h; j++)
+         for (i = 0; i < lf->w; i++)
+         {
+            /* the texel's middle on the face */
+            int32_t fi = (2 * i + 1) * 4096 / (2 * lf->w), fj = (2 * j + 1) * 4096 / (2 * lf->h);
+            r3d_vec p = lerp(lerp(lf->a, lf->b, fi, 4096), lerp(lf->d, lf->c, fi, 4096), fj, 4096);
+            lm_px[lf->base + j * lf->w + i] = lm_texel(c, p, t->nx, t->ny, t->nz);
+         }
+   }
+}
+
+/*
+ * Each light map softened once (3 x 3 neighbours, the texel itself twice):
+ * a few rays per texel leave a grain that this takes away, and shadow edges
+ * stay where they are.
+ */
+static void blur_faces(void)
+{
+   static uint32_t tmp[400 * 400];
+   int32_t f, i, j, di, dj;
+   for (f = 0; f < lm_face_count; f++)
+   {
+      const r3d_lmface *lf = &lm_faces[f];
+      uint32_t *px = lm_px + lf->base;
+      for (j = 0; j < lf->h; j++)
+         for (i = 0; i < lf->w; i++)
+         {
+            uint32_t sum = px[j * lf->w + i], n = 1;
+            for (dj = -1; dj <= 1; dj++)
+               for (di = -1; di <= 1; di++)
+               {
+                  int32_t x = i + di, y = j + dj;
+                  if (x < 0 || y < 0 || x >= lf->w || y >= lf->h)
+                     continue;
+                  sum += px[y * lf->w + x]; /* two lanes of 8 bits in 16: 10 of them never carry over */
+                  n++;
+               }
+            tmp[j * lf->w + i] = ((sum & 0xffffu) / n) | (((sum >> 16) / n) << 16);
+         }
+      memcpy(px, tmp, sizeof(uint32_t) * (size_t)(lf->w * lf->h));
+   }
+}
+
+/* The corners' light of triangles first..last-1. */
+static void bake_tris(void *ctx, int32_t first, int32_t last)
+{
+   const r3d_light_cfg *c = ((bake_job *)ctx)->c;
    int32_t i, k;
-   dirs_build();
-   vox_build(c);
-   for (i = 0; i < tri_count; i++)
+   for (i = first; i < last; i++)
    {
       r3d_tri *t = &tris[i];
       if (t->flags & (TF_GLOW | TF_DECAL))
          continue;
       for (k = 0; k < 3; k++)
-         light_point(c, t->v[k], t->nx, t->ny, t->nz, &t->lr[k], &t->lg[k], &t->lb[k], 1);
+      {
+         int32_t sun[3] = { 0, 0, 0 };
+         light_point(c, t->v[k], t->nx, t->ny, t->nz, &t->lr[k], &t->lg[k], &t->lb[k], t->lm >= 0 ? LP_MAPPED : LP_SHADOWS, sun);
+         t->sr[k] = sun[0], t->sg[k] = sun[1], t->sb[k] = sun[2];
+      }
    }
+}
+
+void r3d_bake(const r3d_light_cfg *c)
+{
+   bake_job j;
+   dirs_build();
+   vox_build(c);
+   j.c = c;
+   /* every face and triangle on its own: the bake runs on every core */
+   hd_rows(PAR_WIDE, lm_face_count, bake_faces, &j);
+   blur_faces();
+   hd_rows(PAR_WIDE, tri_count, bake_tris, &j);
 }
 
 /* ---- the screen's colors: linear light to 0..255 through a filmic curve ---- */
@@ -756,15 +988,19 @@ typedef struct
    int64_t at0, dx, dy;
 } attr;
 
-enum { A_Z = 0, A_R, A_G, A_B, A_U, A_T, A_COUNT };
+enum { A_Z = 0, A_R, A_G, A_B, A_U, A_T, A_LS, A_LT, A_SR, A_SG, A_SB, A_COUNT };
 
 /* A triangle on screen: 28.4 pixels, its corners' values, then (after setup) its planes. */
 typedef struct
 {
    int32_t x[3], y[3];
-   int32_t v[A_COUNT][3]; /* 1/z, light r g b, texture u t */
+   int32_t v[A_COUNT][3]; /* 1/z, light r g b, texture u t, light map s t, the sun's light r g b */
    int32_t y0, y1, xa, xb; /* the pixels it covers */
    int32_t tex, flags;
+   int32_t lm, lmw, lmh, lmbase; /* its light map: -1 none, else its size and first texel */
+   int32_t sun_r, sun_g, sun_b;  /* the sun's light on it: the same on the whole face (a flat face, a far light) */
+   int32_t glass;                /* see-through: how much it covers, 1..255; 0 solid */
+   int32_t smooth_tex;           /* its texture is seen bigger than its texels: read it between four of them */
    attr a[A_COUNT];
 } r3d_px;
 
@@ -838,6 +1074,7 @@ typedef struct
 {
    int32_t x, y, z;
    int32_t u, t, lr, lg, lb;
+   int32_t ls, lt, sr, sg, sb;
 } cam_pt;
 
 static void to_camera(const frame_k *k, r3d_vec p, cam_pt *c)
@@ -963,6 +1200,11 @@ static int32_t clip(const frame_k *k, cam_pt *poly, int32_t n)
             c.lr = mix_at(p->lr, q->lr, t);
             c.lg = mix_at(p->lg, q->lg, t);
             c.lb = mix_at(p->lb, q->lb, t);
+            c.ls = mix_at(p->ls, q->ls, t);
+            c.lt = mix_at(p->lt, q->lt, t);
+            c.sr = mix_at(p->sr, q->sr, t);
+            c.sg = mix_at(p->sg, q->sg, t);
+            c.sb = mix_at(p->sb, q->sb, t);
             tmp[m++] = c;
          }
       }
@@ -997,6 +1239,15 @@ static void emit(emit_out *o, const frame_k *k, const r3d_tri *t, const r3d_vec 
       int32_t lr = light ? light[0] : t->lr[i], lg = light ? light[1] : t->lg[i], lb = light ? light[2] : t->lb[i];
       poly[i].u = t->u[i];
       poly[i].t = t->t[i];
+      poly[i].ls = poly[i].lt = poly[i].sr = poly[i].sg = poly[i].sb = 0;
+      if (t->lm >= 0 && !light)
+      {
+         poly[i].ls = t->ls[i];
+         poly[i].lt = t->lt[i];
+         poly[i].sr = hd_min(1023, (int32_t)((((int64_t)t->sr[i] * cr) >> 8) * k->e >> 8));
+         poly[i].sg = hd_min(1023, (int32_t)((((int64_t)t->sg[i] * cg) >> 8) * k->e >> 8));
+         poly[i].sb = hd_min(1023, (int32_t)((((int64_t)t->sb[i] * cb) >> 8) * k->e >> 8));
+      }
       if (t->flags & TF_DECAL)
       {
          /* a decal keeps its color as it is: the pixel multiplies what is under it */
@@ -1031,9 +1282,23 @@ static void emit(emit_out *o, const frame_k *k, const r3d_tri *t, const r3d_vec 
          d->v[A_B][j] = p->lb;
          d->v[A_U][j] = p->u;
          d->v[A_T][j] = p->t;
+         d->v[A_LS][j] = p->ls;
+         d->v[A_LT][j] = p->lt;
+         d->v[A_SR][j] = p->sr;
+         d->v[A_SG][j] = p->sg;
+         d->v[A_SB][j] = p->sb;
       }
       d->tex = t->tex;
       d->flags = t->flags;
+      d->glass = t->glass;
+      d->lm = light ? -1 : t->lm;
+      d->sun_r = poly[0].sr, d->sun_g = poly[0].sg, d->sun_b = poly[0].sb;
+      if (d->lm >= 0)
+      {
+         d->lmw = lm_faces[d->lm].w;
+         d->lmh = lm_faces[d->lm].h;
+         d->lmbase = lm_faces[d->lm].base;
+      }
    }
 }
 
@@ -1090,11 +1355,20 @@ static void setup_rows(void *ctx, int32_t first, int32_t last)
       for (a = 0; a < A_COUNT; a++)
       {
          int64_t v0 = t->v[a][0], v1 = t->v[a][1], v2 = t->v[a][2];
-         if ((a == A_U || a == A_T) && t->tex < 0)
+         if (((a == A_U || a == A_T) && t->tex < 0) || (a >= A_LS && t->lm < 0) || a >= A_SR)
             continue;
          t->a[a].at0 = v0 * 65536;
          t->a[a].dx = (((v1 - v0) * (y2 - y0) - (v2 - v0) * (y1 - y0)) * 65536) / area;
          t->a[a].dy = (((v2 - v0) * (x1 - x0) - (v1 - v0) * (x2 - x0)) * 65536) / area;
+      }
+      t->smooth_tex = 0;
+      if (t->tex >= 0)
+      {
+         /* how far the texture moves per pixel (texels times 256): under 3/4 of a texel, it is magnified */
+         int64_t m = 192LL * 65536 / 16;
+         int64_t ux = t->a[A_U].dx < 0 ? -t->a[A_U].dx : t->a[A_U].dx, uy = t->a[A_U].dy < 0 ? -t->a[A_U].dy : t->a[A_U].dy;
+         int64_t vx = t->a[A_T].dx < 0 ? -t->a[A_T].dx : t->a[A_T].dx, vy = t->a[A_T].dy < 0 ? -t->a[A_T].dy : t->a[A_T].dy;
+         t->smooth_tex = ux < m && uy < m && vx < m && vy < m;
       }
       t->y0 = hd_max(0, (hd_min(t->y[0], hd_min(t->y[1], t->y[2])) - 8) >> 4);
       t->y1 = hd_min(s->h - 1, (hd_max(t->y[0], hd_max(t->y[1], t->y[2])) + 8) >> 4);
@@ -1109,6 +1383,15 @@ static int32_t plane_at(const attr *a, int64_t ox, int64_t oy, int32_t drop)
    return (int32_t)((a->at0 + a->dx * ox + a->dy * oy) >> drop);
 }
 
+/* a toward b by f (0..256), on all four channels of 0xAARRGGBB */
+static inline uint32_t mix4(uint32_t a, uint32_t b, uint32_t f)
+{
+   uint32_t g = 256 - f;
+   uint32_t lo = (((a & 0x00ff00ffu) * g + (b & 0x00ff00ffu) * f) >> 8) & 0x00ff00ffu;
+   uint32_t hi = (((a >> 8) & 0x00ff00ffu) * g + ((b >> 8) & 0x00ff00ffu) * f) & 0xff00ff00u;
+   return lo | hi;
+}
+
 static void fill_one(hd_surface *s, const r3d_px *t, int32_t row0, int32_t row1)
 {
    int64_t x0 = t->x[0], y0 = t->y[0], x1 = t->x[1], y1 = t->y[1], x2 = t->x[2], y2 = t->y[2];
@@ -1117,16 +1400,22 @@ static void fill_one(hd_surface *s, const r3d_px *t, int32_t row0, int32_t row1)
    uint32_t umask = tx ? ((1u << tx->wlog) - 1) : 0, vmask = tx ? ((1u << tx->hlog) - 1) : 0, wlog = tx ? (uint32_t)tx->wlog : 0;
    const uint32_t *tpx = tx ? tx->px : NULL;
    int decal = t->flags & TF_DECAL;
+   int32_t glass = t->glass, smooth_tex = t->smooth_tex;
    /* each edge: its value at (xa, row) and its step per pixel */
    int64_t s0 = -(y2 - y1) * 16, s1 = -(y0 - y2) * 16, s2 = -(y1 - y0) * 16;
    /* the sums' steps per pixel: 1/z with 4 bits of fraction, light 16, texture 8 */
    int32_t zs = (int32_t)((t->a[A_Z].dx * 16) >> 12), rs = (int32_t)(t->a[A_R].dx * 16), gs = (int32_t)(t->a[A_G].dx * 16), bs = (int32_t)(t->a[A_B].dx * 16);
    int32_t us = tx ? (int32_t)((t->a[A_U].dx * 16) >> 8) : 0, ts = tx ? (int32_t)((t->a[A_T].dx * 16) >> 8) : 0;
+   int lm = t->lm >= 0;
+   const uint32_t *lmp = lm ? lm_px + t->lmbase : NULL;
+   int32_t lmw = t->lmw, smax = (t->lmw - 1) * 256, tmax = (t->lmh - 1) * 256;
+   int32_t lss = lm ? (int32_t)((t->a[A_LS].dx * 16) >> 8) : 0, lts = lm ? (int32_t)((t->a[A_LT].dx * 16) >> 8) : 0;
+   int32_t sun_r = t->sun_r, sun_g = t->sun_g, sun_b = t->sun_b;
    for (y = ya; y <= yb; y++)
    {
       int64_t py = (int64_t)y * 16 + 8, px = (int64_t)xa * 16 + 8, oy = py - y0, ox;
       int64_t we[3], se[3];
-      int32_t xs = xa, xe = xb, e, zf, rf, gf, bf, uf = 0, tf = 0;
+      int32_t xs = xa, xe = xb, e, zf, rf, gf, bf, uf = 0, tf = 0, lsf = 0, ltf = 0;
       uint32_t *row = s->px + (int64_t)y * s->w, *zrow = zbuf + (int64_t)y * s->w;
       we[0] = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1);
       we[1] = (x0 - x2) * (py - y2) - (y0 - y2) * (px - x2);
@@ -1162,15 +1451,44 @@ static void fill_one(hd_surface *s, const r3d_px *t, int32_t row0, int32_t row1)
          uf = plane_at(&t->a[A_U], ox, oy, 8);
          tf = plane_at(&t->a[A_T], ox, oy, 8);
       }
-      for (x = xs; x <= xe; x++, zf += zs, rf += rs, gf += gs, bf += bs, uf += us, tf += ts)
+      if (lm)
+      {
+         lsf = plane_at(&t->a[A_LS], ox, oy, 8);
+         ltf = plane_at(&t->a[A_LT], ox, oy, 8);
+      }
+      for (x = xs; x <= xe; x++, zf += zs, rf += rs, gf += gs, bf += bs, uf += us, tf += ts, lsf += lss, ltf += lts)
       {
          uint32_t z = (uint32_t)(zf >> 4), texel = 0xffffffffu;
          int32_t lr, lg, lb;
          if (decal ? z + 64 < zrow[x] : z <= zrow[x])
             continue;
          if (tx)
-            texel = tpx[(((uint32_t)tf >> 16) & vmask) << wlog | (((uint32_t)uf >> 16) & umask)];
+         {
+            if (smooth_tex)
+            {
+               /* between the four nearest texels (every channel, alpha too) */
+               uint32_t su = (uint32_t)uf - 32768u, sv = (uint32_t)tf - 32768u, fx = (su >> 8) & 255, fy = (sv >> 8) & 255;
+               uint32_t x0 = (su >> 16) & umask, x1 = (x0 + 1) & umask, y0 = ((sv >> 16) & vmask) << wlog, y1 = ((((sv >> 16) + 1) & vmask)) << wlog;
+               texel = mix4(mix4(tpx[y0 | x0], tpx[y0 | x1], fx), mix4(tpx[y1 | x0], tpx[y1 | x1], fx), fy);
+            }
+            else
+               texel = tpx[(((uint32_t)tf >> 16) & vmask) << wlog | (((uint32_t)uf >> 16) & umask)];
+         }
          lr = rf >> 16, lg = gf >> 16, lb = bf >> 16;
+         if (lm)
+         {
+            /* the light map, between its four nearest texels: how much sun (low lane) and sky (high lane) arrive */
+            int32_t ls = hd_clamp((lsf >> 8) - 128, 0, smax), lt = hd_clamp((ltf >> 8) - 128, 0, tmax);
+            int32_t ix = ls >> 8, iy = lt >> 8, fx = ls & 255, fy = lt & 255, ix1 = ix + (ix * 256 < smax), iy1 = iy + (iy * 256 < tmax);
+            uint32_t a0 = lmp[iy * lmw + ix], a1 = lmp[iy * lmw + ix1], b0 = lmp[iy1 * lmw + ix], b1 = lmp[iy1 * lmw + ix1];
+            uint32_t h0 = ((a0 * (uint32_t)(256 - fx) + a1 * (uint32_t)fx) >> 8) & 0x00ff00ffu;
+            uint32_t h1 = ((b0 * (uint32_t)(256 - fx) + b1 * (uint32_t)fx) >> 8) & 0x00ff00ffu;
+            uint32_t mv = ((h0 * (uint32_t)(256 - fy) + h1 * (uint32_t)fy) >> 8) & 0x00ff00ffu;
+            int32_t sun = (int32_t)(mv & 0xff), sky = (int32_t)(mv >> 16);
+            lr = (lr * sky + sun_r * sun) >> 8;
+            lg = (lg * sky + sun_g * sun) >> 8;
+            lb = (lb * sky + sun_b * sun) >> 8;
+         }
          if (decal)
          {
             /* darken toward the decal's color by its texture's alpha */
@@ -1183,12 +1501,19 @@ static void fill_one(hd_surface *s, const r3d_px *t, int32_t row0, int32_t row1)
          }
          if ((texel >> 24) < 128)
             continue; /* the texture's holes */
-         zrow[x] = z;
          {
             int32_t r = (srgb_lin[(texel >> 16) & 0xff] * hd_max(0, lr)) >> 8;
             int32_t g = (srgb_lin[(texel >> 8) & 0xff] * hd_max(0, lg)) >> 8;
             int32_t b = (srgb_lin[texel & 0xff] * hd_max(0, lb)) >> 8;
-            row[x] = (uint32_t)tone[hd_min(r, TONE_IN - 1)] << 16 | (uint32_t)tone[hd_min(g, TONE_IN - 1)] << 8 | tone[hd_min(b, TONE_IN - 1)];
+            uint32_t c = (uint32_t)tone[hd_min(r, TONE_IN - 1)] << 16 | (uint32_t)tone[hd_min(g, TONE_IN - 1)] << 8 | tone[hd_min(b, TONE_IN - 1)];
+            if (glass)
+            {
+               /* glass shows what is behind it, tinted; it keeps no depth, so what is behind was drawn first */
+               row[x] = gfx_mix(row[x], c, glass);
+               continue;
+            }
+            zrow[x] = z;
+            row[x] = c;
          }
       }
    }
@@ -1197,14 +1522,16 @@ static void fill_one(hd_surface *s, const r3d_px *t, int32_t row0, int32_t row1)
 static void fill_rows(void *ctx, int32_t row0, int32_t row1)
 {
    hd_surface *s = ((fill_job *)ctx)->s;
-   int32_t p, i;
-   for (p = 0; p < SEGS; p++)
-      for (i = 0; i < seg_n[p]; i++)
-      {
-         const r3d_px *t = &drawn[seg_first[p] + i];
-         if (t->y0 <= t->y1 && t->y1 >= row0 && t->y0 < row1)
-            fill_one(s, t, row0, row1);
-      }
+   int32_t p, i, pass;
+   /* everything solid first, then the glass over it */
+   for (pass = 0; pass < 2; pass++)
+      for (p = 0; p < SEGS; p++)
+         for (i = 0; i < seg_n[p]; i++)
+         {
+            const r3d_px *t = &drawn[seg_first[p] + i];
+            if ((t->glass != 0) == pass && t->y0 <= t->y1 && t->y1 >= row0 && t->y0 < row1)
+               fill_one(s, t, row0, row1);
+         }
 }
 
 /* A mesh's triangles toward the screen (an instance's, or a stretch of the world's). */
@@ -1218,28 +1545,45 @@ static void emit_range(emit_out *o, const frame_k *k, int32_t first, int32_t end
    {
       const r3d_tri *t = &tris[i];
       r3d_vec w[3];
-      int32_t rx, rz, light[3], cr = t->cr, cg = t->cg, cb = t->cb;
+      int32_t rx, ny, rz, light[3], cr = t->cr, cg = t->cg, cb = t->cb;
       if (!ins)
       {
          emit(o, k, t, t->v, t->nx, t->ny, t->nz, cr, cg, cb, NULL);
          continue;
       }
-      for (j = 0; j < 3; j++)
+      if (ins->rot[0] | ins->rot[4] | ins->rot[8])
       {
-         w[j].x = ins->at.x + (int32_t)(((int64_t)t->v[j].x * c + (int64_t)t->v[j].z * sn) >> 14);
-         w[j].y = ins->at.y + t->v[j].y;
-         w[j].z = ins->at.z + (int32_t)(((int64_t)t->v[j].z * c - (int64_t)t->v[j].x * sn) >> 14);
+         /* a whole turn: an arm, a leg */
+         r3d_vec n;
+         for (j = 0; j < 3; j++)
+         {
+            r3d_vec p = r3d_rot_apply(ins->rot, t->v[j]);
+            w[j].x = ins->at.x + p.x, w[j].y = ins->at.y + p.y, w[j].z = ins->at.z + p.z;
+         }
+         n.x = t->nx, n.y = t->ny, n.z = t->nz;
+         n = r3d_rot_apply(ins->rot, n);
+         rx = n.x, ny = n.y, rz = n.z;
       }
-      rx = (int32_t)(((int64_t)t->nx * c + (int64_t)t->nz * sn) >> 14);
-      rz = (int32_t)(((int64_t)t->nz * c - (int64_t)t->nx * sn) >> 14);
+      else
+      {
+         for (j = 0; j < 3; j++)
+         {
+            w[j].x = ins->at.x + (int32_t)(((int64_t)t->v[j].x * c + (int64_t)t->v[j].z * sn) >> 14);
+            w[j].y = ins->at.y + t->v[j].y;
+            w[j].z = ins->at.z + (int32_t)(((int64_t)t->v[j].z * c - (int64_t)t->v[j].x * sn) >> 14);
+         }
+         rx = (int32_t)(((int64_t)t->nx * c + (int64_t)t->nz * sn) >> 14);
+         rz = (int32_t)(((int64_t)t->nz * c - (int64_t)t->nx * sn) >> 14);
+         ny = t->ny;
+      }
       if (ins->tint >> 24)
          lin3(gfx_mix(t->color, ins->tint & 0xffffffu, (int32_t)(ins->tint >> 24)), &cr, &cg, &cb);
       /* what moves is lit by the sun and the sky as it goes, without shadows */
       if (lc && !(t->flags & (TF_GLOW | TF_DECAL)))
-         light_point(lc, w[0], rx, t->ny, rz, &light[0], &light[1], &light[2], 0);
+         light_point(lc, w[0], rx, ny, rz, &light[0], &light[1], &light[2], LP_NONE, NULL);
       else
          light[0] = light[1] = light[2] = 256;
-      emit(o, k, t, w, rx, t->ny, rz, cr, cg, cb, light);
+      emit(o, k, t, w, rx, ny, rz, cr, cg, cb, light);
    }
 }
 
