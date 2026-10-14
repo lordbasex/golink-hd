@@ -1130,6 +1130,11 @@ void hd_draw(const hd_state *s, uint32_t *out)
       hd_r3d_draw(s, &screen);
       return;
    }
+   if (s->show.on == 3)
+   {
+      hd_remote_draw(s, &screen);
+      return;
+   }
 #endif
    if (s->show.on)
    {

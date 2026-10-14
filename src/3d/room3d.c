@@ -25,14 +25,15 @@
 #include "text.h"
 #include "r3d.h"
 #include "actor3d.h"
+#include "room3d.h"
 
 #define CM(n) FX_FRAC(n, 100)
 #define M(n) FX(n)
 /* the flat sits away from 0 so the view's center stays positive (hd_show clamps it to 0..511) */
-#define BASE CM(4000)
+#define BASE ROOM3D_BASE
 
 static r3d_mesh scene;
-static actor3d_kit people[2];
+static actor3d_kit people[ROOM3D_PEOPLE];
 static const int32_t *T;
 static int32_t ready, poster[8];
 static r3d_light_cfg sunlight;
@@ -372,7 +373,7 @@ static void living(void)
 {
    int32_t i;
    /* the sofa, an L facing the TV wall (west), with cushions and a blanket */
-   at(320, 0, 120, 0);
+   at(320, 0, 100, 0);
    mat(TEX3D_FABRIC, 96);
    bx(0, 10, 0, 220, 44, 95, 0x51637a);
    bx(0, 44, 75, 220, 92, 95, 0x48586d);
@@ -391,7 +392,7 @@ static void living(void)
    for (i = 0; i < 4; i++)
       cyl(8 + (i & 1) * 204, 0, 8 + (i >> 1) * 80, 3, 2, 10, 6, 0x2c2c2c);
    /* the coffee table and what is on it */
-   at(370, 0, 30, 0);
+   at(340, 0, 12, 0);
    mat(TEX3D_WOOD, 128);
    bx(0, 36, 0, 110, 40, 55, 0x9b6a3c);
    bx(0, 6, 0, 110, 9, 55, 0x9b6a3c);
@@ -460,7 +461,7 @@ static void living(void)
    r3d_occlude(1);
    plain();
    /* the dining table and its four chairs, a bowl of fruit, a pendant lamp */
-   at(560, 0, 260, 0);
+   at(500, 0, 300, 0);
    mat(TEX3D_WOOD, 100);
    bx(0, 72, 0, 150, 76, 85, 0xb07a48);
    plain();
@@ -474,15 +475,14 @@ static void living(void)
    ball(75, 86, 36, 4, 4, 4, 3, 0x90be6d);
    bx(20, 76, 20, 50, 77, 60, 0xf8f9fa);       /* a placemat with papers */
    mug(110, 76, 60, 0x264653);
-   at(570, 0, 220, 0);
+   /* against the north wall, two chairs on the south side and one at the west end: the way in from the hall and the way between the table and the sofa stay clear */
+   at(510, 0, 258, 0);
    chair_wood(0x6b4423, 0xd9c7a7);
-   at(660, 0, 220, 0);
+   at(600, 0, 258, 0);
    chair_wood(0x6b4423, 0xd9c7a7);
-   at(612, 0, 380, 2048);
+   at(498, 0, 322, 3072);
    chair_wood(0x6b4423, 0xd9c7a7);
-   at(702, 0, 380, 2048);
-   chair_wood(0x6b4423, 0xd9c7a7);
-   at(635, 0, 302, 0);
+   at(575, 0, 342, 0);
    pendant(80);
    r3d_light(0, CM(160), 0, M(3), 0xffe2b0, 260);
    /* pictures and a clock */
@@ -495,7 +495,7 @@ static void living(void)
    at(720, 180, 392, 2048);
    cyl(0, 0, 0, 14, 14, 3, 16, 0xf8f8f8);
    /* a guitar on its stand, a pair of trainers, a radiator */
-   at(470, 0, 360, 0);
+   at(420, 0, 370, 0);
    bx(-8, 0, -6, 8, 30, 6, 0x222222);
    ball(0, 40, 0, 16, 18, 5, 3, 0x9c5a2b);
    ball(0, 66, 0, 12, 12, 5, 3, 0x9c5a2b);
@@ -778,13 +778,13 @@ static void bathroom(void)
    bx(2, 40, 0, 38, 44, 50, 0xf1f1f1);
    bx(0, 40, -16, 40, 80, 0, 0xffffff);
    cyl(52, 0, 30, 6, 6, 30, 8, 0xffffff);        /* a toilet brush */
-   at(570, 0, 512, 0);
-   bx(0, 0, 0, 80, 80, 45, 0x6c757d);            /* the sink's cupboard */
+   at(514, 0, 512, 0);
+   bx(0, 0, 0, 80, 80, 45, 0x6c757d);            /* the sink's cupboard, beside the toilet (the door is east of it) */
    bx(-4, 80, -4, 84, 86, 49, 0xf8f9fa);
    bx(16, 84, 10, 64, 86, 38, 0xdfe7ec);
    cyl(40, 86, 6, 2, 2, 18, 6, 0xc0c0c0);
    cyl(10, 86, 30, 3, 3, 12, 6, 0x90e0ef);       /* a toothbrush cup */
-   at(570, 0, 506, 0);
+   at(514, 0, 506, 0);
    bx(0, 110, 0, 80, 190, 2, 0x9a9a9a);           /* the mirror */
    r3d_glow(180);
    bxf(3, 113, 2, 77, 187, 3, 0xd8e6ee, R3D_SKIP_BOTTOM | R3D_SKIP_TOP | R3D_SKIP_X);
@@ -793,7 +793,7 @@ static void bathroom(void)
    bx(0, 0, 0, 60, 85, 60, 0xf8f9fa);             /* the washing machine */
    cyl(30, 40, -1, 18, 18, 2, 16, 0x9aa7b0);
    bx(6, 70, -1, 30, 80, 0, 0x3a3a3a);
-   at(660, 0, 590, 0);
+   at(500, 0, 640, 0);
    cyl(0, 0, 0, 18, 22, 46, 10, 0x8d99ae);        /* the laundry basket */
    for (i = 0; i < 3; i++)
    {
@@ -995,7 +995,7 @@ void hd_r3d_build(void)
    static const opening east_hall[] = { { 410, 490, OPEN_DOOR } };
    static const opening east_kit[] = { { 140, 330, OPEN_WINDOW } };
    static const opening hall_s[] = { { 620, 720, OPEN_DOOR }, { 900, 990, OPEN_DOOR } };
-   static const opening hall_n[] = { { 340, 430, OPEN_DOOR }, { 560, 650, OPEN_DOOR }, { 760, 850, OPEN_DOOR } };
+   static const opening hall_n[] = { { 340, 430, OPEN_DOOR }, { 600, 690, OPEN_DOOR }, { 760, 850, OPEN_DOOR } };
    if (ready)
       return;
    T = tex3d_build();
@@ -1037,7 +1037,7 @@ void hd_r3d_build(void)
    /* tiles in the bathroom */
    at(0, 0, 0, 0);
    mat(TEX3D_SUBWAY, 128);
-   bxf(456, 0, 506, 694, 140, 507, 0xffffff, R3D_PANE);
+   bxf(456, 0, 506, 600, 140, 507, 0xffffff, R3D_PANE); /* up to the door */
    bxf(456, 0, 893, 694, 140, 894, 0xffffff, R3D_PANE);
    plain();
    skirting(0, 400, 0, 750, -1);
@@ -1070,6 +1070,24 @@ void hd_r3d_build(void)
    r3d_bake(&sunlight);
    build_people();
    ready = 1;
+}
+
+const r3d_mesh *room3d_scene(void)
+{
+   hd_r3d_build();
+   return &scene;
+}
+
+const r3d_light_cfg *room3d_light(void)
+{
+   hd_r3d_build();
+   return &sunlight;
+}
+
+const actor3d_kit *room3d_person(int32_t who)
+{
+   hd_r3d_build();
+   return &people[hd_clamp(who, 0, ROOM3D_PEOPLE - 1)];
 }
 
 void hd_r3d_start(hd_state *s)

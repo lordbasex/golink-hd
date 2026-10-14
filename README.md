@@ -42,6 +42,14 @@ L and R (or Select) change scenes, with a pixelate and fade between them:
 
 The engine also draws 3D worlds: low-poly scenes in software with integers only (textures painted in code, light baked with the sun's soft shadows, the sky and lamps, a filmic curve), on the same API and save states. `golinkhd_load_demo(e, 2)` (`tools/hdrun LIB --demo 3d`) is a lived-in flat seen from above like a scale model: left and right turn the view, up and down tilt it, L and R zoom, A, B, X and Y move it. [docs/3d.md](docs/3d.md) is the reference and a step-by-step guide to make a 3D game; `make NO_3D=1` builds the engine without it.
 
+`golinkhd_load_demo(e, 3)` (`tools/hdrun LIB --demo remote`) is the first 3D game, TELETRABAJO: CÁMARA APAGADA, in the same flat. It is being built phase by phase from its design, [docs/game-remote-work.md](docs/game-remote-work.md). Phase 1 is walking:
+
+| Input | Action |
+|---|---|
+| Stick or D-pad | Walk |
+| X/Y | Run |
+| L/R or the right stick | Turn the camera |
+
 ## Game packages (.glhd)
 
 A package is a zip (stored or deflate) with:
@@ -336,7 +344,7 @@ make tools           # tools/hdrun (a headless host of the library) and tools/gl
 make bench           # milliseconds per frame of each scene
 ```
 
-`tools/hdrun LIBRARY [--content FILE.glhd] [--demo showcase] [--language es] [--res 720] --frames N --script tools/runs/walk.txt --shot 60,300 --out DIR` plays a button script on the built library, saves the chosen frames as PNG and prints a hash of all frames and sound, so two builds can be compared. `tools/runs/walk.expected` and `tools/runs/showcase.expected` hold the hashes every platform must give (checked in CI; macOS Clang, Linux GCC on x86_64 and arm64 give the same). A change that alters the picture or the sound on purpose updates it.
+`tools/hdrun LIBRARY [--content FILE.glhd] [--demo showcase|3d|remote] [--language es] [--res 720] --frames N --script tools/runs/walk.txt --shot 60,300 --out DIR` plays a button script on the built library, saves the chosen frames as PNG and prints a hash of all frames and sound, so two builds can be compared. `tools/runs/walk.expected` and `tools/runs/showcase.expected` hold the hashes every platform must give (checked in CI; macOS Clang, Linux GCC on x86_64 and arm64 give the same). A change that alters the picture or the sound on purpose updates it.
 
 ## Design rules
 
@@ -360,7 +368,7 @@ make bench           # milliseconds per frame of each scene
 | `src/text.c` | The font (UTF-8, Spanish and Portuguese accents) and dialog boxes |
 | `src/path.c` | A* pathfinding on a grid |
 | `src/showcase.c` | The showcase demo |
-| `src/3d/` | 3D: the renderer and the bake (`r3d.c`, `r3d.h`), textures painted in code (`tex3d.c`), the flat demo (`room3d.c`); see [docs/3d.md](docs/3d.md) |
+| `src/3d/` | 3D: the renderer and the bake (`r3d.c`, `r3d.h`), textures painted in code (`tex3d.c`), people (`actor3d.c`), walking (`play3d.c`), the flat demo (`room3d.c`), games (`games/remote/`); see [docs/3d.md](docs/3d.md) |
 | `src/audio.c` | Sound effects made in code, the music sequencer and the mixer |
 | `src/art.c`, `src/level.c` | The demo's pixel art and level, made in code |
 | `src/save.c` | Save states |

@@ -84,6 +84,10 @@ static void sanitize(hd_state *s)
    s->dlg = hd_clamp(s->dlg, 0, DIALOGS_MAX);
    s->dlg_chars = hd_clamp(s->dlg_chars, 0, 1000);
    hd_show_sanitize(&s->show);
+#ifndef HD_NO_3D
+   if (s->show.on == 3)
+      hd_remote_sanitize(s);
+#endif
    s->lowpass = hd_clamp(s->lowpass, 0, 256);
    s->echo = hd_clamp(s->echo, 0, ECHO_MAX);
    s->echo_feedback = hd_clamp(s->echo_feedback, 0, 230);

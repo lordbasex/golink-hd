@@ -108,6 +108,14 @@ typedef struct
 
 /* Lights every triangle built so far; call it once, after building. */
 void r3d_bake(const r3d_light_cfg *c);
+/*
+ * After r3d_bake, the baked region's solids (the voxel grid) for a game's
+ * rules: whether a point is inside one (outside the region: never), and how
+ * far a straight line from `from` toward `to` goes before one, 0..65536 of
+ * its length (a follow camera pulled in front of walls).
+ */
+int32_t r3d_solid_at(r3d_vec p);
+int32_t r3d_reach(r3d_vec from, r3d_vec to);
 int32_t r3d_triangles(void);
 
 /* ---- drawing (every frame) ---- */

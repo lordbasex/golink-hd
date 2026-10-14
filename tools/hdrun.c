@@ -4,7 +4,7 @@
  * It loads the built library (as go-link's device does), plays a button
  * script and writes chosen frames as PNG files.
  *
- *   tools/hdrun LIBRARY [--content FILE.glhd] [--demo showcase|3d] [--language en|es|pt]
+ *   tools/hdrun LIBRARY [--content FILE.glhd] [--demo showcase|3d|remote] [--language en|es|pt]
  *                       [--music off] [--frames N] [--script FILE] [--shot F1,F2,...]
  *                       [--out DIR] [--check] [--every N] [--audio FILE.raw] [--time]
  *
@@ -370,7 +370,7 @@ int main(int argc, char **argv)
 
    if (argc < 2)
    {
-      fprintf(stderr, "usage: %s LIBRARY [--content FILE] [--demo showcase|3d] [--language en|es|pt] [--music off] [--frames N] [--script FILE] [--shot F1,F2] [--out DIR] [--check] [--every N] [--audio FILE.raw] [--time] [--res 360|720|1080]\n", argv[0]);
+      fprintf(stderr, "usage: %s LIBRARY [--content FILE] [--demo showcase|3d|remote] [--language en|es|pt] [--music off] [--frames N] [--script FILE] [--shot F1,F2] [--out DIR] [--check] [--every N] [--audio FILE.raw] [--time] [--res 360|720|1080]\n", argv[0]);
       return 2;
    }
    memset(&host, 0, sizeof host);
@@ -419,7 +419,7 @@ int main(int argc, char **argv)
       else if (!strcmp(argv[i], "--demo") && i + 1 < argc)
          {
          const char *d = argv[++i];
-         showcase = !strcmp(d, "showcase") ? 1 : !strcmp(d, "3d") ? 2 : 0;
+         showcase = !strcmp(d, "showcase") ? 1 : !strcmp(d, "3d") ? 2 : !strcmp(d, "remote") ? 3 : 0;
       }
       else if (!strcmp(argv[i], "--res") && i + 1 < argc)
          res = atol(argv[++i]);

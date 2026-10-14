@@ -705,6 +705,33 @@ static int ray_clear(r3d_vec p, int32_t dx, int32_t dy, int32_t dz, int32_t reac
    return 1;
 }
 
+int32_t r3d_solid_at(r3d_vec p)
+{
+   if (!vox_size || p.x < vox_x0 || p.y < vox_y0 || p.z < vox_z0)
+      return 0;
+   return vox_get((p.x - vox_x0) / vox_size, (p.y - vox_y0) / vox_size, (p.z - vox_z0) / vox_size);
+}
+
+int32_t r3d_reach(r3d_vec from, r3d_vec to)
+{
+   int64_t dx = (int64_t)to.x - from.x, dy = (int64_t)to.y - from.y, dz = (int64_t)to.z - from.z;
+   int64_t most = hd_max(hd_max((int32_t)(dx < 0 ? -dx : dx), (int32_t)(dy < 0 ? -dy : dy)), (int32_t)(dz < 0 ? -dz : dz));
+   int32_t n, i;
+   if (!vox_size)
+      return 65536;
+   n = (int32_t)(most / (vox_size / 2)) + 1;
+   for (i = 1; i <= n; i++)
+   {
+      r3d_vec q;
+      q.x = from.x + (int32_t)(dx * i / n);
+      q.y = from.y + (int32_t)(dy * i / n);
+      q.z = from.z + (int32_t)(dz * i / n);
+      if (r3d_solid_at(q))
+         return (int32_t)((int64_t)(i - 1) * 65536 / n);
+   }
+   return 65536;
+}
+
 /* 26 directions around a point (a cube's neighbours), 16384 long. */
 static int32_t dirs[26][3];
 static int dirs_ready;

@@ -97,6 +97,8 @@ void golinkhd_restart(golinkhd_engine *e)
 #ifndef HD_NO_3D
    if (!e->has_package && e->demo == 2)
       hd_r3d_start(&e->state);
+   if (!e->has_package && e->demo == 3)
+      hd_remote_start(&e->state);
 #endif
 }
 
@@ -126,10 +128,10 @@ void golinkhd_load_demo(golinkhd_engine *e, int32_t demo)
 {
    hd_content_builtin();
    e->has_package = 0;
-   e->demo = demo == 1 || demo == 2 ? demo : 0;
+   e->demo = demo >= 1 && demo <= 3 ? demo : 0;
 #ifndef HD_NO_3D
-   /* the 3D room is drawn at the host's size (golinkhd_set_resolution), 720p by default */
-   if (e->demo == 2)
+   /* the 3D room and game are drawn at the host's size (golinkhd_set_resolution), 720p by default */
+   if (e->demo >= 2)
       hd_res = hd_res_host ? hd_res_host : 2;
 #endif
    golinkhd_restart(e);

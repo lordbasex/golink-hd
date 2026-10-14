@@ -538,6 +538,20 @@ void hd_r3d_start(hd_state *s);
 void hd_r3d_step(hd_state *s, const hd_input in[MAX_PLAYERS]);
 void hd_r3d_draw(const hd_state *s, void *screen);
 void hd_r3d_sanitize(hd_show *w);
+/*
+ * A built-in 3D game's state lives in the words of the 2D level's coin
+ * bitmap (`taken`), which a 3D game never uses: hd_state keeps its size and
+ * HD_STATE_VERSION, so every 2D save state still loads. The game's struct
+ * must have only 32-bit fields and fit (HD_GAME3D_FITS checks it).
+ */
+#define HD_GAME3D(s, type) ((type *)(void *)(s)->taken)
+#define HD_GAME3D_C(s, type) ((const type *)(const void *)(s)->taken)
+#define HD_GAME3D_FITS(type) typedef char type##_fits_in_hd_state[sizeof(type) <= sizeof(((hd_state *)0)->taken) && sizeof(type) % 4 == 0 ? 1 : -1]
+/* TELETRABAJO: CÁMARA APAGADA, the first 3D game (show.on 3; src/3d/games/remote, docs/game-remote-work.md). */
+void hd_remote_start(hd_state *s);
+void hd_remote_step(hd_state *s, const hd_input in[MAX_PLAYERS]);
+void hd_remote_draw(const hd_state *s, void *screen);
+void hd_remote_sanitize(hd_state *s);
 
 /* audio.c */
 void hd_audio_build(void);

@@ -1744,6 +1744,11 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       hd_r3d_step(s, in);
       return;
    }
+   if (s->show.on == 3)
+   {
+      hd_remote_step(s, in);
+      return;
+   }
 #endif
    if (s->show.on)
    {

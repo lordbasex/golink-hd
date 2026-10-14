@@ -11,6 +11,8 @@
 #include "hd.h"
 #ifndef HD_NO_3D
 #include "r3d.h"
+#include "room3d.h"
+#include "games/remote/remote.h"
 #endif
 #include "pack.h"
 #include "gfx.h"
@@ -660,6 +662,59 @@ static void test_3d(void)
    }
    CHECK(ha == hb);
    CHECK(a.show.on == 2 && memcmp(&a, &b, sizeof a) == 0);
+}
+
+/* TELETRABAJO: CÁMARA APAGADA: the same walk twice, through a save state, and never out of the flat. */
+static void test_remote(void)
+{
+   static hd_state a, b;
+   static uint8_t save[HD_SAVE_SIZE];
+   uint32_t ha, hb, h0;
+   hd_input in[MAX_PLAYERS];
+   const hd_remote *g = HD_GAME3D_C(&a, hd_remote);
+   int32_t f;
+   hd_res = 1;
+   hd_reset(&a);
+   hd_remote_start(&a);
+   hd_reset(&b);
+   hd_remote_start(&b);
+   CHECK(a.show.on == 3 && memcmp(&a, &b, sizeof a) == 0);
+   ha = hb = 2166136261u;
+   /* east along the hall (the camera looks east) at a run, turning the camera now and then */
+   for (f = 0; f < 400; f++)
+   {
+      memset(in, 0, sizeof in);
+      in[0].buttons = PAD_UP | PAD_RUN | ((f / 50) % 4 == 3 ? PAD_L : 0);
+      in[0].lx = (f / 25) % 2 ? 9000 : -9000;
+      hd_step(&a, in);
+      hd_step(&b, in);
+      if (f % 40 == 0)
+      {
+         hd_draw(&a, fb);
+         ha = fnv(fb, sizeof(uint32_t) * HD_W * HD_H, ha);
+         hd_draw(&b, fb);
+         hb = fnv(fb, sizeof(uint32_t) * HD_W * HD_H, hb);
+      }
+   }
+   CHECK(ha == hb);
+   /* it walked, and stayed inside the flat's outer walls (the front door does not let it out) */
+   CHECK(g->t == 400 && g->x > ROOM3D_AT(400) && g->x < ROOM3D_AT(1194) && g->z > ROOM3D_AT(-170) && g->z < ROOM3D_AT(894));
+   h0 = ha;
+   hd_save(&a, save);
+   memset(in, 0, sizeof in);
+   for (f = 0; f < 30; f++)
+   {
+      in[0].buttons = PAD_DOWN;
+      hd_step(&a, in);
+   }
+   hd_draw(&a, fb);
+   ha = fnv(fb, sizeof(uint32_t) * HD_W * HD_H, h0);
+   CHECK(hd_load(&b, save, HD_SAVE_SIZE) == 1);
+   for (f = 0; f < 30; f++)
+      hd_step(&b, in);
+   hd_draw(&b, fb);
+   hb = fnv(fb, sizeof(uint32_t) * HD_W * HD_H, h0);
+   CHECK(ha == hb && memcmp(&a, &b, sizeof a) == 0);
 }
 #endif
 
@@ -2205,6 +2260,7 @@ int main(void)
    test_showcase();
 #ifndef HD_NO_3D
    test_3d();
+   test_remote();
 #endif
    test_effects_package();
    test_goal_height();

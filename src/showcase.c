@@ -464,6 +464,8 @@ void hd_show_sanitize(hd_show *w)
       hd_r3d_sanitize(w);
       return;
    }
+   if (w->on == 3)
+      return; /* a 3D game: its own state is checked by save.c */
 #endif
    w->on = w->on ? 1 : 0;
    w->scene = hd_clamp(w->scene, 0, SC_COUNT - 1);

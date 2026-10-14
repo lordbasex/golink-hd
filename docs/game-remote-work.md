@@ -226,8 +226,8 @@ engine's text (`text.h`), over the finished 3D frame.
 |---|---|
 | Left stick or D-pad | Walk (relative to the camera); the stick's tilt sets the speed |
 | Right stick or L / R | Turn the camera |
-| A (or the main action) | Interact, start or stop an activity |
-| B (second action) | Run |
+| A/B (the engine's main action) | Interact, start or stop an activity |
+| X/Y (the engine's run button) | Run |
 | Y | Look at the phone (pauses nothing; shows the whole chat) |
 | START | Pause |
 
@@ -332,7 +332,7 @@ before the next one.
 
 | # | Phase | Contents | Rough time |
 |---|---|---|---|
-| 1 | Walk the flat | Follow camera, collision, character control, run, the state in the union, the compatibility check | 1 session |
+| 1 | Walk the flat (**done 2026-10-13**) | Follow camera, collision, character control, run, the state in the coin bitmap's words, the compatibility check | 1 session |
 | 2 | Interact | Spots and prompts, the 12 activities with poses, energy and work, the desk's screens | 1–2 sessions |
 | 3 | The day | Clock, suspicion, boss events, random events, the cat, the phone | 1–2 sessions |
 | 4 | Screens and HUD | Title, how to play, morning, pause, end, score, record | 1 session |
@@ -341,7 +341,47 @@ before the next one.
 | 7 | go-link | Show it in go-link Console as an HD game (picture, trailer) | later |
 | 8 | Willy Maker | Whatever it needs from this game | last |
 
-## 12. Decisions
+## 12. Progress
+
+**Phase 1, walking (2026-10-13).**
+
+What was built:
+
+- `src/3d/play3d.c`: the reusable walking pieces (`docs/3d.md`, Walking).
+- `src/3d/games/remote/`: the game's state, start, rules, drawing and texts.
+- `golinkhd_load_demo(e, 3)` and `hdrun --demo remote` start it.
+
+How it plays:
+
+- The worker walks at 1.5 m/s and runs at 3.5 m/s.
+- It turns toward where the stick points, slides along walls and finds doorways.
+- The camera follows at 3.8 m, tilted about 55 degrees, and rises over walls.
+
+Changes to the flat for walking:
+
+- The dining table is against the north wall with three chairs, and the sofa and coffee table moved 20 cm south.
+- The bathroom's door moved to 600..690, with the sink beside the toilet and the tiles cut at the door.
+
+Every room and the balcony are reached from the hall.
+
+Checks and numbers:
+
+- 720p: 9.6 ms a frame on average.
+- `make test` covers it: the same walk twice, a save state, never out of the flat.
+- ANTÍDOTO's hashes are unchanged.
+
+Controls (the engine's buttons):
+
+| Input | Action |
+|---|---|
+| Left stick or D-pad | Walk |
+| `RUN` (X/Y) | Run |
+| L / R or the right stick | Turn the camera |
+| The right stick up and down | Tilt the camera |
+
+The main action (`JUMP`, A/B) is for interacting, from phase 2 on.
+
+## 13. Decisions
 
 Answered by the user on 2026-10-13:
 
