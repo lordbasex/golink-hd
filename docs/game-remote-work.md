@@ -1,11 +1,13 @@
-# CÁMARA APAGADA (Camera Off): design
+# TELETRABAJO: CÁMARA APAGADA (Remote Work: Camera Off): design
 
 The first game on the 3D part of go-link HD (`docs/3d.md`). It is the exercise
 that proves the engine can carry a whole 3D game, and the record of how to
 make the next one. This document is the design to approve before any game code
 is written. Every later decision that changes it is written back here.
 
-Status: **draft, waiting for approval**.
+Status: **approved on 2026-10-13**; phase 1 under way. The game's id in
+code is `remote` (`src/3d/games/remote/`, `hdrun --demo remote`), so it
+never mixes with the engine's own cameras.
 
 ## 1. The idea in one paragraph
 
@@ -17,8 +19,9 @@ every minute: work at the desk, or live a little and risk the boss noticing.
 The score rewards whoever lives the most without getting fired and without
 missing the six hours.
 
-Titles by language: Spanish `CÁMARA APAGADA` (the reference text, written
-first), English `CAMERA OFF`, Portuguese `CÂMERA DESLIGADA`. The game's texts
+Titles by language: Spanish `TELETRABAJO: CÁMARA APAGADA` (the reference
+text, written first), English `REMOTE WORK: CAMERA OFF`, Portuguese
+`TELETRABALHO: CÂMERA DESLIGADA`. The game's texts
 follow the engine's three languages (`hd_lang`).
 
 Own work only: no code, names, texts, pictures or sounds come from any other
@@ -27,13 +30,13 @@ game of this theme. The reference site was only seen for its level of detail.
 ## 2. Rules of the day
 
 All numbers are integers in the game's state and tuned in one table
-(`camera_tuning`), so balancing never touches the logic.
+(`remote_tuning`), so balancing never touches the logic.
 
 | Thing | Value | Notes |
 |---|---|---|
 | A day | 09:00 to 18:00 | 9 game hours |
-| Real length | 18 000 frames | 5 minutes at 60 fps |
-| A game minute | 33 frames | 540 game minutes, 17 820 frames, the rest is the closing bell |
+| Real length | 36 000 frames | 10 minutes at 60 fps |
+| A game minute | 66 frames | 540 game minutes, 35 640 frames, the rest is the closing bell |
 | Work goal | 360 game minutes | 6 hours at the desk |
 | Free time | 180 game minutes | what the player can spend without missing the goal |
 | Energy | 0..1000 | starts at 700 |
@@ -244,7 +247,7 @@ game, so nothing in the game knows about keyboards.
   - the status bar (`Ausente`, away; `Reunido`, in a meeting; `En una llamada`, on a call).
 - **Size:** about 120 texts in all, each written in Spanish first and then
   translated to English and Portuguese. Texts live in one table in the game's
-  source (`camera_text.c`), one row per text with its three languages. This is
+  source (`remote_text.c`), one row per text with its three languages. This is
   the same layout as ANTÍDOTO's dialogs, so translators touch only that file.
 
 ## 10. How it is built on the engine
@@ -258,11 +261,11 @@ game, so nothing in the game knows about keyboards.
 | Interaction spots and prompts | `play3d.c` | yes |
 | HUD helpers (bars, phone, prompt, progress ring) at `hd_res` scale | `src/3d/hud3d.c` | yes |
 | More poses (lie, hold, crouch) and the cat | `actor3d.c`, `pet3d.c` | yes |
-| The game: rules, events, score, screens | `src/3d/games/camera/` | no |
+| The game: rules, events, score, screens | `src/3d/games/remote/` | no |
 | The flat's changes | `room3d.c` | shared with the demo |
 
 The game is a built-in game like the demos: `golinkhd_load_demo(e, 3)` and
-`hdrun --demo camera`. The reusable parts are what the next 3D game starts
+`hdrun --demo remote`. The reusable parts are what the next 3D game starts
 from. A package format for 3D games (scenes and rules in a file, as format 3
 is for 2D) comes after this game. Willy Maker comes last, as always.
 
@@ -286,11 +289,14 @@ ANTÍDOTO save state keeps loading, the game's state shares memory with the
 2D level's coin bitmap `taken[]` (3 584 words), which a 3D game never uses:
 
 ```c
-union { uint32_t taken[...]; hd_game3d g3; } u;
+hd_remote *g = HD_GAME3D(s, hd_remote); /* the bitmap's words, seen as the game's struct */
 ```
 
-Only one of them is alive at a time, and a save state of either is still
-the same bytes. The compatibility check (`docs/3d.md`) proves ANTÍDOTO is
+`HD_GAME3D` checks at compile time that the struct fits in the bitmap and
+has only 32-bit fields. Only one of them is alive at a time (`show.on` 3 is
+the 3D game), and a save state of either is the same bytes. A loaded save
+state brings the game's fields back into range like every other field
+(`hd_remote_sanitize`). The compatibility check (`docs/3d.md`) proves ANTÍDOTO is
 unchanged after the change. If the game ever needs more than the bitmap's
 room, that is the moment to bump the version on purpose.
 
@@ -335,10 +341,13 @@ before the next one.
 | 7 | go-link | Show it in go-link Console as an HD game (picture, trailer) | later |
 | 8 | Willy Maker | Whatever it needs from this game | last |
 
-## 12. Open questions for the user
+## 12. Decisions
 
-1. The name: `CÁMARA APAGADA` or another one?
-2. Is a 5-minute day right, or longer (8 minutes) so the activities breathe?
-3. Should the cat be in the first version, or a later one?
-4. Should a second player join, as the flatmate who also works from home
-   (split screen), or stay single player?
+Answered by the user on 2026-10-13:
+
+1. The name is `TELETRABAJO: CÁMARA APAGADA`.
+2. A day lasts 10 real minutes (section 2).
+3. The cat is in the first version.
+4. The first version is for one player. The second version adds a second
+   player: the flatmate, who also works from home (split screen, its own
+   desk in the living room, its own bars and boss).
