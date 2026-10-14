@@ -57,6 +57,10 @@ enum { RS_ONLINE = 0, RS_AWAY, RS_CALL, RS_MEETING, RS_OFFLINE };
 enum { RW_BOSS = 0, RW_YOU, RW_CAT, RW_MATE, RW_HOUSE, RW_COUNT };
 #define REMOTE_PHONE 8 /* the messages the phone keeps */
 
+/* The screens (section 7 of the design). */
+enum { RSC_TITLE = 0, RSC_HELP, RSC_MORNING, RSC_DAY, RSC_END };
+#define REMOTE_HELP_PAGES 3
+
 /* What the cat is doing (`cat_mode`). */
 enum { CAT_REST = 0, CAT_WALK, CAT_UP, CAT_DOWN };
 
@@ -114,6 +118,16 @@ typedef struct
    int32_t phone_n;            /* how many messages came in all (the last REMOTE_PHONE are kept) */
    int32_t phone_text[REMOTE_PHONE], phone_who[REMOTE_PHONE], phone_min[REMOTE_PHONE];
    int32_t phone_new_t;        /* frames the phone still shows its newest message bright */
+   /* phase 4: the screens */
+   int32_t screen, screen_t;   /* RSC_*, and frames on it */
+   int32_t menu;               /* the chosen line of the title's or the pause's menu */
+   int32_t help_page, help_back; /* the page of how to play, and the screen it goes back to */
+   int32_t paused;             /* 1: the day is paused (its menu over it) */
+   int32_t attract;            /* 1: a bot plays a short day while the title waits (the demo) */
+   int32_t attract_goal, attract_t; /* the demo bot's next place and frames into what it does */
+   int32_t best;               /* the best score of this session (the host keeps it between sessions later) */
+   int32_t best_new;           /* 1: this day's score beat it */
+   int32_t nav;                /* last frame's menu directions (the stick as the D-pad) */
 } hd_remote;
 
 /* Every number that balances the game, in one place. */
@@ -148,6 +162,9 @@ typedef struct
 #define REMOTE_DRILL_MINUTES 30
 #define REMOTE_NET_MINUTES 10
 #define REMOTE_BELL_FRAMES (30 * 60)           /* the delivery waits half a minute */
+#define REMOTE_ATTRACT_AFTER (10 * 60)         /* the title waits this long for START before the demo plays */
+#define REMOTE_ATTRACT_FRAMES (50 * 60)        /* how long the demo plays */
+#define REMOTE_MORNING_FRAMES 270              /* the alarm, getting up and the camera flying to the worker */
 
 /* The game's texts, each in English, Spanish and Portuguese (remote_text.c). */
 enum
@@ -197,9 +214,30 @@ enum
    RT_END_HALF,
    RT_END_TOTAL,
    RT_END_AGAIN,
+   RT_END_MENU,      /* "A: menu" */
+   RT_NEW_RECORD,
+   RT_RECORD,        /* "Record" */
+   RT_MENU_PLAY,     /* the title's menu */
+   RT_MENU_HELP,
+   RT_PRESS_START,
+   RT_DEMO,
+   RT_HELP_TITLE,    /* REMOTE_HELP_PAGES */
+   RT_HELP_LINE = RT_HELP_TITLE + REMOTE_HELP_PAGES, /* REMOTE_HELP_PAGES x 4 */
+   RT_HELP_NEXT = RT_HELP_LINE + REMOTE_HELP_PAGES * 4,
+   RT_HELP_DONE,
+   RT_MORNING_RING,
+   RT_MORNING_LINE,
+   RT_SKIP,
+   RT_PAUSE,         /* the pause's title and menu */
+   RT_PAUSE_GO_ON,
+   RT_PAUSE_RESTART,
+   RT_PAUSE_QUIT,
    RT_COUNT
 };
 const char *remote_text(int32_t id);
+
+/* A day straight away, without the title or the morning (tests and tools; the game itself starts at the title, hd_remote_start). */
+void hd_remote_new_day(hd_state *s);
 
 /*
  * The places the day uses, for bots and tests: where the worker starts

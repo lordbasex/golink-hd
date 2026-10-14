@@ -15,6 +15,12 @@
   - the follow camera (`play3d_follow`, `play3d_eye`).
 
   Its pieces underneath are `r3d_solid_at` and `r3d_reach` (the bake's grid for a game's rules). `src/3d/room3d.h` shares the demo's flat, light and people.
+- TELETRABAJO: CÁMARA APAGADA, phase 4 (the screens):
+  - the title: the house turning, the game's name, a menu, the session's record; after 10 seconds a demo where a bot plays with the game's own rules;
+  - how to play in three pages; the morning (the alarm, getting up, the camera flying to the worker), skippable;
+  - the pause (continue, how to play, restart the day, back to the title), with the clock stopped;
+  - the end: the fired screen typed out on black, the numbers counting up, the title by score, "new record";
+  - every day gets its own seed from how long the player took; `hd_remote_new_day` for tests and tools.
 - TELETRABAJO: CÁMARA APAGADA, phase 3 (the day):
   - a clock from 09:00 to 18:00, the boss's suspicion and the chat status it sees (online, away, on a call, in a meeting, offline);
   - the boss's events from the day's seed (the daily meeting at 10:00, surprise calls, urgent messages, screen shares): be awake at the desk in time, then stay on the call while the boss hears the house (the washing machine, the bell, the flatmate, snoring);

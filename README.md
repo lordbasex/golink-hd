@@ -42,14 +42,15 @@ L and R (or Select) change scenes, with a pixelate and fade between them:
 
 The engine also draws 3D worlds: low-poly scenes in software with integers only (textures painted in code, light baked with the sun's soft shadows, the sky and lamps, a filmic curve), on the same API and save states. `golinkhd_load_demo(e, 2)` (`tools/hdrun LIB --demo 3d`) is a lived-in 200 m² house seen from above like a scale model: left and right turn the view, up and down tilt it, L and R zoom, A, B, X and Y move it. [docs/3d.md](docs/3d.md) is the reference and a step-by-step guide to make a 3D game; `make NO_3D=1` builds the engine without it.
 
-`golinkhd_load_demo(e, 3)` (`tools/hdrun LIB --demo remote`) is the first 3D game, TELETRABAJO: CÁMARA APAGADA, in the same house. It is being built phase by phase from its design, [docs/game-remote-work.md](docs/game-remote-work.md). Phases 1 to 3 are done: walking, doing things (13 activities with energy and points), and the day (09:00 to 18:00, the boss's suspicion and events, the house's events, the cat, the phone, three endings with a score):
+`golinkhd_load_demo(e, 3)` (`tools/hdrun LIB --demo remote`) is the first 3D game, TELETRABAJO: CÁMARA APAGADA, in the same house. It is being built phase by phase from its design, [docs/game-remote-work.md](docs/game-remote-work.md). Phases 1 to 4 are done: walking, doing things (13 activities with energy and points), the day (09:00 to 18:00, the boss's suspicion and events, the house's events, the cat, the phone, three endings with a score), and the screens (title with a demo, how to play, the morning, the pause, the end with the record):
 
 | Input | Action |
 |---|---|
 | Stick or D-pad | Walk |
 | X/Y | Run |
 | A/B | Do what the prompt says (a nap, a coffee, work, open the door, pet the cat), or stop it; at the desk, take the cat off the keyboard |
-| START | Another day, once the day is over |
+| START | Pause during the day; on the title and at the end, start a day |
+| D-pad up/down | Move in the menus |
 | L/R or the right stick | Turn the camera |
 
 ## Game packages (.glhd)

@@ -673,7 +673,7 @@ static void test_remote_activities(void)
    hd_remote *g = HD_GAME3D(&a, hd_remote);
    int32_t f, round, e0;
    hd_reset(&a);
-   hd_remote_start(&a);
+   hd_remote_new_day(&a);
    /* coffee three times: 3 game minutes each, +120 energy, 30 points twice then a fifth */
    for (round = 0; round < 3; round++)
    {
@@ -752,7 +752,7 @@ static void test_remote_day(void)
    const int32_t fpm = REMOTE_FRAMES_PER_MINUTE;
    int32_t f, s0;
    hd_reset(&a);
-   hd_remote_start(&a);
+   hd_remote_new_day(&a);
    /* the day's events: the meeting first, 4 to 6 from the boss in all, 2 to 4 from the house, in order */
    CHECK(g->ev_kind[0] == RE_MEETING && g->ev_count >= 7 && g->ev_count <= 10);
    for (f = 1; f < g->ev_count; f++)
@@ -798,27 +798,93 @@ static void test_remote_day(void)
    CHECK(g->over == REND_SURVIVED && g->score == 500 + 1000 + REMOTE_SUSPICION_MAX - g->suspicion && g->suspicion >= 199);
    remote_steps(&a, 100, 0);
    remote_steps(&a, 1, PAD_START);
-   CHECK(!g->over && g->t == 0);
+   /* START: the morning of another day, the session's record kept */
+   CHECK(!g->over && g->t == 0 && g->screen == RSC_MORNING && g->best >= 2300 && g->best <= 2301);
+   remote_steps(&a, 1, 0);
+   remote_steps(&a, 1, PAD_JUMP); /* the morning skipped */
+   CHECK(g->screen == RSC_DAY);
    /* missing hours halves the points; full suspicion fires at once */
    g->t = REMOTE_DAY_MINUTES * fpm - 1, g->work = 0, g->points = 500;
    remote_steps(&a, 1, 0);
    CHECK(g->over == REND_MISSED && g->score == 250);
-   hd_remote_start(&a);
+   hd_remote_new_day(&a);
    g->ev_next = g->ev_count;
    g->suspicion = REMOTE_SUSPICION_MAX - 1;
    remote_steps(&a, 12 * fpm, 0);
    CHECK(g->over == REND_FIRED);
    /* a whole day without touching anything, twice: the same day (the lazy one is fired before 18:00) */
    hd_reset(&a);
-   hd_remote_start(&a);
+   hd_remote_new_day(&a);
    hd_reset(&b);
-   hd_remote_start(&b);
+   hd_remote_new_day(&b);
    for (f = 0; f < REMOTE_DAY_MINUTES * fpm && !g->over; f++)
    {
       remote_steps(&a, 1, 0);
       remote_steps(&b, 1, 0);
    }
    CHECK(g->over == REND_FIRED && g->t < REMOTE_DAY_MINUTES * fpm && memcmp(&a, &b, sizeof a) == 0);
+}
+
+/* TELETRABAJO: CÁMARA APAGADA, phase 4: the title, how to play, the demo, the morning and the pause, each drawn once. */
+static void test_remote_screens(void)
+{
+   static hd_state a;
+   hd_remote *g = HD_GAME3D(&a, hd_remote);
+   int32_t x0, t0, page;
+   hd_res = 1;
+   hd_reset(&a);
+   hd_remote_start(&a);
+   CHECK(g->screen == RSC_TITLE && g->menu == 0);
+   hd_draw(&a, fb);
+   /* down to "how to play", its pages, back to the title */
+   remote_steps(&a, 2, PAD_DOWN);
+   CHECK(g->menu == 1);
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(g->screen == RSC_HELP && g->help_page == 0);
+   hd_draw(&a, fb);
+   for (page = 0; page < REMOTE_HELP_PAGES; page++)
+      remote_steps(&a, 2, PAD_JUMP);
+   CHECK(g->screen == RSC_TITLE);
+   /* nobody plays: the demo walks somewhere, and a button brings the title back */
+   remote_steps(&a, REMOTE_ATTRACT_AFTER + 2, 0);
+   CHECK(g->screen == RSC_DAY && g->attract);
+   x0 = g->x;
+   remote_steps(&a, 300, 0);
+   CHECK(g->x != x0 && g->t >= 300);
+   hd_draw(&a, fb);
+   remote_steps(&a, 1, PAD_RUN);
+   CHECK(g->screen == RSC_TITLE && !g->attract);
+   /* START: the morning, which ends by itself with the worker by the bed */
+   g->menu = 0;
+   remote_steps(&a, 1, 0);
+   remote_steps(&a, 1, PAD_START);
+   CHECK(g->screen == RSC_MORNING);
+   remote_steps(&a, 100, 0);
+   hd_draw(&a, fb);
+   remote_steps(&a, REMOTE_MORNING_FRAMES, 0);
+   CHECK(g->screen == RSC_DAY && g->t > 0 && g->x == ROOM3D_AT(255) && g->z == ROOM3D_AT(1010));
+   /* the pause stops the clock; "go on" goes on, "restart the day" brings the morning */
+   remote_steps(&a, 2, PAD_START);
+   CHECK(g->paused);
+   t0 = g->t;
+   remote_steps(&a, 100, 0);
+   hd_draw(&a, fb);
+   CHECK(g->t == t0);
+   remote_steps(&a, 1, PAD_JUMP);
+   CHECK(!g->paused && g->t == t0);
+   remote_steps(&a, 10, 0);
+   CHECK(g->t == t0 + 10);
+   remote_steps(&a, 2, PAD_START);
+   remote_steps(&a, 2, PAD_DOWN);
+   remote_steps(&a, 2, PAD_DOWN);
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(g->screen == RSC_MORNING && g->t == 0);
+   /* the end, drawn while it counts up */
+   remote_steps(&a, REMOTE_MORNING_FRAMES + 1, 0);
+   g->t = REMOTE_DAY_MINUTES * REMOTE_FRAMES_PER_MINUTE - 1;
+   remote_steps(&a, 200, 0);
+   CHECK(g->screen == RSC_END);
+   hd_draw(&a, fb);
 }
 
 /* Every place the day uses is reached on foot from the hall, by the worker's size, along play3d_route. */
@@ -828,7 +894,7 @@ static void test_remote_places(void)
    hd_remote *g = HD_GAME3D(&a, hd_remote);
    int32_t kind, i, px, pz;
    hd_reset(&a);
-   hd_remote_start(&a);
+   hd_remote_new_day(&a);
    for (kind = REMOTE_PLACE_ACTIVITY; kind <= REMOTE_PLACE_MATE; kind++)
       for (i = 0; remote_place(kind, i, &px, &pz); i++)
       {
@@ -859,9 +925,9 @@ static void test_remote(void)
    int32_t f;
    hd_res = 1;
    hd_reset(&a);
-   hd_remote_start(&a);
+   hd_remote_new_day(&a);
    hd_reset(&b);
-   hd_remote_start(&b);
+   hd_remote_new_day(&b);
    CHECK(a.show.on == 3 && memcmp(&a, &b, sizeof a) == 0);
    ha = hb = 2166136261u;
    /* east along the hall (the camera looks east) at a run, turning the camera now and then */
@@ -2448,6 +2514,7 @@ int main(void)
    test_remote_activities();
    test_remote_day();
    test_remote_places();
+   test_remote_screens();
 #endif
    test_effects_package();
    test_goal_height();

@@ -239,9 +239,8 @@ meeting, offline (no internet).
 
 Everything random comes from `hd_state.rng`, so a day with the same seed and
 the same input is the same day on every computer. That is what lets the lab
-replay bots. Until phase 4 every day starts from the engine's fixed seed (the
-same day every time); the title screen will mix in how long it waited for
-START.
+replay bots. Each new day mixes into the seed how long the player took on the title,
+the pause or the end (section 7).
 
 ## 6. Score
 
@@ -269,12 +268,21 @@ the title screen when the host passes it in.
 
 | Screen | Contents |
 |---|---|
-| Title | The flat seen from the orbiting camera (the current demo), the game's name and "Pulsa START" (press start). After 10 s without input, a bot plays a short day (attract mode). |
-| How to play | Three pages: the goal (6 h, do not get fired), the bars, the buttons. |
-| Morning | The alarm rings at 08:59, the character gets out of bed, the camera flies to it. Can be skipped. |
+| Title | The house from above, turning slowly, the worker typing at the desk and the cat on the bed; the game's name in two lines; a menu (Start the day, How to play) moved with the D-pad or the stick and chosen with A or START; the session's record; "Pulsa START" (press start). After 10 s without input the demo plays (below). |
+| Demo | A bot plays 50 seconds of a day with the game's own rules: it walks with `play3d_route` to a coffee, the desk, the sofa, the fridge, the console, the guitar, and does a little of each. A "DEMO" banner is shown; any button brings the title back. |
+| How to play | Three pages over the darkened picture: the goal (6 h, do not get fired), the bars, the buttons. A turns the page; the last one (or START) goes back to the title or to the pause. |
+| Morning | 08:59: the alarm rings with the worker in bed (the clock blinks, the text shakes), it sits on the bed's edge, gets up, and the camera flies from the bed to its place behind it (4.5 seconds). A or START skips it. The day starts with the worker by the bed. |
 | The day | The HUD over the 3D picture (below). |
-| Pause | Continue, How to play, Restart the day. |
-| End | The ending's scene (fired: the screen goes black with the boss's last message), the numbers counting up, the title, the record. |
+| Pause | START during the day: Continue, How to play, Restart the day (a new morning), Back to the title. The clock stops. |
+| End | Fired: the screen goes black and the boss's last message is typed out first. Then the reason, the rows counting up one every half second, the total counting up, the title by score, and "¡Nuevo récord!" or the record. START: another day (a new morning); A: back to the title. |
+
+Every new day (from the title, the pause or the end) mixes how many frames
+the player took into the seed, so the events are different every time while
+a save state or a replay is still exact.
+
+The record is kept for the session in the game's state (`best`), so it
+survives another day and a save state. Keeping it between sessions needs
+the host (go-link) to store it and pass it in: that is phase 7.
 
 ### HUD
 
@@ -408,13 +416,27 @@ before the next one.
 | 1 | Walk the flat (**done 2026-10-13**) | Follow camera, collision, character control, run, the state in the coin bitmap's words, the compatibility check | 1 session |
 | 2 | Interact (**done 2026-10-14**) | Spots and prompts, the 12 activities with poses, energy and work, the desk's screens | 1–2 sessions |
 | 3 | The day (**done 2026-10-14**) | Clock, suspicion, boss events, random events, the cat, the phone | 1–2 sessions |
-| 4 | Screens and HUD | Title, how to play, morning, pause, end, score, record | 1 session |
+| 4 | Screens and HUD (**done 2026-10-14**) | Title, how to play, morning, pause, end, score, record | 1 session |
 | 5 | Sound | Effects and music made with the engine's sound (`sound.c`), the alarm, phone, bell, drill | 1 session |
 | 6 | Polish | Texts in 3 languages, balancing with the bots, attract mode, docs (`docs/3d.md`, README, CHANGELOG, a how-to for the next 3D game) | 1 session |
 | 7 | go-link | Show it in go-link Console as an HD game (picture, trailer) | later |
 | 8 | Willy Maker | Whatever it needs from this game | last |
 
 ## 12. Progress
+
+**Phase 4, the screens (2026-10-14).**
+
+What was built (section 7): the title with its menu and the record, the demo
+(a bot playing with the game's rules), how to play in three pages, the
+morning, the pause, and the end counting up with the title and the record.
+Every new day gets its own seed. `hd_remote_new_day` starts a day straight
+away for tests and tools; the game itself starts at the title
+(`hd_remote_start`).
+
+Checks:
+
+- `make test` goes through every screen: the title's menu, the help pages, the demo starting by itself and stopping on a button, the morning ending by itself, the pause stopping the clock, "continue" and "restart the day", the end; each one drawn once. The session's record survives another day.
+- ANTÍDOTO's hashes are unchanged; `make NO_3D=1 test` passes.
 
 **Phase 3, the day (2026-10-14).**
 
