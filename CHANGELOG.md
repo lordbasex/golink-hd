@@ -15,6 +15,18 @@
   - the follow camera (`play3d_follow`, `play3d_eye`).
 
   Its pieces underneath are `r3d_solid_at` and `r3d_reach` (the bake's grid for a game's rules). `src/3d/room3d.h` shares the demo's flat, light and people.
+- 3D quality:
+  - round pieces lit smoothly: a normal at each corner of cylinders and balls, also for people;
+  - `r3d_bevel`: furniture and bodies with soft 45-degree edges;
+  - bloom from what gives light, in its own color, and a vignette (`r3d_view.bloom`, `vignette`), done in the same pass as the softened edges;
+  - what moves is lit from a table of 128 × 128 normals.
+
+  The house:
+  - plants made of leaves;
+  - door frames, open doors with panels and handles, light switches;
+  - skirting boards on every wall, cut at doors;
+  - curtains in soft folds;
+  - posters and screens at 256 texels (a terminal with its title bar).
 - The demo's flat became a 200 m² house (1600 × 1250 cm). It has a bedroom, a bathroom, an office, a game room, a laundry, a hall, a 9 × 2 m terrace, and a living room with separate dining and lounge areas. The family kitchen has:
   - an L of counters with the washing machine, dishwasher, sink, hob, oven and hood, and a coffee corner;
   - the fridge and pantry, an island with stools, and a table for four;

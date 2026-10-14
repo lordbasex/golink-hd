@@ -74,6 +74,8 @@ void r3d_decal(int32_t on);
 /* Faces bigger than `cell` (16.16 meters) are cut into cells so the baked light can show shadows on them; 0 never. */
 void r3d_detail(int32_t cell);
 
+/* Boxes built from now on get their edges cut this much (16.16 meters; 0 sharp), where they are at least four times as thick: furniture's soft edges. */
+void r3d_bevel(int32_t size);
 /* A box from (x0, y0, z0) to (x1, y1, z1), in the place's own axes; flags leave faces out (R3D_SKIP_*). */
 enum { R3D_SKIP_BOTTOM = 1, R3D_SKIP_TOP = 2, R3D_SKIP_X = 4, R3D_INSIDE = 8, R3D_SKIP_Z = 16, R3D_SKIP_SIDES = R3D_SKIP_X | R3D_SKIP_Z };
 /* Only the faces toward -z and +z: a picture, a screen, a window pane. */
@@ -129,6 +131,8 @@ typedef struct
    uint32_t sky_top, sky_bottom; /* 0xRRGGBB behind everything, top to bottom */
    int32_t exposure;       /* 256 = as baked */
    int32_t smooth;         /* 1 softens the edges (anti-aliasing) */
+   int32_t bloom;          /* 0..256: light brighter than white (lamps, screens, the sun on white) spills softly around it */
+   int32_t vignette;       /* 0..256: the corners a little darker, like a camera's lens */
    const r3d_light_cfg *light; /* for what moves */
 } r3d_view;
 

@@ -39,6 +39,7 @@ void actor3d_build(actor3d_kit *k, const actor3d_look *look, int32_t fabric_tex)
    int32_t side;
    r3d_place(0, 0, 0, 0);
    r3d_detail(0);
+   r3d_bevel(CM(2)); /* soft edges on the body's boxes */
    /* hips: the joint is the middle of the pelvis */
    r3d_begin();
    r3d_material(fabric_tex, 128);
@@ -99,6 +100,7 @@ void actor3d_build(actor3d_kit *k, const actor3d_look *look, int32_t fabric_tex)
       bx(-6, -48, -14, 6, -47, 6, 0xf2f2f2);
       k->part[ACT_SHIN_L + side] = r3d_end();
    }
+   r3d_bevel(0);
 }
 
 /* A part at joint j (actor space), turned by `turn` after the actor's own: into the instances. */

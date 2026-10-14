@@ -95,10 +95,85 @@ static uint32_t darker(uint32_t c)
 /* ---- the shell: floors, walls with doors and windows ---- */
 
 enum { OPEN_DOOR = 0, OPEN_WINDOW, OPEN_BIG };
+/*
+ * `side` says which side of the wall dresses the opening: a door's open
+ * leaf lies against the wall on the upper (z or x above the wall) or lower
+ * side, after the opening (DOOR_UP_AFTER...) or before it; a window's
+ * curtains hang on the upper or lower side (CURTAIN_UP, CURTAIN_DOWN).
+ * 0: nothing.
+ */
+enum { DOOR_UP_AFTER = 1, DOOR_UP_BEFORE, DOOR_DOWN_AFTER, DOOR_DOWN_BEFORE };
+enum { CURTAIN_UP = 1, CURTAIN_DOWN };
 typedef struct
 {
-   int32_t from, to, kind;
+   int32_t from, to, kind, side;
 } opening;
+
+/* A box along the wall: s0..s1 along it, y0..y1 up, d0..d1 across it from the wall's middle (dir 0: z, dir 1: x). */
+static void wall_box(int32_t dir, int32_t pos, int32_t s0, int32_t s1, int32_t y0, int32_t y1, int32_t d0, int32_t d1, uint32_t c)
+{
+   if (dir == 0)
+      bx(s0, y0, pos + hd_min(d0, d1), s1, y1, pos + hd_max(d0, d1), c);
+   else
+      bx(pos + hd_min(d0, d1), y0, s0, pos + hd_max(d0, d1), y1, s1, c);
+}
+
+/* Skirting boards on both faces of a stretch of wall. */
+static void skirt(int32_t dir, int32_t pos, int32_t s0, int32_t s1)
+{
+   if (s1 <= s0)
+      return;
+   r3d_occlude(0);
+   wall_box(dir, pos, s0, s1, 0, 9, 6, 7, 0xfaf8f4);
+   wall_box(dir, pos, s0, s1, 0, 9, -7, -6, 0xfaf8f4);
+   r3d_occlude(1);
+}
+
+/* A door's dressing: the frame on both faces, the open leaf against the wall with its handle, a light switch. */
+static void door_dress(int32_t dir, int32_t pos, int32_t from, int32_t to, int32_t top, int32_t side)
+{
+   int32_t sg, w = to - from - 6;
+   r3d_occlude(0);
+   for (sg = -1; sg <= 1; sg += 2)
+   {
+      wall_box(dir, pos, from - 7, from, 0, top + 7, sg * 6, sg * 8, 0xf7f5f0);
+      wall_box(dir, pos, to, to + 7, 0, top + 7, sg * 6, sg * 8, 0xf7f5f0);
+      wall_box(dir, pos, from - 7, to + 7, top, top + 7, sg * 6, sg * 8, 0xf7f5f0);
+      wall_box(dir, pos, to + 12, to + 20, 104, 116, sg * 6, sg * 7, 0xf2f2f2); /* the switch */
+      wall_box(dir, pos, to + 14, to + 18, 108, 112, sg * 7, sg * 8, 0xdddddd);
+   }
+   if (side)
+   {
+      int32_t up = side == DOOR_UP_AFTER || side == DOOR_UP_BEFORE ? 1 : -1;
+      int32_t a = side == DOOR_UP_AFTER || side == DOOR_DOWN_AFTER ? to + 9 : from - 9 - w, b = a + w;
+      int32_t hand = side == DOOR_UP_AFTER || side == DOOR_DOWN_AFTER ? b - 8 : a + 4;
+      mat(TEX3D_WOOD, 100);
+      wall_box(dir, pos, a, b, 1, 205, up * 9, up * 13, 0xf1ede6);
+      plain();
+      wall_box(dir, pos, a + 8, b - 8, 20, 90, up * 13, up * 14, 0xe9e4da);  /* two panels */
+      wall_box(dir, pos, a + 8, b - 8, 110, 190, up * 13, up * 14, 0xe9e4da);
+      wall_box(dir, pos, hand, hand + 4, 98, 102, up * 13, up * 19, 0xb0b0b0); /* the handle */
+   }
+   r3d_occlude(1);
+}
+
+/* Curtains on a window's inner side: a rod, two panels in soft folds down to the floor. */
+static void curtains(int32_t dir, int32_t pos, int32_t s0, int32_t s1, int32_t top, int32_t up)
+{
+   int32_t p, i;
+   wall_box(dir, pos, s0 - 26, s1 + 26, top + 14, top + 16, up * 12, up * 14, 0x3a3a3a);
+   mat(TEX3D_FABRIC, 128);
+   for (p = 0; p < 2; p++)
+   {
+      int32_t a = p ? s1 - 14 : s0 - 24;
+      for (i = 0; i < 5; i++)
+      {
+         int32_t d = (i & 1) ? 4 : 0;
+         wall_box(dir, pos, a + i * 8, a + i * 8 + 8, 3, top + 14, up * (10 + d), up * (13 + d), (i & 1) ? 0xe8dfcf : 0xf1eadc);
+      }
+   }
+   plain();
+}
 
 /* One stretch of wall, both of its faces, from s0 to s1 along it and y0 to y1 up. */
 static void wall_piece(int32_t dir, int32_t pos, int32_t s0, int32_t s1, int32_t y0, int32_t y1, uint32_t c1, uint32_t c2)
@@ -168,11 +243,19 @@ static void wall(int32_t dir, int32_t pos, int32_t a, int32_t b, uint32_t c1, ui
       wall_piece(dir, pos, cur, o[i].from, 0, 265, c1, c2);
       wall_piece(dir, pos, o[i].from, o[i].to, top, 265, c1, c2);
       wall_piece(dir, pos, o[i].from, o[i].to, 0, bot, c1, c2);
+      skirt(dir, pos, cur, o[i].from);
       if (o[i].kind != OPEN_DOOR)
          window_in(dir, pos, o[i].from, o[i].to, bot, top);
+      if (o[i].kind == OPEN_WINDOW)
+         skirt(dir, pos, o[i].from, o[i].to);
+      if (o[i].kind == OPEN_DOOR)
+         door_dress(dir, pos, o[i].from, o[i].to, top, o[i].side);
+      if (o[i].kind == OPEN_WINDOW && o[i].side)
+         curtains(dir, pos, o[i].from, o[i].to, top, o[i].side == CURTAIN_UP ? 1 : -1);
       cur = o[i].to;
    }
    wall_piece(dir, pos, cur, b, 0, 265, c1, c2);
+   skirt(dir, pos, cur, b);
 }
 
 /* A floor of the flat, from (x0, z0) to (x1, z1), its texture at `tpm` texels a meter. */
@@ -182,18 +265,6 @@ static void floor_of(int32_t x0, int32_t z0, int32_t x1, int32_t z1, int32_t tex
    mat(tex, tpm);
    bxf(x0, -4, z0, x1, 0, z1, c, R3D_SKIP_BOTTOM | R3D_SKIP_SIDES);
    plain();
-}
-
-/* A skirting board along x or z, on the side `side` (+1 or -1) of the wall. */
-static void skirting(int32_t dir, int32_t pos, int32_t a, int32_t b, int32_t side)
-{
-   at(0, 0, 0, 0);
-   r3d_occlude(0);
-   if (dir == 0)
-      bx(a, 0, side > 0 ? pos + 6 : pos - 7, b, 8, side > 0 ? pos + 7 : pos - 6, 0xfaf8f4);
-   else
-      bx(side > 0 ? pos + 6 : pos - 7, 0, a, side > 0 ? pos + 7 : pos - 6, 8, b, 0xfaf8f4);
-   r3d_occlude(1);
 }
 
 /* ---- furniture: each built at the place set by at() ---- */
@@ -243,36 +314,65 @@ static void bookshelf(int32_t w, int32_t h, int32_t rows, uint32_t wood, uint32_
    }
 }
 
-static void plant_pot(int32_t size, uint32_t pot, uint32_t seed)
+/*
+ * One leaf, both of its sides: a diamond from its base at (x, y, z)
+ * centimeters, turned yaw, rising at `tilt` (of 4096 a turn), `len` long
+ * and `wide` across, its tip drooping `droop`. Lit by its own slant, so
+ * a plant made of them shows light and shade leaf by leaf.
+ */
+static void leaf(int32_t x, int32_t y, int32_t z, int32_t yaw, int32_t tilt, int32_t len, int32_t wide, int32_t droop, uint32_t c)
 {
-   int32_t i, n = 5 + (int32_t)(seed % 4);
-   cyl(0, 0, 0, size * 4 / 10, size / 2, size * 7 / 10, 10, pot);
-   cyl(0, size * 7 / 10, 0, size / 2 - 2, size / 2 - 2, 2, 10, 0x3b2a1a);
-   mat(TEX3D_LEAVES, 64);
-   for (i = 0; i < n; i++)
-   {
-      int32_t a = (int32_t)((i * 4096 / n + (int32_t)seed * 300) & 4095), rr = size * (3 + i % 3) / 10;
-      int32_t x = (int32_t)(((int64_t)rr * hd_cos(a)) >> 14), z = (int32_t)(((int64_t)rr * hd_sin(a)) >> 14);
-      ball(x, size + size * (i % 4) / 3, z, size / 2, size / 3, size / 2, 3, i & 1 ? 0x3f8f45 : 0x5aaa52);
-   }
-   ball(0, size * 2, 0, size / 2, size / 2, size / 2, 3, 0x4f9a4a);
-   plain();
+   int32_t ct = hd_cos(tilt), st = hd_sin(tilt), cy = hd_cos(yaw), sy = hd_sin(yaw);
+   int32_t reach = (int32_t)(((int64_t)len * ct) >> 14), up = (int32_t)(((int64_t)len * st) >> 14);
+   int32_t px = (int32_t)(((int64_t)wide / 2 * cy) >> 14), pz = (int32_t)(((int64_t)-wide / 2 * sy) >> 14);
+   int32_t dx = (int32_t)(((int64_t)reach * sy) >> 14), dz = (int32_t)(((int64_t)reach * cy) >> 14);
+   r3d_vec b = { CM(x), CM(y), CM(z) };
+   r3d_vec t = { CM(x + dx), CM(y + up - droop), CM(z + dz) };
+   r3d_vec m1 = { CM(x + dx * 45 / 100 + px), CM(y + up * 55 / 100), CM(z + dz * 45 / 100 + pz) };
+   r3d_vec m2 = { CM(x + dx * 45 / 100 - px), CM(y + up * 55 / 100), CM(z + dz * 45 / 100 - pz) };
+   r3d_quad(b, m1, t, m2, c);
+   r3d_quad(b, m2, t, m1, gfx_mix(c, 0x1b3a1b, 60)); /* the underside, darker */
 }
 
+/* Greens for leaves, picked by a seed. */
+static uint32_t leaf_green(uint32_t k)
+{
+   static const uint32_t g[6] = { 0x2e7d32, 0x43a047, 0x388e3c, 0x66bb6a, 0x558b2f, 0x7cb342 };
+   return g[k % 6];
+}
+
+/* A pot with a leafy plant: leaves arching out of the soil in a spiral. */
+static void plant_pot(int32_t size, uint32_t pot, uint32_t seed)
+{
+   int32_t i, n = 14 + (int32_t)(seed % 6);
+   cyl(0, 0, 0, size * 4 / 10, size / 2, size * 7 / 10, 12, pot);
+   cyl(0, size * 7 / 10, 0, size / 2 - 2, size / 2 - 2, 2, 12, 0x3b2a1a);
+   for (i = 0; i < n; i++)
+   {
+      int32_t yaw = (int32_t)((i * 1583 + seed * 911) & 4095), tilt = 560 + (i * 197 + (int32_t)seed * 61) % 420;
+      int32_t len = size * (110 + (i * 37) % 60) / 100;
+      leaf(0, size * 7 / 10 + 1, 0, yaw, tilt, len, size * 6 / 10, size * (10 + i % 4 * 6) / 100, leaf_green(seed + (uint32_t)i));
+   }
+}
+
+/* A tall plant in a big pot: three stems with broad leaves all the way up. */
 static void tall_plant(void)
 {
-   int32_t i;
-   cyl(0, 0, 0, 20, 24, 44, 12, 0xd8d2c4);
-   cyl(0, 44, 0, 22, 22, 2, 12, 0x3b2a1a);
-   cyl(0, 44, 0, 2, 1, 110, 5, 0x6b4f2a);
-   mat(TEX3D_LEAVES, 64);
-   for (i = 0; i < 9; i++)
+   int32_t i, st;
+   cyl(0, 0, 0, 20, 24, 44, 14, 0xd8d2c4);
+   cyl(0, 44, 0, 22, 22, 2, 14, 0x3b2a1a);
+   for (st = 0; st < 3; st++)
    {
-      int32_t a = (i * 1500) & 4095, rr = 14 + (i % 3) * 8;
-      ball((int32_t)(((int64_t)rr * hd_cos(a)) >> 14), 90 + (i % 5) * 16, (int32_t)(((int64_t)rr * hd_sin(a)) >> 14), 18, 9, 14, 3,
-           i & 1 ? 0x2e7d32 : 0x43a047);
+      int32_t sx = st == 0 ? 0 : st == 1 ? 6 : -5, sz = st == 0 ? 0 : st == 1 ? -4 : 5, top = 120 - st * 22;
+      cyl(sx, 44, sz, 2, 1, top, 6, 0x6b4f2a);
+      for (i = 0; i < 16; i++)
+      {
+         int32_t h = 64 + i * (top - 24) / 16, yaw = (i * 1583 + st * 1300) & 4095, tilt = 120 + (i * 131 + st * 70) % 460;
+         leaf(sx, h, sz, yaw, tilt, 28 + (i % 4) * 5, 22 + (i % 3) * 4, 6 + (i % 3) * 4, leaf_green((uint32_t)(i + st * 5)));
+      }
+      for (i = 0; i < 4; i++)
+         leaf(sx, 44 + top - 4, sz, i * 1024 + st * 300, 860, 20, 12, 2, leaf_green((uint32_t)(i + 3))); /* the new leaves on top */
    }
-   plain();
 }
 
 static void mug(int32_t x, int32_t y, int32_t z, uint32_t c)
@@ -1305,19 +1405,19 @@ static void build_people(void)
 void hd_r3d_build(void)
 {
    /* the openings of each wall (see the plan at the top) */
-   static const opening liv_s[] = { { 80, 400, OPEN_BIG }, { 480, 820, OPEN_BIG } };
-   static const opening kit_s[] = { { 1100, 1400, OPEN_WINDOW } };
-   static const opening liv_w[] = { { 150, 350, OPEN_WINDOW } };
-   static const opening north_bed[] = { { 40, 200, OPEN_WINDOW } };
-   static const opening north_off[] = { { 1050, 1130, OPEN_WINDOW } };
-   static const opening north_game[] = { { 1440, 1580, OPEN_WINDOW } };
-   static const opening east_kit[] = { { 200, 450, OPEN_WINDOW } };
-   static const opening east_hall[] = { { 685, 775, OPEN_DOOR } };
-   static const opening east_game[] = { { 900, 1100, OPEN_WINDOW } };
-   static const opening hall_s[] = { { 550, 800, OPEN_DOOR }, { 1000, 1100, OPEN_DOOR } };
-   static const opening hall_n[] = { { 380, 470, OPEN_DOOR }, { 650, 740, OPEN_DOOR }, { 850, 940, OPEN_DOOR }, { 1250, 1340, OPEN_DOOR } };
-   static const opening liv_kit[] = { { 300, 640, OPEN_DOOR } };
-   static const opening laundry_e[] = { { 690, 780, OPEN_DOOR } };
+   static const opening liv_s[] = { { 80, 400, OPEN_BIG, 0 }, { 480, 820, OPEN_BIG, 0 } };
+   static const opening kit_s[] = { { 1100, 1400, OPEN_WINDOW, 0 } };
+   static const opening liv_w[] = { { 150, 350, OPEN_WINDOW, CURTAIN_UP } };
+   static const opening north_bed[] = { { 40, 200, OPEN_WINDOW, CURTAIN_DOWN } };
+   static const opening north_off[] = { { 1050, 1130, OPEN_WINDOW, CURTAIN_DOWN } };
+   static const opening north_game[] = { { 1440, 1580, OPEN_WINDOW, CURTAIN_DOWN } };
+   static const opening east_kit[] = { { 200, 450, OPEN_WINDOW, 0 } };
+   static const opening east_hall[] = { { 685, 775, OPEN_DOOR, 0 } };
+   static const opening east_game[] = { { 900, 1100, OPEN_WINDOW, CURTAIN_DOWN } };
+   static const opening hall_s[] = { { 550, 800, OPEN_DOOR, 0 }, { 1000, 1100, OPEN_DOOR, DOOR_DOWN_BEFORE } };
+   static const opening hall_n[] = { { 380, 470, OPEN_DOOR, DOOR_UP_BEFORE }, { 650, 740, OPEN_DOOR, DOOR_DOWN_AFTER }, { 850, 940, OPEN_DOOR, DOOR_UP_AFTER }, { 1250, 1340, OPEN_DOOR, DOOR_UP_BEFORE } };
+   static const opening liv_kit[] = { { 300, 640, OPEN_DOOR, 0 } };
+   static const opening laundry_e[] = { { 690, 780, OPEN_DOOR, 0 } };
    if (ready)
       return;
    T = tex3d_build();
@@ -1370,9 +1470,8 @@ void hd_r3d_build(void)
    bxf(506, 0, 806, 650, 140, 807, 0xffffff, R3D_PANE);
    bxf(506, 0, 1243, 744, 140, 1244, 0xffffff, R3D_PANE);
    plain();
-   skirting(0, 650, 0, 900, -1);
-   skirting(0, 800, 250, 1600, 1);
-   skirting(1, 0, 0, 1250, 1);
+   /* furniture with soft edges */
+   r3d_bevel(CM(2));
    living();
    kitchen();
    office();
@@ -1384,6 +1483,7 @@ void hd_r3d_build(void)
    laundry();
    game_room();
    balcony();
+   r3d_bevel(0);
    city();
    scene = r3d_end();
    memset(&sunlight, 0, sizeof sunlight);
@@ -1490,6 +1590,8 @@ void hd_r3d_draw(const hd_state *s, void *screen)
    v.sky_bottom = 0xd6e6f2;
    v.exposure = 256;
    v.smooth = 1;
+   v.bloom = 200;
+   v.vignette = 110;
    v.light = &sunlight;
    /* at the desk: sitting and typing, now and then a look at the other screen */
    memset(&pose, 0, sizeof pose);

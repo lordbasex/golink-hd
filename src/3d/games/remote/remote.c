@@ -132,6 +132,8 @@ void hd_remote_draw(const hd_state *s, void *screen)
    v.sky_bottom = 0xd6e6f2;
    v.exposure = 256;
    v.smooth = 1;
+   v.bloom = 200;
+   v.vignette = 110;
    v.light = room3d_light();
    memset(&pose, 0, sizeof pose);
    pose.at.x = g->x;

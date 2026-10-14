@@ -57,6 +57,7 @@ typedef struct
    int32_t u[3], t[3];                /* texels, 8 bits of fraction */
    int32_t lr[3], lg[3], lb[3];       /* the baked light of each corner, 256 = 1.0 */
    int32_t nx, ny, nz;                /* the face's normal, 16384 long (2.14) */
+   int32_t vn[3][3];                  /* each corner's normal for its light (the face's, or a round surface's own) */
    uint32_t color;
    int32_t cr, cg, cb;                /* the color as light, 256 = white */
    int32_t tex, flags, glow, glass;
@@ -94,7 +95,7 @@ static uint32_t sky_top, sky_bottom;
 /* a width that makes hd_rows split any number of rows over the cores */
 #define PAR_WIDE (1 << 16)
 static int32_t place_x, place_y, place_z, place_c = TRIG_ONE, place_s;
-static int32_t cur_tex = -1, cur_tpm, cur_glow, cur_occlude = 1, cur_decal, cur_cell, cur_lm = -1, cur_glass;
+static int32_t cur_tex = -1, cur_tpm, cur_glow, cur_occlude = 1, cur_decal, cur_cell, cur_lm = -1, cur_glass, cur_bevel;
 
 /* What stops light: boxes (world-aligned bounds), upright cylinders and balls. */
 enum { SOLID_BOX = 0, SOLID_CYL, SOLID_BALL };
@@ -128,6 +129,7 @@ void r3d_clear(void)
    lm_used = 0;
    cur_lm = -1;
    cur_glass = 0;
+   cur_bevel = 0;
    r3d_place(0, 0, 0, 0);
    cur_tex = -1;
    cur_tpm = 0;
@@ -315,6 +317,9 @@ static void world_uv(r3d_vec p, int32_t nx, int32_t ny, int32_t nz, int32_t *u, 
  * keeps the order); uv: its corners' texture coordinates, or NULL to lay
  * the texture along the piece's axes.
  */
+/* The corners' own normals (in the piece's space) for the next triangle: round surfaces lit smoothly. NULL: the face's. */
+static const int32_t (*next_vn)[3];
+
 static void add_tri_uv(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t hx, int64_t hy, int64_t hz, const int32_t *uv, const int32_t *lmuv)
 {
    r3d_tri *t;
@@ -358,6 +363,19 @@ static void add_tri_uv(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t 
    vy = t->v[2].y - t->v[0].y;
    vz = t->v[2].z - t->v[0].z;
    unit(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx, &t->nx, &t->ny, &t->nz);
+   for (k = 0; k < 3; k++)
+   {
+      if (next_vn)
+      {
+         /* turned with the piece, like its corners */
+         const int32_t *n = next_vn[ord[k]];
+         t->vn[k][0] = (int32_t)(((int64_t)n[0] * place_c + (int64_t)n[2] * place_s) >> 14);
+         t->vn[k][1] = n[1];
+         t->vn[k][2] = (int32_t)(((int64_t)n[2] * place_c - (int64_t)n[0] * place_s) >> 14);
+      }
+      else
+         t->vn[k][0] = t->nx, t->vn[k][1] = t->ny, t->vn[k][2] = t->nz;
+   }
    t->color = color & 0xffffffu;
    lin3(t->color, &t->cr, &t->cg, &t->cb);
    t->tex = cur_tex;
@@ -379,6 +397,18 @@ static void add_tri_uv(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t 
 static void add_tri(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t hx, int64_t hy, int64_t hz)
 {
    add_tri_uv(a, b, c, color, hx, hy, hz, NULL, NULL);
+}
+
+/* A triangle of a round surface: each corner lit by its own normal (na, nb, nc, 16384 long). */
+static void add_tri_n(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t hx, int64_t hy, int64_t hz, const int32_t na[3], const int32_t nb[3], const int32_t nc[3])
+{
+   int32_t n[3][3];
+   memcpy(n[0], na, sizeof n[0]);
+   memcpy(n[1], nb, sizeof n[1]);
+   memcpy(n[2], nc, sizeof n[2]);
+   next_vn = (const int32_t(*)[3])n;
+   add_tri_uv(a, b, c, color, hx, hy, hz, NULL, NULL);
+   next_vn = NULL;
 }
 
 /*
@@ -491,8 +521,62 @@ static void add_solid(int32_t kind, r3d_vec lo, r3d_vec hi, int32_t r0, int32_t 
    s->r1 = r1;
 }
 
+void r3d_bevel(int32_t size)
+{
+   cur_bevel = hd_max(0, size);
+}
+
+/* One edge of a bevelled box: the strip between face A's edge (a0, a1) and face B's (b0, b1), lit from one face's normal to the other's. */
+static void bevel_edge(r3d_vec a0, r3d_vec a1, const int32_t na[3], r3d_vec b0, r3d_vec b1, const int32_t nb[3], uint32_t color)
+{
+   int64_t hx = na[0] + nb[0], hy = na[1] + nb[1], hz = na[2] + nb[2];
+   add_tri_n(a0, a1, b1, color, hx, hy, hz, na, na, nb);
+   add_tri_n(a0, b1, b0, color, hx, hy, hz, na, nb, nb);
+}
+
+/*
+ * A box with its edges cut at 45 degrees (r3d_bevel): the six faces a
+ * little smaller, a strip along each edge and a triangle at each corner,
+ * lit as if rounded. Edges catch the light like real furniture's.
+ */
+static void bevel_box(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_t y1, int32_t z1, uint32_t color, int32_t b)
+{
+   int32_t X0 = x0 + b, X1 = x1 - b, Y0 = y0 + b, Y1 = y1 - b, Z0 = z0 + b, Z1 = z1 - b, i, j, k;
+   int32_t xs[2] = { x0, x1 }, ys[2] = { y0, y1 }, zs[2] = { z0, z1 }, XS[2] = { X0, X1 }, YS[2] = { Y0, Y1 }, ZS[2] = { Z0, Z1 };
+   int32_t nx[2][3] = { { -TRIG_ONE, 0, 0 }, { TRIG_ONE, 0, 0 } }, ny[2][3] = { { 0, -TRIG_ONE, 0 }, { 0, TRIG_ONE, 0 } }, nz[2][3] = { { 0, 0, -TRIG_ONE }, { 0, 0, TRIG_ONE } };
+   add_quad(vec(X0, y0, Z1), vec(X1, y0, Z1), vec(X1, y0, Z0), vec(X0, y0, Z0), color, 0, -1, 0);
+   add_quad(vec(X0, y1, Z0), vec(X1, y1, Z0), vec(X1, y1, Z1), vec(X0, y1, Z1), color, 0, 1, 0);
+   add_quad(vec(X1, Y0, z0), vec(X0, Y0, z0), vec(X0, Y1, z0), vec(X1, Y1, z0), color, 0, 0, -1);
+   add_quad(vec(X0, Y0, z1), vec(X1, Y0, z1), vec(X1, Y1, z1), vec(X0, Y1, z1), color, 0, 0, 1);
+   add_quad(vec(x0, Y0, Z0), vec(x0, Y0, Z1), vec(x0, Y1, Z1), vec(x0, Y1, Z0), color, -1, 0, 0);
+   add_quad(vec(x1, Y0, Z1), vec(x1, Y0, Z0), vec(x1, Y1, Z0), vec(x1, Y1, Z1), color, 1, 0, 0);
+   for (i = 0; i < 2; i++)
+      for (j = 0; j < 2; j++)
+      {
+         /* along x (between a y face and a z face), along y (x and z), along z (x and y) */
+         bevel_edge(vec(X0, ys[i], ZS[j]), vec(X1, ys[i], ZS[j]), ny[i], vec(X0, YS[i], zs[j]), vec(X1, YS[i], zs[j]), nz[j], color);
+         bevel_edge(vec(xs[i], Y0, ZS[j]), vec(xs[i], Y1, ZS[j]), nx[i], vec(XS[i], Y0, zs[j]), vec(XS[i], Y1, zs[j]), nz[j], color);
+         bevel_edge(vec(xs[i], YS[j], Z0), vec(xs[i], YS[j], Z1), nx[i], vec(XS[i], ys[j], Z0), vec(XS[i], ys[j], Z1), ny[j], color);
+      }
+   for (i = 0; i < 2; i++)
+      for (j = 0; j < 2; j++)
+         for (k = 0; k < 2; k++)
+            add_tri_n(vec(xs[i], YS[j], ZS[k]), vec(XS[i], ys[j], ZS[k]), vec(XS[i], YS[j], zs[k]), color, i ? 1 : -1, j ? 1 : -1, k ? 1 : -1, nx[i], ny[j], nz[k]);
+   add_solid(SOLID_BOX, vec(x0, y0, z0), vec(x1, y1, z1), 0, 0);
+}
+
 void r3d_box(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_t y1, int32_t z1, uint32_t color, int32_t flags)
 {
+   if (cur_bevel && !flags && cur_occlude && !cur_glass && !cur_decal)
+   {
+      /* only where the box is about four bevels thick: thin panels and legs keep sharp edges */
+      int32_t b = hd_min(cur_bevel, hd_min(hd_min(x1 - x0, y1 - y0), z1 - z0) / 4);
+      if (b * 4 >= cur_bevel * 3)
+      {
+         bevel_box(x0, y0, z0, x1, y1, z1, color, b);
+         return;
+      }
+   }
    int64_t o = (flags & R3D_INSIDE) ? -1 : 1;
    r3d_vec p000 = vec(x0, y0, z0), p100 = vec(x1, y0, z0), p010 = vec(x0, y1, z0), p110 = vec(x1, y1, z0);
    r3d_vec p001 = vec(x0, y0, z1), p101 = vec(x1, y0, z1), p011 = vec(x0, y1, z1), p111 = vec(x1, y1, z1);
@@ -528,7 +612,22 @@ void r3d_cylinder(int32_t x, int32_t y, int32_t z, int32_t r, int32_t r_top, int
       r3d_vec t0 = vec(x + (int32_t)(((int64_t)r_top * c0) >> 14), y + h, z + (int32_t)(((int64_t)r_top * s0) >> 14));
       r3d_vec t1 = vec(x + (int32_t)(((int64_t)r_top * c1) >> 14), y + h, z + (int32_t)(((int64_t)r_top * s1) >> 14));
       cur_cell = 0;
-      if (r_top > 0)
+      if (sides >= 6 && h > 0)
+      {
+         /* round: each edge lit by its own normal (a cone's leans by its slope) */
+         int32_t n0[3], n1[3];
+         int64_t slope = (int64_t)(r - r_top) * 16384 / h;
+         unit(c0, slope, s0, &n0[0], &n0[1], &n0[2]);
+         unit(c1, slope, s1, &n1[0], &n1[1], &n1[2]);
+         if (r_top > 0)
+         {
+            add_tri_n(b1, b0, t0, color, hd_cos(am), 0, hd_sin(am), n1, n0, n0);
+            add_tri_n(b1, t0, t1, color, hd_cos(am), 0, hd_sin(am), n1, n0, n1);
+         }
+         else
+            add_tri_n(b0, b1, t1, color, hd_cos(am), 0, hd_sin(am), n0, n1, n1);
+      }
+      else if (r_top > 0)
          add_quad(b1, b0, t0, t1, color, hd_cos(am), 0, hd_sin(am));
       else
          add_tri(b0, b1, t1, color, hd_cos(am), 0, hd_sin(am));
@@ -566,8 +665,13 @@ void r3d_ball(int32_t x, int32_t y, int32_t z, int32_t rx, int32_t ry, int32_t r
             int64_t hx = (int64_t)p[0].x + p[1].x + p[2].x + p[3].x - 4LL * x;
             int64_t hy = (int64_t)p[0].y + p[1].y + p[2].y + p[3].y - 4LL * y;
             int64_t hz = (int64_t)p[0].z + p[1].z + p[2].z + p[3].z - 4LL * z;
-            add_tri(p[0], p[1], p[2], color, hx, hy, hz);
-            add_tri(p[0], p[2], p[3], color, hx, hy, hz);
+            int32_t n[4][3];
+            /* each corner lit by the ball's own normal there: (x/rx, y/ry, z/rz) of the unit sphere */
+            int64_t ax = (int64_t)(ry >> 6) * (rz >> 6), ay = (int64_t)(rx >> 6) * (rz >> 6), az = (int64_t)(rx >> 6) * (ry >> 6);
+            for (k = 0; k < 4; k++)
+               unit(((((int64_t)ring[k] * hd_cos(lo[k])) >> 14) * ax) >> 14, ((int64_t)hh[k] * ay) >> 14, ((((int64_t)ring[k] * hd_sin(lo[k])) >> 14) * az) >> 14, &n[k][0], &n[k][1], &n[k][2]);
+            add_tri_n(p[0], p[1], p[2], color, hx, hy, hz, n[0], n[1], n[2]);
+            add_tri_n(p[0], p[2], p[3], color, hx, hy, hz, n[0], n[2], n[3]);
          }
       }
    }
@@ -865,6 +969,60 @@ static void light_point(const r3d_light_cfg *c, r3d_vec p, int32_t nx, int32_t n
 }
 
 /* How much sun (0..255) and sky (0..255) reach a point of a light-mapped face. */
+/*
+ * What moves is lit without shadows or lamps (LP_NONE): its light depends on
+ * its normal only, so it is worked out once for 128 x 128 normals (an
+ * octahedron unfolded on a square) and looked up.
+ */
+#define NT 128
+static int32_t nt_light[NT * NT][3];
+static r3d_light_cfg nt_cfg;
+static int nt_ready;
+
+static int32_t nt_cell(int32_t nx, int32_t ny, int32_t nz)
+{
+   int64_t l1 = (int64_t)hd_abs(nx) + hd_abs(ny) + hd_abs(nz);
+   int64_t u, v;
+   if (!l1)
+      return 0;
+   u = (int64_t)nx * 16384 / l1, v = (int64_t)nz * 16384 / l1;
+   if (ny < 0)
+   {
+      int64_t uu = (16384 - (v < 0 ? -v : v)) * (u < 0 ? -1 : 1), vv = (16384 - (u < 0 ? -u : u)) * (v < 0 ? -1 : 1);
+      u = uu, v = vv;
+   }
+   return hd_clamp((int32_t)((u + 16384) * NT / 32769), 0, NT - 1) + hd_clamp((int32_t)((v + 16384) * NT / 32769), 0, NT - 1) * NT;
+}
+
+static void light_none(const r3d_light_cfg *c, int32_t nx, int32_t ny, int32_t nz, int32_t *lr, int32_t *lg, int32_t *lb)
+{
+   const int32_t *e;
+   if (!nt_ready || memcmp(&nt_cfg, c, sizeof nt_cfg) != 0)
+   {
+      int32_t i, j;
+      r3d_vec o = { 0, 0, 0 };
+      for (j = 0; j < NT; j++)
+         for (i = 0; i < NT; i++)
+         {
+            /* the cell's middle back to a normal */
+            int64_t u = ((int64_t)i * 2 + 1) * 16384 / NT - 16384, v = ((int64_t)j * 2 + 1) * 16384 / NT - 16384;
+            int64_t y = 16384 - (u < 0 ? -u : u) - (v < 0 ? -v : v);
+            int32_t ux, uy, uz;
+            if (y < 0)
+            {
+               int64_t uu = (16384 - (v < 0 ? -v : v)) * (u < 0 ? -1 : 1), vv = (16384 - (u < 0 ? -u : u)) * (v < 0 ? -1 : 1);
+               u = uu, v = vv;
+            }
+            unit(u, y, v, &ux, &uy, &uz);
+            light_point(c, o, ux, uy, uz, &nt_light[j * NT + i][0], &nt_light[j * NT + i][1], &nt_light[j * NT + i][2], LP_NONE, NULL);
+         }
+      nt_cfg = *c;
+      nt_ready = 1;
+   }
+   e = nt_light[nt_cell(nx, ny, nz)];
+   *lr = e[0], *lg = e[1], *lb = e[2];
+}
+
 static uint32_t lm_texel(const r3d_light_cfg *c, r3d_vec p, int32_t nx, int32_t ny, int32_t nz)
 {
    static const int32_t jit[5][2] = { { 0, 0 }, { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
@@ -963,7 +1121,7 @@ static void bake_tris(void *ctx, int32_t first, int32_t last)
       for (k = 0; k < 3; k++)
       {
          int32_t sun[3] = { 0, 0, 0 };
-         light_point(c, t->v[k], t->nx, t->ny, t->nz, &t->lr[k], &t->lg[k], &t->lb[k], t->lm >= 0 ? LP_MAPPED : LP_SHADOWS, sun);
+         light_point(c, t->v[k], t->vn[k][0], t->vn[k][1], t->vn[k][2], &t->lr[k], &t->lg[k], &t->lb[k], t->lm >= 0 ? LP_MAPPED : LP_SHADOWS, sun);
          t->sr[k] = sun[0], t->sg[k] = sun[1], t->sb[k] = sun[2];
       }
    }
@@ -1043,6 +1201,21 @@ static r3d_px drawn[R3D_MAX_DRAWN];
 static int32_t seg_first[SEGS], seg_n[SEGS], drawn_count;
 static uint32_t zbuf[HD_OUT_MAX_W * HD_OUT_MAX_H];
 static uint32_t aa_src[HD_OUT_MAX_W * HD_OUT_MAX_H];
+/*
+ * Bloom, of what gives light (lamps, screens): each glowing pixel's light
+ * above white (10 bits a channel, of 4096 = 1.0 over the threshold, >> 3)
+ * with its depth, then a quarter-size copy blurred twice. A row is cleared
+ * only when something glows on it, and a pixel counts only if nothing
+ * nearer covered it later (its depth is still the nearest).
+ */
+static uint32_t glow_src[HD_OUT_MAX_W * HD_OUT_MAX_H], glow_z[HD_OUT_MAX_W * HD_OUT_MAX_H];
+static int32_t glow_row[HD_OUT_MAX_H], glow_frame = 1;
+#define BLOOM_DIV 4
+#define BLOOM_W (HD_OUT_MAX_W / BLOOM_DIV + 2)
+#define BLOOM_H (HD_OUT_MAX_H / BLOOM_DIV + 2)
+#define BLOOM_FROM 4300 /* above white: lamps, screens and the brightest sun glow */
+static int32_t bloom_a[BLOOM_W * BLOOM_H * 3], bloom_b[BLOOM_W * BLOOM_H * 3];
+static int32_t bloom_w, bloom_h, bloom_on;
 
 typedef struct
 {
@@ -1244,7 +1417,7 @@ static int32_t clip(const frame_k *k, cam_pt *poly, int32_t n)
 /*
  * One triangle of the world, at w (world space) with the normal n, toward
  * the screen: cr cg cb its color as light (256 = white), light its corners'
- * light (NULL: the baked one).
+ * light, three values each (NULL: the baked one).
  */
 static void emit(emit_out *o, const frame_k *k, const r3d_tri *t, const r3d_vec w[3], int32_t nx, int32_t ny, int32_t nz, int32_t cr, int32_t cg, int32_t cb,
                  const int32_t *light)
@@ -1263,7 +1436,7 @@ static void emit(emit_out *o, const frame_k *k, const r3d_tri *t, const r3d_vec 
       return;
    for (i = 0; i < 3; i++)
    {
-      int32_t lr = light ? light[0] : t->lr[i], lg = light ? light[1] : t->lg[i], lb = light ? light[2] : t->lb[i];
+      int32_t lr = light ? light[i * 3] : t->lr[i], lg = light ? light[i * 3 + 1] : t->lg[i], lb = light ? light[i * 3 + 2] : t->lb[i];
       poly[i].u = t->u[i];
       poly[i].t = t->t[i];
       poly[i].ls = poly[i].lt = poly[i].sr = poly[i].sg = poly[i].sb = 0;
@@ -1426,7 +1599,7 @@ static void fill_one(hd_surface *s, const r3d_px *t, int32_t row0, int32_t row1)
    const r3d_tex *tx = t->tex >= 0 ? &texs[t->tex] : NULL;
    uint32_t umask = tx ? ((1u << tx->wlog) - 1) : 0, vmask = tx ? ((1u << tx->hlog) - 1) : 0, wlog = tx ? (uint32_t)tx->wlog : 0;
    const uint32_t *tpx = tx ? tx->px : NULL;
-   int decal = t->flags & TF_DECAL;
+   int decal = t->flags & TF_DECAL, glowing = bloom_on && (t->flags & TF_GLOW);
    int32_t glass = t->glass, smooth_tex = t->smooth_tex;
    /* each edge: its value at (xa, row) and its step per pixel */
    int64_t s0 = -(y2 - y1) * 16, s1 = -(y0 - y2) * 16, s2 = -(y1 - y0) * 16;
@@ -1541,6 +1714,23 @@ static void fill_one(hd_surface *s, const r3d_px *t, int32_t row0, int32_t row1)
             }
             zrow[x] = z;
             row[x] = c;
+            if (glowing && (r > BLOOM_FROM || g > BLOOM_FROM || b > BLOOM_FROM))
+            {
+               int64_t at = (int64_t)y * s->w + x;
+               if (glow_row[y] != glow_frame)
+               {
+                  /* the row's first glow this frame (a row is filled by one core): forget the old ones */
+                  memset(glow_src + (int64_t)y * s->w, 0, sizeof(uint32_t) * (size_t)s->w);
+                  glow_row[y] = glow_frame;
+               }
+               {
+                  /* the light above white, in the light's own color (each channel in proportion, so a warm lamp glows warm, not red) */
+                  int32_t m = hd_max(r, hd_max(g, b)), over = m - BLOOM_FROM;
+                  glow_src[at] = (uint32_t)hd_clamp((int32_t)((int64_t)r * over / m) >> 3, 0, 1023) << 20 | (uint32_t)hd_clamp((int32_t)((int64_t)g * over / m) >> 3, 0, 1023) << 10 |
+                                 (uint32_t)hd_clamp((int32_t)((int64_t)b * over / m) >> 3, 0, 1023);
+               }
+               glow_z[at] = z;
+            }
          }
       }
    }
@@ -1572,7 +1762,7 @@ static void emit_range(emit_out *o, const frame_k *k, int32_t first, int32_t end
    {
       const r3d_tri *t = &tris[i];
       r3d_vec w[3];
-      int32_t rx, ny, rz, light[3], cr = t->cr, cg = t->cg, cb = t->cb;
+      int32_t rx, ny, rz, light[9], vn[3][3], cr = t->cr, cg = t->cg, cb = t->cb;
       if (!ins)
       {
          emit(o, k, t, t->v, t->nx, t->ny, t->nz, cr, cg, cb, NULL);
@@ -1590,6 +1780,12 @@ static void emit_range(emit_out *o, const frame_k *k, int32_t first, int32_t end
          n.x = t->nx, n.y = t->ny, n.z = t->nz;
          n = r3d_rot_apply(ins->rot, n);
          rx = n.x, ny = n.y, rz = n.z;
+         for (j = 0; j < 3; j++)
+         {
+            n.x = t->vn[j][0], n.y = t->vn[j][1], n.z = t->vn[j][2];
+            n = r3d_rot_apply(ins->rot, n);
+            vn[j][0] = n.x, vn[j][1] = n.y, vn[j][2] = n.z;
+         }
       }
       else
       {
@@ -1602,14 +1798,29 @@ static void emit_range(emit_out *o, const frame_k *k, int32_t first, int32_t end
          rx = (int32_t)(((int64_t)t->nx * c + (int64_t)t->nz * sn) >> 14);
          rz = (int32_t)(((int64_t)t->nz * c - (int64_t)t->nx * sn) >> 14);
          ny = t->ny;
+         for (j = 0; j < 3; j++)
+         {
+            vn[j][0] = (int32_t)(((int64_t)t->vn[j][0] * c + (int64_t)t->vn[j][2] * sn) >> 14);
+            vn[j][1] = t->vn[j][1];
+            vn[j][2] = (int32_t)(((int64_t)t->vn[j][2] * c - (int64_t)t->vn[j][0] * sn) >> 14);
+         }
       }
       if (ins->tint >> 24)
          lin3(gfx_mix(t->color, ins->tint & 0xffffffu, (int32_t)(ins->tint >> 24)), &cr, &cg, &cb);
       /* what moves is lit by the sun and the sky as it goes, without shadows */
       if (lc && !(t->flags & (TF_GLOW | TF_DECAL)))
-         light_point(lc, w[0], rx, ny, rz, &light[0], &light[1], &light[2], LP_NONE, NULL);
+      {
+         /* each corner by its own normal: round parts (a head, a hand) look round */
+         int same = vn[0][0] == vn[1][0] && vn[0][1] == vn[1][1] && vn[0][2] == vn[1][2] && vn[0][0] == vn[2][0] && vn[0][1] == vn[2][1] && vn[0][2] == vn[2][2];
+         for (j = 0; j < 3; j++)
+            if (j == 0 || !same)
+               light_none(lc, vn[j][0], vn[j][1], vn[j][2], &light[j * 3], &light[j * 3 + 1], &light[j * 3 + 2]);
+            else
+               light[j * 3] = light[0], light[j * 3 + 1] = light[1], light[j * 3 + 2] = light[2];
+      }
       else
-         light[0] = light[1] = light[2] = 256;
+         for (j = 0; j < 9; j++)
+            light[j] = 256;
       emit(o, k, t, w, rx, ny, rz, cr, cg, cb, light);
    }
 }
@@ -1684,6 +1895,10 @@ static void emit_world(const frame_k *k, const r3d_mesh *scene)
 }
 
 /* Softens the edges: a pixel that differs a lot from its neighbours takes some of them. */
+static void finish_rows(void *ctx, int32_t y0, int32_t y1);
+/* The finish (bloom, vignette) to apply right after smoothing each band of rows, or NULL. */
+static void *smooth_then;
+
 static void smooth_rows(void *ctx, int32_t y0, int32_t y1)
 {
    hd_surface *s = ((fill_job *)ctx)->s;
@@ -1707,6 +1922,140 @@ static void smooth_rows(void *ctx, int32_t y0, int32_t y1)
             uint32_t g = ((c & 0xff00u) * 4 + (n & 0xff00u) + (sd & 0xff00u) + (e & 0xff00u) + (wv & 0xff00u)) >> 3;
             o[x] = (rb & 0xff00ffu) | (g & 0xff00u);
          }
+      }
+   }
+   if (smooth_then)
+      finish_rows(smooth_then, y0, y1); /* the band is final: finish it while it is in the cache */
+}
+
+/* Bloom, 1: each quarter-size cell the sum of its 4 x 4 pixels' light above white. */
+static void bloom_down(void *ctx, int32_t y0, int32_t y1)
+{
+   hd_surface *s = ((fill_job *)ctx)->s;
+   int32_t x, y, i, j;
+   for (y = y0; y < y1; y++)
+      for (x = 0; x < bloom_w; x++)
+      {
+         int32_t r = 0, g = 0, b = 0;
+         for (j = 0; j < BLOOM_DIV; j++)
+         {
+            int32_t py = hd_min(y * BLOOM_DIV + j, s->h - 1);
+            const uint32_t *row = glow_src + (int64_t)py * s->w, *gz = glow_z + (int64_t)py * s->w, *zr = zbuf + (int64_t)py * s->w;
+            if (glow_row[py] != glow_frame)
+               continue; /* nothing glows on this row */
+            for (i = 0; i < BLOOM_DIV; i++)
+            {
+               int32_t px = hd_min(x * BLOOM_DIV + i, s->w - 1);
+               uint32_t v = row[px];
+               if (v && gz[px] == zr[px]) /* still the nearest thing there */
+                  r += (int32_t)(v >> 20), g += (int32_t)(v >> 10 & 1023), b += (int32_t)(v & 1023);
+            }
+         }
+         bloom_a[(y * bloom_w + x) * 3] = r, bloom_a[(y * bloom_w + x) * 3 + 1] = g, bloom_a[(y * bloom_w + x) * 3 + 2] = b;
+      }
+}
+
+/* Bloom, 2 and 3: a wide soft blur (1 3 6 8 6 3 1, of 28) across, then down. */
+static const int32_t bloom_k[7] = { 1, 3, 6, 8, 6, 3, 1 };
+
+static void bloom_across(void *ctx, int32_t y0, int32_t y1)
+{
+   int32_t x, y, c, k;
+   (void)ctx;
+   for (y = y0; y < y1; y++)
+      for (x = 0; x < bloom_w; x++)
+         for (c = 0; c < 3; c++)
+         {
+            int32_t sum = 0;
+            for (k = 0; k < 7; k++)
+               sum += bloom_k[k] * bloom_a[(y * bloom_w + hd_clamp(x + k - 3, 0, bloom_w - 1)) * 3 + c];
+            bloom_b[(y * bloom_w + x) * 3 + c] = sum / 28;
+         }
+}
+
+static void bloom_down_blur(void *ctx, int32_t y0, int32_t y1)
+{
+   int32_t x, y, c, k;
+   (void)ctx;
+   for (y = y0; y < y1; y++)
+      for (x = 0; x < bloom_w; x++)
+         for (c = 0; c < 3; c++)
+         {
+            int32_t sum = 0;
+            for (k = 0; k < 7; k++)
+               sum += bloom_k[k] * bloom_b[(hd_clamp(y + k - 3, 0, bloom_h - 1) * bloom_w + x) * 3 + c];
+            bloom_a[(y * bloom_w + x) * 3 + c] = sum / 28;
+         }
+}
+
+typedef struct
+{
+   hd_surface *s;
+   int32_t bloom, vignette;
+} finish_job;
+
+/* The vignette, kept as a factor across (per column) times a factor down (per row): 256 = untouched. */
+static int32_t vig_col[HD_OUT_MAX_W], vig_row[HD_OUT_MAX_H];
+
+static void vignette_build(int32_t w, int32_t h, int32_t amount)
+{
+   int32_t i;
+   /* (1 - a dx^2)(1 - a dy^2), d from -1 to 1 across: about 1 - a d^2, a = amount * 3 / 16 / 256 */
+   for (i = 0; i < w; i++)
+   {
+      int64_t d = (int64_t)(2 * i - w) * 1024 / w; /* -1024..1024 */
+      vig_col[i] = 256 - (int32_t)(d * d * amount * 3 / 16 / 1024 / 1024);
+   }
+   for (i = 0; i < h; i++)
+   {
+      int64_t d = (int64_t)(2 * i - h) * 1024 / h;
+      vig_row[i] = 256 - (int32_t)(d * d * amount * 3 / 16 / 1024 / 1024);
+   }
+}
+
+/* Bloom, 4, and the vignette: the blurred light added back (between the four nearest cells), the corners darkened. */
+static void finish_rows(void *ctx, int32_t y0, int32_t y1)
+{
+   const finish_job *f = (const finish_job *)ctx;
+   hd_surface *s = f->s;
+   int32_t x, y, w = s->w, c, cx;
+   int32_t span[(BLOOM_W + 1) * 3];
+   for (y = y0; y < y1; y++)
+   {
+      uint32_t *row = s->px + (int64_t)y * w;
+      int32_t keep_y = f->vignette ? vig_row[y] : 256, any = 0;
+      if (f->bloom)
+      {
+         /* this row's bloom at every cell's column, between the two nearest rows of cells */
+         int32_t sy = hd_max(0, y * 256 / BLOOM_DIV - 128), cy = sy >> 8, fy = sy & 255, cy1 = hd_min(cy + 1, bloom_h - 1);
+         for (cx = 0; cx < bloom_w; cx++)
+            for (c = 0; c < 3; c++)
+            {
+               int32_t a = bloom_a[(cy * bloom_w + cx) * 3 + c], d = bloom_a[(cy1 * bloom_w + cx) * 3 + c];
+               span[cx * 3 + c] = a + (((d - a) * fy) >> 8);
+               any |= span[cx * 3 + c];
+            }
+         span[bloom_w * 3] = span[bloom_w * 3 - 3], span[bloom_w * 3 + 1] = span[bloom_w * 3 - 2], span[bloom_w * 3 + 2] = span[bloom_w * 3 - 1];
+      }
+      if (!any && keep_y == 256 && !f->vignette)
+         continue;
+      for (x = 0; x < w; x++)
+      {
+         uint32_t p = row[x];
+         int32_t ch[3] = { (int32_t)(p >> 16 & 255), (int32_t)(p >> 8 & 255), (int32_t)(p & 255) };
+         int32_t keep = f->vignette ? (vig_col[x] * keep_y) >> 8 : 256;
+         if (any)
+         {
+            int32_t sx = hd_max(0, x * 256 / BLOOM_DIV - 128), k = sx >> 8, fx = sx & 255;
+            const int32_t *a = &span[k * 3], *b = &span[hd_min(k + 1, bloom_w - 1) * 3];
+            if (a[0] | a[1] | a[2] | b[0] | b[1] | b[2])
+               for (c = 0; c < 3; c++)
+                  ch[c] += ((a[c] + (((b[c] - a[c]) * fx) >> 8)) * f->bloom) >> 13; /* 16 pixels' light summed: per pixel v / 16, of 512 = 1.0 */
+         }
+         if (keep != 256)
+            for (c = 0; c < 3; c++)
+               ch[c] = (ch[c] * keep) >> 8;
+         row[x] = (uint32_t)hd_min(255, ch[0]) << 16 | (uint32_t)hd_min(255, ch[1]) << 8 | (uint32_t)hd_min(255, ch[2]);
       }
    }
 }
@@ -1764,6 +2113,9 @@ void r3d_draw(hd_surface *s, const r3d_view *v, const r3d_mesh *scene, const r3d
       chunks_build();
    frame_setup(&k, s, v);
    job.s = s;
+   bloom_on = v->bloom > 0;
+   if (bloom_on)
+      glow_frame = glow_frame == 0x7fffffff ? 1 : glow_frame + 1;
    sky_top = v->sky_top;
    sky_bottom = v->sky_bottom;
    PROF(0);
@@ -1791,10 +2143,33 @@ void r3d_draw(hd_surface *s, const r3d_view *v, const r3d_mesh *scene, const r3d
    PROF(4);
    hd_rows(PAR_WIDE, s->h, fill_rows, &job);
    PROF(5);
-   if (v->smooth)
    {
-      memcpy(aa_src, s->px, sizeof(uint32_t) * (size_t)s->w * (size_t)s->h);
-      hd_rows(PAR_WIDE, s->h, smooth_rows, &job);
+      finish_job f;
+      f.s = s;
+      f.bloom = hd_clamp(v->bloom, 0, 256);
+      f.vignette = hd_clamp(v->vignette, 0, 256);
+      smooth_then = NULL;
+      if (f.vignette)
+         vignette_build(s->w, s->h, f.vignette);
+      if (f.bloom)
+      {
+         /* the bloom is made from the pixels' light before smoothing (glow_src), so it is ready first */
+         bloom_w = (s->w + BLOOM_DIV - 1) / BLOOM_DIV;
+         bloom_h = (s->h + BLOOM_DIV - 1) / BLOOM_DIV;
+         hd_rows(PAR_WIDE, bloom_h, bloom_down, &job);
+         hd_rows(PAR_WIDE, bloom_h, bloom_across, &job);
+         hd_rows(PAR_WIDE, bloom_h, bloom_down_blur, &job);
+      }
+      if (v->smooth)
+      {
+         memcpy(aa_src, s->px, sizeof(uint32_t) * (size_t)s->w * (size_t)s->h);
+         if (f.bloom || f.vignette)
+            smooth_then = &f;
+         hd_rows(PAR_WIDE, s->h, smooth_rows, &job);
+         smooth_then = NULL;
+      }
+      else if (f.bloom || f.vignette)
+         hd_rows(PAR_WIDE, s->h, finish_rows, &f);
    }
    PROF(6);
 }

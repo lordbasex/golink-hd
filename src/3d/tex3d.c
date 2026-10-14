@@ -438,7 +438,8 @@ const int32_t *tex3d_build(void)
 /* ---- posters ---- */
 
 #define POSTERS_MAX 24
-static uint32_t poster_px[POSTERS_MAX][64 * 64];
+#define POSTER 256 /* texels a side: sharp on a TV seen up close */
+static uint32_t poster_px[POSTERS_MAX][POSTER * POSTER];
 static int32_t poster_count;
 
 int32_t tex3d_poster(int32_t kind, uint32_t seed)
@@ -454,40 +455,59 @@ int32_t tex3d_poster(int32_t kind, uint32_t seed)
       return -1;
    p = poster_px[poster_count];
    c = pal[seed % 6];
-   for (y = 0; y < 64; y++)
-      for (x = 0; x < 64; x++)
+   for (y = 0; y < POSTER; y++)
+      for (x = 0; x < POSTER; x++)
       {
+         /* drawn on a 64-step design scaled 4 times, with the edges between colors kept sharp */
          uint32_t v = c[0];
-         int32_t dx = x - 32, dy = y - 26 - (int32_t)(seed % 7);
+         int32_t dx = x - 128, dy = y - 104 - (int32_t)(seed % 7) * 4;
          switch (kind % 4)
          {
-         case 0: /* a sun over hills */
-            if (dx * dx + dy * dy < 13 * 13)
+         case 0: /* a sun over two rows of hills, the sky fading */
+            v = gfx_mix(c[0], 0xffffffff, 60 - y * 60 / POSTER) | 0xff000000u;
+            if (dx * dx + dy * dy < 52 * 52)
                v = c[1];
-            if (y > 40 + (int32_t)((hd_sin((x * 64 + (int32_t)seed * 37) & 4095) * 5) >> 14))
+            if (y > 150 + (int32_t)((hd_sin((x * 12 + (int32_t)seed * 37) & 4095) * 14) >> 14))
+               v = gfx_mix(c[2], c[0], 70) | 0xff000000u;
+            if (y > 172 + (int32_t)((hd_sin((x * 20 + 900 + (int32_t)seed * 53) & 4095) * 18) >> 14))
                v = c[2];
             break;
          case 1: /* bold stripes */
-            if (((x + y + (int32_t)seed) / 8) % 3 == 1)
+            if (((x + y + (int32_t)seed * 4) / 32) % 3 == 1)
                v = c[1];
-            else if (((x + y + (int32_t)seed) / 8) % 3 == 2)
+            else if (((x + y + (int32_t)seed * 4) / 32) % 3 == 2)
                v = c[2];
             break;
-         case 2: /* a terminal with lines of code */
+         case 2: /* a terminal with lines of code, a prompt and a cursor */
             v = c[2] == 0xff264653 ? 0xff1b1f24 : 0xff15181d;
-            if (y > 8 && y < 58 && (y % 6) < 3 && x > 6 && x < 12 + (int32_t)(hash3(y, 0, seed) % 44))
-               v = (hash3(y, 1, seed) & 1) ? 0xff7fd18b : 0xffe0c070;
+            if (y < 14)
+               v = 0xff2b2f36; /* the window's title bar */
+            else if (y > 24 && y < 236 && (y % 12) < 7)
+            {
+               int32_t row = y / 12, indent = (int32_t)(hash3(row, 2, seed) % 4) * 12, len = 20 + (int32_t)(hash3(row, 0, seed) % 170);
+               if (x > 16 + indent && x < 16 + indent + len && ((x - indent) / 6) % 9 != 8)
+                  v = (hash3(row, 1, seed) % 3) == 0 ? 0xff7fd18b : (hash3(row, 1, seed) % 3) == 1 ? 0xffe0c070 : 0xff8ab4f8;
+            }
+            if (y < 14 && x > 8 && x < 44 && (x - 8) % 12 < 8 && y > 3 && y < 11)
+               v = (x - 8) / 12 == 0 ? 0xffff5f57 : (x - 8) / 12 == 1 ? 0xfffebc2e : 0xff28c840;
             break;
          default: /* circles */
-            if (((dx * dx + dy * dy) / 60) % 2 == 0)
+            if (((dx * dx + dy * dy) / 960) % 2 == 0)
                v = c[1];
-            if (hd_abs(dx) < 3)
+            if (hd_abs(dx) < 12)
                v = c[2];
             break;
          }
-         if (x < 2 || y < 2 || x > 61 || y > 61)
-            v = 0xfffaf7f0; /* the paper's white edge */
-         p[y * 64 + x] = v;
+         if (kind % 4 != 2)
+         {
+            /* the paper's grain */
+            int32_t n = (int32_t)(hash3(x, y, seed) % 13) - 6;
+            v = 0xff000000u | (uint32_t)hd_clamp((int32_t)(v >> 16 & 255) + n, 0, 255) << 16 | (uint32_t)hd_clamp((int32_t)(v >> 8 & 255) + n, 0, 255) << 8 |
+                (uint32_t)hd_clamp((int32_t)(v & 255) + n, 0, 255);
+         }
+         if (x < 8 || y < 8 || x > POSTER - 9 || y > POSTER - 9)
+            v = kind % 4 == 2 ? 0xff2b2f36 : 0xfffaf7f0; /* the paper's white edge, the screen's frame */
+         p[y * POSTER + x] = v;
       }
-   return r3d_tex_add(6, 6, poster_px[poster_count++]);
+   return r3d_tex_add(8, 8, poster_px[poster_count++]);
 }
