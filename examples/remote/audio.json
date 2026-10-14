@@ -546,6 +546,54 @@
    "url": "https://opengameart.org/sites/default/files/ultimate_house_interior_pack_-_june_2020.zip",
    "zip": "models/ultimate_house_interior_pack_-_june_2020.zip",
    "file": "models/ultimate_house_interior_pack_-_june_2020/Ultimate House Interior Pack - June 2020/OBJ/Kitchen_Fridge.obj"
+  },
+  "desk": {
+   "title": "Desk",
+   "author": "CreativeTrio",
+   "license": "CC0 1.0",
+   "page": "https://poly.pizza/m/YJyJam67hJ",
+   "url": "https://static.poly.pizza/b8d0347a-c711-4eb4-8b8b-cda390d3840f.glb",
+   "file": "models/desk.glb"
+  },
+  "desk_chair": {
+   "title": "Office Chair",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://poly.pizza/m/UfKvrZBK6C",
+   "url": "https://static.poly.pizza/ac2301f3-af86-435a-885a-d8f1a32f9f76.glb",
+   "file": "models/desk_chair.glb"
+  },
+  "monitor": {
+   "title": "Monitor",
+   "author": "CreativeTrio",
+   "license": "CC0 1.0",
+   "page": "https://poly.pizza/m/PvSjEbz11k",
+   "url": "https://static.poly.pizza/9f6ea5f4-d71c-4217-a8d4-6768ad0f4f47.glb",
+   "file": "models/monitor.glb"
+  },
+  "mouse": {
+   "title": "Computer Mouse",
+   "author": "CreativeTrio",
+   "license": "CC0 1.0",
+   "page": "https://poly.pizza/m/V2Ebx3pvo4",
+   "url": "https://static.poly.pizza/c0123ed1-38d1-4532-a711-3fccdc42fe25.glb",
+   "file": "models/mouse.glb"
+  },
+  "computer": {
+   "title": "Computer",
+   "author": "CreativeTrio",
+   "license": "CC0 1.0",
+   "page": "https://poly.pizza/m/7KNoiQlSxi",
+   "url": "https://static.poly.pizza/ec47fb93-0286-4dc1-b434-9292c6a7eb77.glb",
+   "file": "models/computer.glb"
+  },
+  "desk_lamp": {
+   "title": "Light Desk",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://poly.pizza/m/uJDWrSJGVH",
+   "url": "https://static.poly.pizza/2e1ab34a-eab6-4751-930f-6e3b4f5319a8.glb",
+   "file": "models/desk_lamp.glb"
   }
  }
 }

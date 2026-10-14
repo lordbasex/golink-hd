@@ -498,6 +498,17 @@ before the next one.
 
 ## 13. Progress
 
+**The desk made by artists (2026-10-14).** The desk is what the game shows
+most, so it came next, from Poly Pizza (CC0): CreativeTrio's desk (a drawer
+unit on one side), monitors, mouse and computer, Quaternius's office chair
+and desk lamp. Each fits the built piece's box; the screens keep the game's
+own glowing pictures of code, put just in front of the model's screen; the
+bulb still glows inside the lamp's shade; the computer stands under the desk
+with a blue light, only with the package (the built flat stays as it was, so
+its pictures do not change). The keyboard stays built: its glow is better
+than the models found. `tools/remotebots --content`: 27 of 27 places
+reached, the careful player survives every day.
+
 **Furniture made by artists (2026-10-14).** From Quaternius's "Ultimate House
 Interior Pack" (the CC0 copy on OpenGameArt, OBJ files): the L sofa (mirrored
 to match the flat's), the armchair, the dining chairs, the double bed and its

@@ -183,7 +183,7 @@ const char *model3d_load(const char *name, const uint8_t *data, size_t size)
    const uint8_t *p = data, *end = data + size;
    int32_t i, k;
    if (model_count >= MODEL3D_MAX)
-      return "too many models (16 at most)";
+      return "too many models (32 at most)";
    if (size < 24 || memcmp(data, "HDM1", 4) || rd32(data + 4) != 1)
       return "not a go-link HD model (.hdm, version 1)";
    m = &models[model_count];

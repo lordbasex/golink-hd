@@ -16,7 +16,7 @@
 #include <stddef.h>
 #include "r3d.h"
 
-#define MODEL3D_MAX 16        /* models a package holds */
+#define MODEL3D_MAX 32        /* models a package holds */
 #define MODEL3D_BONES 64
 #define MODEL3D_CLIPS 16
 

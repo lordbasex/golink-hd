@@ -446,6 +446,8 @@ static void chair_wood(uint32_t wood, uint32_t seat)
 static void desk_chair(void)
 {
    int32_t i;
+   if (piece("desk_chair", FACE_MZ, -32, 0, -30, 32, 120, 30))
+      return;
    for (i = 0; i < 5; i++)
    {
       int32_t a = i * ANGLE_FULL / 5, x = (int32_t)((26LL * hd_cos(a)) >> 14), z = (int32_t)((26LL * hd_sin(a)) >> 14);
@@ -465,11 +467,17 @@ static void desk_chair(void)
 /* A screen at its place, its picture a texture that glows. */
 static void monitor(int32_t x, int32_t w, int32_t h, int32_t tex)
 {
-   bx(x + w / 2 - 10, 0, 6, x + w / 2 + 10, 2, 22, 0x2a2a2e);
-   bx(x + w / 2 - 2, 2, 16, x + w / 2 + 2, 16, 20, 0x2a2a2e);
-   bx(x, 12, 10, x + w, 12 + h, 14, 0x18181b);
+   int32_t front = 9;
+   if (piece("monitor", FACE_MZ | NO_SOLID, x, 0, 8, x + w, 12 + h, 20))
+      front = 12; /* the package's monitor: its screen's face is a little in front of its box's middle */
+   else
+   {
+      bx(x + w / 2 - 10, 0, 6, x + w / 2 + 10, 2, 22, 0x2a2a2e);
+      bx(x + w / 2 - 2, 2, 16, x + w / 2 + 2, 16, 20, 0x2a2a2e);
+      bx(x, 12, 10, x + w, 12 + h, 14, 0x18181b);
+   }
    r3d_glow(300);
-   pane(tex, x + 1, 13, 9, x + w - 1, 11 + h, 10, 0xffffff);
+   pane(tex, x + 1, 13, front, x + w - 1, 11 + h, front + 1, 0xffffff);
    r3d_glow(0);
 }
 
@@ -944,12 +952,22 @@ static void office(void)
    int32_t i;
    /* the desk against the north wall, two screens of code, the work's whole kit */
    at(860, 0, 1168, 0);
-   mat(TEX3D_WOOD, 100);
-   bx(0, 72, 0, 180, 76, 72, 0x2b2b2b);
-   plain();
-   bx(4, 0, 4, 8, 72, 68, 0x1c1c1c);
-   bx(172, 0, 4, 176, 72, 68, 0x1c1c1c);
-   bx(4, 66, 64, 176, 72, 68, 0x1c1c1c);
+   if (!piece("desk", FACE_MZ, 0, 0, 0, 180, 76, 72))
+   {
+      mat(TEX3D_WOOD, 100);
+      bx(0, 72, 0, 180, 76, 72, 0x2b2b2b);
+      plain();
+      bx(4, 0, 4, 8, 72, 68, 0x1c1c1c);
+      bx(172, 0, 4, 176, 72, 68, 0x1c1c1c);
+      bx(4, 66, 64, 176, 72, 68, 0x1c1c1c);
+   }
+   /* the package's computer under the desk, its light on */
+   if (piece("computer", FACE_MZ | NO_SOLID, 146, 0, 22, 164, 42, 60))
+   {
+      r3d_glow(400);
+      bx(153, 36, 21, 157, 37, 22, 0x4cc9f0);
+      r3d_glow(0);
+   }
    at(860, 76, 1168, 0);
    monitor(30, 60, 34, poster[8]);
    monitor(96, 60, 34, poster[9]);
@@ -957,7 +975,8 @@ static void office(void)
    r3d_glow(140);
    bx(52, 2, 16, 108, 3, 28, 0x7b2cbf);
    r3d_glow(0);
-   bx(118, 0, 16, 126, 3, 26, 0x222226);          /* mouse */
+   if (!piece("mouse", FACE_MZ | NO_SOLID, 118, 0, 16, 126, 3, 27)) /* mouse */
+      bx(118, 0, 16, 126, 3, 26, 0x222226);
    bx(112, 0, 10, 140, 1, 32, 0x3c3c46);
    mug(14, 0, 20, 0xe9c46a);
    can(150, 0, 18, 0x06d6a0);
@@ -967,9 +986,17 @@ static void office(void)
    r3d_glow(400);
    bx(8, 12, 39, 10, 14, 40, 0x38b000);
    r3d_glow(0);
-   cyl(166, 0, 56, 5, 3, 20, 6, 0x333333);        /* a desk lamp */
-   r3d_glow(300);
-   ball(166, 22, 50, 6, 4, 6, 3, 0xfff1c0);
+   if (piece("desk_lamp", FACE_MZ | NO_SOLID, 159, 0, 40, 173, 32, 66)) /* a desk lamp, its bulb in the shade */
+   {
+      r3d_glow(300);
+      ball(166, 19, 46, 4, 2, 4, 3, 0xfff1c0);
+   }
+   else
+   {
+      cyl(166, 0, 56, 5, 3, 20, 6, 0x333333);
+      r3d_glow(300);
+      ball(166, 22, 50, 6, 4, 6, 3, 0xfff1c0);
+   }
    r3d_glow(0);
    r3d_light(CM(166), CM(30), CM(40), M(2), 0xffe9c0, 260);
    cyl(-8, 0, 40, 6, 6, 2, 10, 0x333333);         /* headphones on their stand */

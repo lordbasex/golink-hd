@@ -62,3 +62,9 @@ and, for the music, looped and stored as IMA ADPCM.
 | model `toilet` | Ultimate House Interior Pack: Bathroom_Toilet | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
 | model `washer` | Ultimate House Interior Pack: Bathroom_WashingMachine | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
 | model `fridge` | Ultimate House Interior Pack: Kitchen_Fridge | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
+| model `desk` | Desk | CreativeTrio | CC0 1.0 | https://poly.pizza/m/YJyJam67hJ |
+| model `desk_chair` | Office Chair | Quaternius | CC0 1.0 | https://poly.pizza/m/UfKvrZBK6C |
+| model `monitor` | Monitor | CreativeTrio | CC0 1.0 | https://poly.pizza/m/PvSjEbz11k |
+| model `mouse` | Computer Mouse | CreativeTrio | CC0 1.0 | https://poly.pizza/m/V2Ebx3pvo4 |
+| model `computer` | Computer | CreativeTrio | CC0 1.0 | https://poly.pizza/m/7KNoiQlSxi |
+| model `desk_lamp` | Light Desk | Quaternius | CC0 1.0 | https://poly.pizza/m/uJDWrSJGVH |
