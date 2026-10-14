@@ -501,10 +501,17 @@ static void cardboard_box(int32_t w, int32_t h, int32_t d)
 
 static void floor_lamp(uint32_t shade_c)
 {
-   cyl(0, 0, 0, 14, 14, 3, 12, 0x2c2c2c);
-   cyl(0, 3, 0, 1, 1, 150, 5, 0x2c2c2c);
    r3d_glow(320);
-   cyl(0, 140, 0, 20, 12, 26, 12, shade_c);
+   if (piece("floor_lamp", FACE_MZ, -21, 0, -21, 21, 166, 21))
+      cyl(0, 124, 0, 21, 15, 42, 12, shade_c); /* the package's lamp, its shade lit */
+   else
+   {
+      r3d_glow(0);
+      cyl(0, 0, 0, 14, 14, 3, 12, 0x2c2c2c);
+      cyl(0, 3, 0, 1, 1, 150, 5, 0x2c2c2c);
+      r3d_glow(320);
+      cyl(0, 140, 0, 20, 12, 26, 12, shade_c);
+   }
    r3d_glow(0);
 }
 
@@ -530,12 +537,15 @@ static void frame_pic(int32_t w, int32_t h, int32_t tex)
 /* A low TV unit 220 wide with the TV, its speakers and a game console, its front toward -z. */
 static void tv_unit(int32_t screen)
 {
-   mat(TEX3D_WOOD, 128);
-   bx(0, 0, 0, 220, 50, 42, 0xc8a27a);
-   plain();
-   bx(4, 6, -1, 70, 44, 0, 0xb08e6c);
-   bx(76, 6, -1, 144, 44, 0, 0xb08e6c);
-   bx(150, 6, -1, 216, 44, 0, 0xb08e6c);
+   if (!piece("tv_unit", FACE_MZ, 0, 0, 0, 220, 50, 42))
+   {
+      mat(TEX3D_WOOD, 128);
+      bx(0, 0, 0, 220, 50, 42, 0xc8a27a);
+      plain();
+      bx(4, 6, -1, 70, 44, 0, 0xb08e6c);
+      bx(76, 6, -1, 144, 44, 0, 0xb08e6c);
+      bx(150, 6, -1, 216, 44, 0, 0xb08e6c);
+   }
    bx(60, 50, 8, 160, 54, 30, 0x222226);            /* TV stand */
    bx(103, 54, 18, 117, 70, 24, 0x222226);
    bx(40, 64, 16, 180, 146, 20, 0x111114);          /* the TV */
@@ -646,13 +656,16 @@ static void living(void)
    plain();
    /* the dining table and its four chairs, a bowl of fruit, a pendant lamp */
    at(130, 0, 210, 0);
-   mat(TEX3D_WOOD, 100);
-   bx(0, 72, 0, 150, 76, 85, 0xb07a48);
-   plain();
-   bx(6, 0, 6, 12, 72, 12, 0x5b3d22);
-   bx(138, 0, 6, 144, 72, 12, 0x5b3d22);
-   bx(6, 0, 73, 12, 72, 79, 0x5b3d22);
-   bx(138, 0, 73, 144, 72, 79, 0x5b3d22);
+   if (!piece("dining_table", FACE_MZ, 0, 0, 0, 150, 76, 85))
+   {
+      mat(TEX3D_WOOD, 100);
+      bx(0, 72, 0, 150, 76, 85, 0xb07a48);
+      plain();
+      bx(6, 0, 6, 12, 72, 12, 0x5b3d22);
+      bx(138, 0, 6, 144, 72, 12, 0x5b3d22);
+      bx(6, 0, 73, 12, 72, 79, 0x5b3d22);
+      bx(138, 0, 73, 144, 72, 79, 0x5b3d22);
+   }
    cyl(75, 76, 42, 16, 20, 7, 12, 0xe9edc9);
    ball(70, 85, 40, 5, 5, 5, 3, 0xe63946);
    ball(80, 85, 45, 5, 5, 5, 3, 0xf4a261);
@@ -690,11 +703,14 @@ static void living(void)
       bx(i * 9, 0, 0, i * 9 + 6, 60, 8, 0xf2f2f2);
    /* a sideboard by the dining table, a side table and a pouf by the sofa, a big plant by the TV */
    at(50, 0, 430, 3072);
-   mat(TEX3D_WOOD, 100);
-   bx(0, 0, 0, 170, 80, 44, 0x6b4423);
-   plain();
-   for (i = 0; i < 3; i++)
-      bx(4 + i * 55, 6, -1, 56 + i * 55, 76, 0, 0x7a5030);
+   if (!piece("sideboard", FACE_MZ, 0, 0, 0, 170, 80, 44))
+   {
+      mat(TEX3D_WOOD, 100);
+      bx(0, 0, 0, 170, 80, 44, 0x6b4423);
+      plain();
+      for (i = 0; i < 3; i++)
+         bx(4 + i * 55, 6, -1, 56 + i * 55, 76, 0, 0x7a5030);
+   }
    at(28, 80, 550, 0);
    plant_pot(14, 0xe9edc9, 4);
    at(22, 80, 470, 0);
@@ -747,6 +763,8 @@ static void base_run_z(int32_t x0, int32_t x1, int32_t z0, int32_t z1, uint32_t 
 static void stool(int32_t x, int32_t z, int32_t h, uint32_t seat)
 {
    at(x, 0, z, 0);
+   if (piece("stool", FACE_MZ, -17, 0, -17, 17, h, 17))
+      return;
    cyl(0, 0, 0, 14, 14, 3, 10, 0x333333);
    cyl(0, 3, 0, 2, 2, h - 6, 6, 0x333333);
    cyl(0, h - 30, 0, 12, 12, 2, 10, 0x333333); /* the foot ring */
@@ -1199,11 +1217,16 @@ static void bathroom(void)
    }
    cyl(52, 0, 30, 6, 6, 30, 8, 0xffffff);        /* a toilet brush */
    at(514, 0, 512, 0);
-   bx(0, 0, 0, 80, 80, 45, 0x6c757d);            /* the sink's cupboard, beside the toilet (the door is east of it) */
-   bx(-4, 80, -4, 84, 86, 49, 0xf8f9fa);
-   bx(16, 84, 10, 64, 86, 38, 0xdfe7ec);
-   cyl(40, 86, 6, 2, 2, 18, 6, 0xc0c0c0);
-   cyl(10, 86, 30, 3, 3, 12, 6, 0x90e0ef);       /* a toothbrush cup */
+   if (piece("sink", FACE_PZ | NO_SOLID, 5, 0, 0, 75, 100, 45)) /* the sink, beside the toilet (the door is east of it) */
+      r3d_solid_box(CM(30), 0, 0, CM(50), CM(25), CM(20)); /* its pipe, against the wall */
+   else
+   {
+      bx(0, 0, 0, 80, 80, 45, 0x6c757d);
+      bx(-4, 80, -4, 84, 86, 49, 0xf8f9fa);
+      bx(16, 84, 10, 64, 86, 38, 0xdfe7ec);
+      cyl(40, 86, 6, 2, 2, 18, 6, 0xc0c0c0);
+      cyl(10, 86, 30, 3, 3, 12, 6, 0x90e0ef);    /* a toothbrush cup */
+   }
    at(514, 0, 506, 0);
    bx(0, 110, 0, 80, 190, 2, 0x9a9a9a);           /* the mirror */
    r3d_glow(180);

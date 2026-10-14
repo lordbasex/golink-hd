@@ -594,6 +594,60 @@
    "page": "https://poly.pizza/m/uJDWrSJGVH",
    "url": "https://static.poly.pizza/2e1ab34a-eab6-4751-930f-6e3b4f5319a8.glb",
    "file": "models/desk_lamp.glb"
+  },
+  "tv_unit": {
+   "title": "Ultimate House Interior Pack: Drawer_2",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/node/126986",
+   "url": "https://opengameart.org/sites/default/files/ultimate_house_interior_pack_-_june_2020.zip",
+   "zip": "models/ultimate_house_interior_pack_-_june_2020.zip",
+   "file": "models/ultimate_house_interior_pack_-_june_2020/Ultimate House Interior Pack - June 2020/OBJ/Drawer_2.obj"
+  },
+  "sideboard": {
+   "title": "Ultimate House Interior Pack: Drawer_1",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/node/126986",
+   "url": "https://opengameart.org/sites/default/files/ultimate_house_interior_pack_-_june_2020.zip",
+   "zip": "models/ultimate_house_interior_pack_-_june_2020.zip",
+   "file": "models/ultimate_house_interior_pack_-_june_2020/Ultimate House Interior Pack - June 2020/OBJ/Drawer_1.obj"
+  },
+  "dining_table": {
+   "title": "Ultimate House Interior Pack: Table_RoundLarge",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/node/126986",
+   "url": "https://opengameart.org/sites/default/files/ultimate_house_interior_pack_-_june_2020.zip",
+   "zip": "models/ultimate_house_interior_pack_-_june_2020.zip",
+   "file": "models/ultimate_house_interior_pack_-_june_2020/Ultimate House Interior Pack - June 2020/OBJ/Table_RoundLarge.obj"
+  },
+  "floor_lamp": {
+   "title": "Ultimate House Interior Pack: Light_Stand1",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/node/126986",
+   "url": "https://opengameart.org/sites/default/files/ultimate_house_interior_pack_-_june_2020.zip",
+   "zip": "models/ultimate_house_interior_pack_-_june_2020.zip",
+   "file": "models/ultimate_house_interior_pack_-_june_2020/Ultimate House Interior Pack - June 2020/OBJ/Light_Stand1.obj"
+  },
+  "stool": {
+   "title": "Ultimate House Interior Pack: Stool",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/node/126986",
+   "url": "https://opengameart.org/sites/default/files/ultimate_house_interior_pack_-_june_2020.zip",
+   "zip": "models/ultimate_house_interior_pack_-_june_2020.zip",
+   "file": "models/ultimate_house_interior_pack_-_june_2020/Ultimate House Interior Pack - June 2020/OBJ/Stool.obj"
+  },
+  "sink": {
+   "title": "Ultimate House Interior Pack: Bathroom_Sink",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/node/126986",
+   "url": "https://opengameart.org/sites/default/files/ultimate_house_interior_pack_-_june_2020.zip",
+   "zip": "models/ultimate_house_interior_pack_-_june_2020.zip",
+   "file": "models/ultimate_house_interior_pack_-_june_2020/Ultimate House Interior Pack - June 2020/OBJ/Bathroom_Sink.obj"
   }
  }
 }

@@ -68,3 +68,9 @@ and, for the music, looped and stored as IMA ADPCM.
 | model `mouse` | Computer Mouse | CreativeTrio | CC0 1.0 | https://poly.pizza/m/V2Ebx3pvo4 |
 | model `computer` | Computer | CreativeTrio | CC0 1.0 | https://poly.pizza/m/7KNoiQlSxi |
 | model `desk_lamp` | Light Desk | Quaternius | CC0 1.0 | https://poly.pizza/m/uJDWrSJGVH |
+| model `tv_unit` | Ultimate House Interior Pack: Drawer_2 | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
+| model `sideboard` | Ultimate House Interior Pack: Drawer_1 | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
+| model `dining_table` | Ultimate House Interior Pack: Table_RoundLarge | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
+| model `floor_lamp` | Ultimate House Interior Pack: Light_Stand1 | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
+| model `stool` | Ultimate House Interior Pack: Stool | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
+| model `sink` | Ultimate House Interior Pack: Bathroom_Sink | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
