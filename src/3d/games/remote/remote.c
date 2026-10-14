@@ -13,6 +13,14 @@
  * pose until it ends or the button is pressed again. Work at the desk adds
  * hours and costs energy; the rest gives energy (most of it) and points,
  * less after the second time. The desk's screens scroll code while working.
+ *
+ * Phase 3, the day: a clock from 09:00 to 18:00, the boss's suspicion
+ * (away from the desk, asleep on the keyboard, events missed), the boss's
+ * events (the worker must be at the desk in time, then stays on the call
+ * while the boss hears the house), the house's events (a delivery, the cat
+ * on the keyboard, a drill, no internet, the flatmate home early), the cat
+ * wandering the house, the phone with the last messages, and the day's end:
+ * fired, hours missed or survived, with its score.
  */
 #include <stdio.h>
 #include <string.h>
@@ -21,10 +29,12 @@
 #include "text.h"
 #include "r3d.h"
 #include "actor3d.h"
+#include "pet3d.h"
 #include "play3d.h"
 #include "room3d.h"
 
 #define CM(n) FX_FRAC(n, 100)
+#define FPM REMOTE_FRAMES_PER_MINUTE
 
 HD_GAME3D_FITS(hd_remote);
 
@@ -42,25 +52,80 @@ typedef struct
    int32_t pose;             /* P_* */
    int32_t minutes;          /* game minutes it takes, 0: until it is stopped */
    int32_t energy, points;   /* what it gives when done whole */
-   int32_t noisy;            /* the boss hears it during a call (phase 3) */
 } activity;
 
 static const activity activities[RA_COUNT] = {
-   [RA_WORK] = { 950, 1035, 950, 0, 1110, FACE_NORTH + 200, P_SIT | P_TYPE, 0, 0, 0, 0 },
-   [RA_NAP] = { 255, 1010, 115, 58, 1010, FACE_EAST, P_LIE, 30, 400, 300, 0 },
-   [RA_COFFEE] = { 1495, 105, 1495, 0, 105, FACE_EAST, P_HOLD, 3, 120, 30, 1 },
-   [RA_COOK] = { 1450, 108, 1450, 0, 108, FACE_SOUTH, P_HOLD, 25, 300, 250, 1 },
-   [RA_FRIDGE] = { 1485, 520, 1485, 0, 520, FACE_EAST, P_HOLD, 5, 80, 60, 0 },
-   [RA_EAT] = { 971, 300, 971, 0, 236, FACE_SOUTH, P_SIT | P_HOLD, 20, 250, 200, 0 },
-   [RA_SERIES] = { 605, 130, 515, 0, 130, FACE_EAST, P_SIT, 25, 100, 250, 1 },
-   [RA_CONSOLE] = { 1375, 950, 1375, 0, 1030, FACE_NORTH, P_SIT | P_HOLD, 20, -50, 350, 1 },
-   [RA_GUITAR] = { 1470, 1170, 1470, 0, 1170, FACE_SOUTH, P_HOLD, 15, 50, 220, 1 },
-   [RA_SUN] = { 650, -60, 640, 38, -138, FACE_WEST, P_LIE, 15, 150, 200, 0 },
-   [RA_PLANTS] = { 440, -135, 440, 0, -135, FACE_SOUTH, P_HOLD, 5, 0, 80, 0 },
-   [RA_SHOWER] = { 590, 1060, 590, 30, 1175, FACE_SOUTH, P_STAND, 15, 200, 150, 1 },
-   [RA_WASHING] = { 120, 700, 120, 0, 700, FACE_WEST, P_CROUCH, 5, 0, 100, 1 },
+   [RA_WORK] = { 950, 1035, 950, 0, 1110, FACE_NORTH + 200, P_SIT | P_TYPE, 0, 0, 0 },
+   [RA_NAP] = { 255, 1010, 115, 58, 1010, FACE_EAST, P_LIE, 30, 400, 300 },
+   [RA_COFFEE] = { 1495, 105, 1495, 0, 105, FACE_EAST, P_HOLD, 3, 120, 30 },
+   [RA_COOK] = { 1450, 108, 1450, 0, 108, FACE_SOUTH, P_HOLD, 25, 300, 250 },
+   [RA_FRIDGE] = { 1485, 520, 1485, 0, 520, FACE_EAST, P_HOLD, 5, 80, 60 },
+   [RA_EAT] = { 971, 300, 971, 0, 236, FACE_SOUTH, P_SIT | P_HOLD, 20, 250, 200 },
+   [RA_SERIES] = { 605, 130, 515, 0, 130, FACE_EAST, P_SIT, 25, 100, 250 },
+   [RA_CONSOLE] = { 1375, 950, 1375, 0, 1030, FACE_NORTH, P_SIT | P_HOLD, 20, -50, 350 },
+   [RA_GUITAR] = { 1470, 1170, 1470, 0, 1170, FACE_SOUTH, P_HOLD, 15, 50, 220 },
+   [RA_SUN] = { 650, -60, 640, 38, -138, FACE_WEST, P_LIE, 15, 150, 200 },
+   [RA_PLANTS] = { 440, -135, 440, 0, -135, FACE_SOUTH, P_HOLD, 5, 0, 80 },
+   [RA_SHOWER] = { 590, 1060, 590, 30, 1175, FACE_SOUTH, P_STAND, 15, 200, 150 },
+   [RA_WASHING] = { 120, 700, 120, 0, 700, FACE_WEST, P_CROUCH, 5, 0, 100 },
+   [RA_DOOR] = { 1540, 730, 1540, 0, 730, FACE_WEST, P_HOLD, 2, 0, 100 },
+   [RA_CAT] = { 0, 0, 0, 0, 0, 0, P_CROUCH, 3, 60, 50 },   /* where the cat is */
+   [RA_PHONES] = { 880, 1100, 880, 0, 1100, FACE_NORTH, P_HOLD, 1, 0, 0 },
 };
 #define REACH CM(75) /* how near the place the prompt shows */
+
+/* ---- the boss's events: limit to answer (real seconds; the meeting waits until 10:00), the call's length, suspicion ---- */
+
+static const struct
+{
+   int32_t seconds, minutes, missed, answered;
+} boss_events[RE_BOSS_KINDS] = {
+   [RE_MEETING] = { 0, 15, 250, 80 },
+   [RE_CALL] = { 45, 10, 300, 100 },
+   [RE_MESSAGE] = { 30, 0, 150, 50 },
+   [RE_SHARE] = { 20, 5, 200, 80 },
+};
+#define MEETING_WARN 40 /* 09:40: the meeting is announced */
+#define MEETING_AT 60   /* 10:00 */
+
+/* ---- the cat's spots: the floor next to it, where it rests (y over the floor), its facing and whether it lies ---- */
+
+enum { SPOT_RUG = 0, SPOT_BED, SPOT_SUN, SPOT_KITCHEN, SPOT_GAMES, SPOT_WANDER, SPOT_KEYS = SPOT_WANDER, SPOT_COUNT };
+static const struct
+{
+   int32_t fx, fz, rx, ry, rz, yaw, lie;
+} cat_spots[SPOT_COUNT] = {
+   [SPOT_RUG] = { 760, 200, 760, 0, 200, FACE_EAST, 1 },
+   [SPOT_BED] = { 250, 1060, 160, 60, 1050, FACE_EAST + 300, 1 },
+   [SPOT_SUN] = { 330, -100, 330, 0, -100, FACE_SOUTH, 1 },
+   [SPOT_KITCHEN] = { 1300, 520, 1300, 0, 520, FACE_EAST, 0 },
+   [SPOT_GAMES] = { 1275, 1100, 1275, 0, 1100, FACE_SOUTH, 1 },
+   [SPOT_KEYS] = { 880, 1070, 940, 79, 1192, FACE_SOUTH, 1 },
+};
+#define CAT_HOP 20                 /* frames of a jump up or down */
+#define CAT_SPEED FX_FRAC(11, 1000) /* 0.66 m/s */
+
+/* ---- the flatmate's spots ---- */
+
+static const int32_t mate_spots[][2] = { { 1300, 550 }, { 690, 250 }, { 800, 725 }, { 900, 990 }, { 1300, 960 } };
+#define MATE_SPOTS ((int32_t)(sizeof mate_spots / sizeof mate_spots[0]))
+#define MATE_SPEED FX_FRAC(20, 1000) /* 1.2 m/s */
+#define MATE_ROOM CM(55)             /* the worker cannot walk through it */
+
+int32_t remote_place(int32_t kind, int32_t a, int32_t *x, int32_t *z)
+{
+   if (kind == REMOTE_PLACE_ACTIVITY && a >= 0 && a < RA_COUNT && a != RA_CAT)
+      *x = activities[a].ux, *z = activities[a].uz;
+   else if (kind == REMOTE_PLACE_ACTIVITY && a == RA_CAT)
+      *x = cat_spots[SPOT_RUG].fx, *z = cat_spots[SPOT_RUG].fz; /* it moves: one of its spots */
+   else if (kind == REMOTE_PLACE_CAT && a >= 0 && a < SPOT_COUNT)
+      *x = cat_spots[a].fx, *z = cat_spots[a].fz;
+   else if (kind == REMOTE_PLACE_MATE && a >= 0 && a < MATE_SPOTS)
+      *x = mate_spots[a][0], *z = mate_spots[a][1];
+   else
+      return 0;
+   return 1;
+}
 
 /* Where the worker can walk: the house and its terrace, never out of the front door (the grid ends at the outer walls). */
 static void ready(void)
@@ -95,6 +160,37 @@ static r3d_vec ahead(const hd_remote *g)
    return t;
 }
 
+static int64_t dist2(int32_t ax, int32_t az, int32_t bx, int32_t bz)
+{
+   int64_t dx = (int64_t)ax - bx, dz = (int64_t)az - bz;
+   return dx * dx + dz * dz;
+}
+
+/* Where the worker stands to pet the cat: beside it, or by the furniture it rests on. */
+static void cat_floor(const hd_remote *g, int32_t *x, int32_t *z)
+{
+   if (g->cat_y > 0)
+      *x = ROOM3D_AT(cat_spots[g->cat_spot].fx), *z = ROOM3D_AT(cat_spots[g->cat_spot].fz);
+   else
+      *x = g->cat_x, *z = g->cat_z;
+}
+
+/* Whether an activity can be started now (some only exist while their event lasts). */
+static int available(const hd_remote *g, int32_t a)
+{
+   switch (a)
+   {
+   case RA_DOOR:
+      return g->bell_t > 0;
+   case RA_CAT:
+      return g->cat_mode == CAT_REST && !g->cat_keys;
+   case RA_PHONES:
+      return g->drill_t > 0 && !g->headphones;
+   default:
+      return 1;
+   }
+}
+
 /* The activity whose place is nearest within reach, or -1. */
 static int32_t in_reach(const hd_remote *g)
 {
@@ -102,8 +198,13 @@ static int32_t in_reach(const hd_remote *g)
    int64_t best_d = (int64_t)REACH * REACH;
    for (i = 0; i < RA_COUNT; i++)
    {
-      int64_t dx = (int64_t)g->x - ROOM3D_AT(activities[i].ux), dz = (int64_t)g->z - ROOM3D_AT(activities[i].uz);
-      int64_t d = dx * dx + dz * dz;
+      int32_t ux = ROOM3D_AT(activities[i].ux), uz = ROOM3D_AT(activities[i].uz);
+      int64_t d;
+      if (!available(g, i))
+         continue;
+      if (i == RA_CAT)
+         cat_floor(g, &ux, &uz);
+      d = dist2(g->x, g->z, ux, uz);
       if (d <= best_d)
          best_d = d, best = i;
    }
@@ -117,17 +218,46 @@ static void toast(hd_remote *g, int32_t text, int32_t points)
    g->toast_points = points;
 }
 
+/* A message on the phone. */
+static void phone(hd_remote *g, int32_t who, int32_t text)
+{
+   int32_t i = g->phone_n % REMOTE_PHONE;
+   g->phone_text[i] = text;
+   g->phone_who[i] = who;
+   g->phone_min[i] = hd_min(g->t / FPM, REMOTE_DAY_MINUTES);
+   g->phone_n = hd_min(g->phone_n + 1, 1 << 30);
+   g->phone_new_t = 240;
+}
+
+static void suspect(hd_remote *g, int32_t by)
+{
+   g->suspicion = hd_clamp(g->suspicion + by, 0, REMOTE_SUSPICION_MAX);
+}
+
+static int at_desk(const hd_remote *g)
+{
+   return g->act == RA_WORK + 1;
+}
+
 static void start(hd_remote *g, int32_t a)
 {
    const activity *v = &activities[a];
    g->act = a + 1;
    g->act_t = 0;
    g->act_gain = 0;
+   g->speed = 0;
+   g->walk = 0;
+   if (a == RA_CAT)
+   {
+      /* right where the worker stands, facing the cat */
+      g->yaw = (play3d_angle(g->cat_x - g->x, g->cat_z - g->z) + ANGLE_FULL / 2) & (ANGLE_FULL - 1);
+      return;
+   }
+   if (a == RA_DOOR)
+      g->bell_t = 0, g->bell_owed = 0;
    g->x = ROOM3D_AT(v->ax);
    g->z = ROOM3D_AT(v->az);
    g->yaw = v->ayaw & (ANGLE_FULL - 1);
-   g->speed = 0;
-   g->walk = 0;
 }
 
 /* The activity ends: whole (it ran its time) or stopped early (a share of its points). */
@@ -137,12 +267,12 @@ static void finish(hd_remote *g, int whole)
    const activity *v = &activities[a];
    if (a == RA_WORK)
    {
-      if (g->act_t >= 30 * REMOTE_FRAMES_PER_MINUTE)
+      if (g->act_t >= 30 * FPM)
          toast(g, RT_DONE + a, 0);
    }
    else
    {
-      int32_t total = v->minutes * REMOTE_FRAMES_PER_MINUTE;
+      int32_t total = v->minutes * FPM;
       int32_t pts = whole ? v->points : (int32_t)((int64_t)v->points * g->act_t / hd_max(1, total));
       int32_t again = g->done[a] >= REMOTE_REPEAT_FULL;
       if (again)
@@ -150,33 +280,411 @@ static void finish(hd_remote *g, int whole)
       g->points += pts;
       if (whole || g->act_t * 2 >= total)
          g->done[a]++;
-      toast(g, again ? RT_AGAIN : RT_DONE + a, pts);
+      toast(g, again && pts ? RT_AGAIN : RT_DONE + a, pts);
+      if (whole && a == RA_WASHING)
+      {
+         g->washer_t = REMOTE_WASHER_MINUTES * FPM;
+         phone(g, RW_HOUSE, RT_WASHER);
+      }
+      if (whole && a == RA_PHONES)
+         g->headphones = 1;
    }
    g->act = 0;
-   g->x = ROOM3D_AT(v->ux);
-   g->z = ROOM3D_AT(v->uz);
+   if (a != RA_CAT)
+   {
+      g->x = ROOM3D_AT(v->ux);
+      g->z = ROOM3D_AT(v->uz);
+   }
+}
+
+/* ---- the cat ---- */
+
+static void cat_leave(hd_remote *g, int32_t goal)
+{
+   g->cat_goal = goal;
+   g->cat_mode = g->cat_y > 0 ? CAT_DOWN : CAT_WALK;
+   g->cat_t = CAT_HOP;
+}
+
+/* The worker takes the cat off the keyboard: it jumps down, offended, and goes somewhere else. */
+static void cat_off(hd_state *s, hd_remote *g)
+{
+   g->cat_keys = 0;
+   g->cat_keys_t = 0;
+   cat_leave(g, rng_range(&s->rng, SPOT_WANDER));
+   toast(g, RT_CAT_MOVED, 0);
+}
+
+static void cat_step(hd_state *s, hd_remote *g)
+{
+   int32_t gx = ROOM3D_AT(cat_spots[g->cat_goal].fx), gz = ROOM3D_AT(cat_spots[g->cat_goal].fz);
+   switch (g->cat_mode)
+   {
+   case CAT_REST:
+      g->cat_walk = 0;
+      if (g->cat_keys == 2)
+      {
+         /* on the keyboard: after a while it types something to the boss and logs the worker off */
+         if (++g->cat_keys_t == REMOTE_CAT_LOGOFF && !g->cat_logged)
+         {
+            g->cat_logged = 1;
+            phone(g, RW_CAT, RT_CAT_TYPED);
+            phone(g, RW_BOSS, RT_CAT_LOGOFF);
+            suspect(g, REMOTE_NOISE);
+         }
+      }
+      else if (g->act == RA_CAT + 1)
+         break; /* being petted: it stays */
+      else if (g->cat_keys == 1)
+         cat_leave(g, SPOT_KEYS); /* the keyboard calls */
+      else if (--g->cat_t <= 0)
+      {
+         int32_t next = rng_range(&s->rng, SPOT_WANDER - 1);
+         cat_leave(g, next >= g->cat_spot ? next + 1 : next);
+      }
+      break;
+   case CAT_UP:
+   case CAT_DOWN:
+   {
+      /* a jump between the floor beside a spot and the spot: an arc 30 cm over the higher end */
+      int32_t sp = g->cat_mode == CAT_UP ? g->cat_goal : g->cat_spot;
+      int32_t f = (CAT_HOP - g->cat_t) * 256 / CAT_HOP, k = g->cat_mode == CAT_UP ? f : 256 - f;
+      int32_t fx = ROOM3D_AT(cat_spots[sp].fx), fz = ROOM3D_AT(cat_spots[sp].fz), rx = ROOM3D_AT(cat_spots[sp].rx), rz = ROOM3D_AT(cat_spots[sp].rz);
+      g->cat_x = fx + (int32_t)((int64_t)(rx - fx) * k / 256);
+      g->cat_z = fz + (int32_t)((int64_t)(rz - fz) * k / 256);
+      g->cat_y = (int32_t)((int64_t)CM(cat_spots[sp].ry) * k / 256) + (int32_t)((int64_t)CM(30) * f * (256 - f) / 16384);
+      g->cat_yaw = (play3d_angle(rx - fx, rz - fz) + (g->cat_mode == CAT_UP ? ANGLE_FULL / 2 : 0)) & (ANGLE_FULL - 1);
+      if (--g->cat_t > 0)
+         break;
+      if (g->cat_mode == CAT_DOWN)
+      {
+         g->cat_y = 0;
+         g->cat_mode = CAT_WALK;
+         break;
+      }
+      g->cat_spot = g->cat_goal;
+      g->cat_y = CM(cat_spots[sp].ry);
+      g->cat_mode = CAT_REST;
+      g->cat_yaw = cat_spots[sp].yaw & (ANGLE_FULL - 1);
+      g->cat_t = (20 + rng_range(&s->rng, 25)) * 60;
+      if (g->cat_goal == SPOT_KEYS && g->cat_keys == 1)
+      {
+         g->cat_keys = 2;
+         g->cat_keys_t = 0;
+         phone(g, RW_HOUSE, RT_CAT_KEYS);
+      }
+      break;
+   }
+   default:
+   {
+      int32_t dx, dz;
+      if (g->cat_keys == 1 && g->cat_goal != SPOT_KEYS)
+      {
+         g->cat_goal = SPOT_KEYS;
+         gx = ROOM3D_AT(cat_spots[SPOT_KEYS].fx), gz = ROOM3D_AT(cat_spots[SPOT_KEYS].fz);
+      }
+      if (dist2(g->cat_x, g->cat_z, gx, gz) < (int64_t)CM(8) * CM(8) || !play3d_route(0, g->cat_x, g->cat_z, gx, gz, &dx, &dz))
+      {
+         int32_t sp = g->cat_goal;
+         g->cat_x = gx, g->cat_z = gz;
+         g->cat_walk = 0;
+         if (cat_spots[sp].ry || cat_spots[sp].rx != cat_spots[sp].fx || cat_spots[sp].rz != cat_spots[sp].fz)
+         {
+            g->cat_mode = CAT_UP;
+            g->cat_t = CAT_HOP;
+         }
+         else
+         {
+            g->cat_mode = CAT_UP; /* the same arrival, without a jump */
+            g->cat_t = 1;
+         }
+         break;
+      }
+      g->cat_yaw = play3d_turn(g->cat_yaw, (play3d_angle(dx, dz) + ANGLE_FULL / 2) & (ANGLE_FULL - 1), 160);
+      play3d_move(&g->cat_x, &g->cat_z, (int32_t)(((int64_t)CAT_SPEED * dx) >> 14), (int32_t)(((int64_t)CAT_SPEED * dz) >> 14), CM(12));
+      g->cat_walk = 16384;
+      g->cat_phase = (g->cat_phase + 150) & (ANGLE_FULL - 1);
+      break;
+   }
+   }
+}
+
+/* ---- the flatmate ---- */
+
+static void mate_step(hd_state *s, hd_remote *g)
+{
+   int32_t gx = ROOM3D_AT(mate_spots[g->mate_goal][0]), gz = ROOM3D_AT(mate_spots[g->mate_goal][1]), dx, dz;
+   int64_t near = dist2(g->mate_x, g->mate_z, g->x, g->z);
+   if (g->mate_talk_t > 0)
+      g->mate_talk_t--;
+   else if (near < (int64_t)FX(2) * FX(2))
+   {
+      /* it talks to the worker whenever it is near */
+      phone(g, RW_MATE, RT_MATE_TALK + rng_range(&s->rng, 4));
+      g->mate_talk_t = 20 * 60;
+   }
+   g->mate_walk = 0;
+   if (g->mate_t > 0)
+   {
+      g->mate_t--;
+      return;
+   }
+   if (dist2(g->mate_x, g->mate_z, gx, gz) < (int64_t)CM(10) * CM(10) || !play3d_route(1, g->mate_x, g->mate_z, gx, gz, &dx, &dz))
+   {
+      int32_t next = rng_range(&s->rng, MATE_SPOTS - 1);
+      g->mate_goal = next >= g->mate_goal ? next + 1 : next;
+      g->mate_t = (15 + rng_range(&s->rng, 20)) * 60;
+      return;
+   }
+   g->mate_yaw = play3d_turn(g->mate_yaw, (play3d_angle(dx, dz) + ANGLE_FULL / 2) & (ANGLE_FULL - 1), 140);
+   if (near < (int64_t)(MATE_ROOM + CM(10)) * (MATE_ROOM + CM(10)))
+      return; /* the worker is in the way: it waits */
+   play3d_move(&g->mate_x, &g->mate_z, (int32_t)(((int64_t)MATE_SPEED * dx) >> 14), (int32_t)(((int64_t)MATE_SPEED * dz) >> 14), PLAY3D_ROUTE_RADIUS);
+   g->mate_walk = 16384;
+   g->mate_phase = (g->mate_phase + 72) & (ANGLE_FULL - 1);
+}
+
+/* ---- the day ---- */
+
+static void end_day(hd_remote *g, int32_t how)
+{
+   int32_t worked = g->work / REMOTE_WORK_UNIT;
+   g->over = how;
+   g->over_t = 0;
+   if (how == REND_FIRED)
+   {
+      g->score = g->points;
+      phone(g, RW_BOSS, RT_END_FIRED_MSG);
+   }
+   else if (how == REND_MISSED)
+      g->score = g->points / 2;
+   else
+      g->score = g->points + 1000 + (REMOTE_SUSPICION_MAX - g->suspicion) - 2 * hd_max(0, worked - REMOTE_OVERTIME);
+}
+
+/* The day's events, from the seed: the meeting, 3 to 5 more from the boss and 2 to 4 from the house, spread from 10:15 to 17:35. */
+static void plan_day(hd_state *s, hd_remote *g)
+{
+   int32_t kinds[REMOTE_EVENTS_MAX], house[RE_KINDS - RE_BOSS_KINDS], nb, nr, n, i, span;
+   nb = 3 + rng_range(&s->rng, 3);
+   nr = 2 + rng_range(&s->rng, 3);
+   for (i = 0; i < RE_KINDS - RE_BOSS_KINDS; i++)
+      house[i] = RE_BOSS_KINDS + i;
+   for (i = RE_KINDS - RE_BOSS_KINDS - 1; i > 0; i--)
+   {
+      int32_t j = rng_range(&s->rng, i + 1), t = house[i];
+      house[i] = house[j], house[j] = t;
+   }
+   n = 0;
+   for (i = 0; i < nb; i++)
+      kinds[n++] = RE_CALL + rng_range(&s->rng, RE_BOSS_KINDS - 1);
+   for (i = 0; i < nr; i++)
+      kinds[n++] = house[i];
+   for (i = n - 1; i > 0; i--)
+   {
+      int32_t j = rng_range(&s->rng, i + 1), t = kinds[i];
+      kinds[i] = kinds[j], kinds[j] = t;
+   }
+   g->ev_kind[0] = RE_MEETING;
+   g->ev_at[0] = MEETING_WARN;
+   span = (515 - 75) / n;
+   for (i = 0; i < n; i++)
+   {
+      g->ev_kind[i + 1] = kinds[i];
+      g->ev_at[i + 1] = 75 + i * span + rng_range(&s->rng, span - 10);
+   }
+   g->ev_count = n + 1;
+}
+
+static void fire(hd_state *s, hd_remote *g, int32_t kind)
+{
+   if (kind < RE_BOSS_KINDS)
+   {
+      g->boss = kind + 1;
+      g->boss_call = 0;
+      g->boss_t = kind == RE_MEETING ? hd_max(10 * 60, (MEETING_AT - g->t / FPM) * FPM) : boss_events[kind].seconds * 60;
+      g->boss_limit = g->boss_t;
+      phone(g, RW_BOSS, RT_BOSS_ASK + kind * 2 + rng_range(&s->rng, 2));
+      return;
+   }
+   switch (kind)
+   {
+   case RE_DELIVERY:
+      g->bell_t = REMOTE_BELL_FRAMES;
+      phone(g, RW_HOUSE, RT_BELL);
+      break;
+   case RE_CAT:
+      g->cat_keys = 1; /* it goes as soon as it can (cat_step) */
+      g->cat_logged = 0;
+      break;
+   case RE_DRILL:
+      g->drill_t = REMOTE_DRILL_MINUTES * FPM;
+      phone(g, RW_HOUSE, RT_DRILL);
+      break;
+   case RE_NET:
+      g->net_t = REMOTE_NET_MINUTES * FPM;
+      phone(g, RW_HOUSE, RT_NET);
+      break;
+   default:
+      g->mate = 1;
+      g->mate_x = ROOM3D_AT(1540), g->mate_z = ROOM3D_AT(730);
+      g->mate_yaw = FACE_WEST;
+      g->mate_goal = 2;
+      g->mate_t = 0;
+      g->mate_talk_t = 0;
+      phone(g, RW_MATE, RT_MATE_HOME);
+      break;
+   }
+}
+
+/* What the boss hears on a call, once each: the house's noises (and snoring). */
+static void on_call(hd_remote *g)
+{
+   static const int32_t rise[5] = { REMOTE_NOISE, REMOTE_NOISE, REMOTE_NOISE, 0, REMOTE_NOISE };
+   int32_t heard[5], i;
+   heard[0] = g->washer_t > 0;
+   heard[1] = g->bell_owed;
+   heard[2] = g->mate && g->mate_x > ROOM3D_AT(750) && g->mate_x < ROOM3D_AT(1150) && g->mate_z > ROOM3D_AT(800);
+   heard[3] = g->drill_t > 0 && !g->headphones;
+   heard[4] = g->energy < REMOTE_WORK_ASLEEP;
+   for (i = 0; i < 5; i++)
+      if (heard[i] && !(g->boss_noise & (1 << i)))
+      {
+         g->boss_noise |= 1 << i;
+         if (i == 1)
+         {
+            phone(g, RW_HOUSE, RT_BELL);
+            g->bell_owed = 0;
+         }
+         phone(g, RW_BOSS, RT_HEARD + i);
+         suspect(g, rise[i]);
+      }
+}
+
+static void day(hd_state *s, hd_remote *g)
+{
+   int minute = (g->t % FPM) == FPM - 1;
+   /* the events whose time came; the boss's wait while another one is under way or the internet is down */
+   if (g->ev_next < g->ev_count && g->t >= g->ev_at[g->ev_next] * FPM)
+   {
+      int32_t kind = g->ev_kind[g->ev_next];
+      if (kind < RE_BOSS_KINDS && (g->boss || g->net_t))
+         g->ev_at[g->ev_next] += 5;
+      else
+      {
+         fire(s, g, kind);
+         g->ev_next++;
+      }
+   }
+   /* the boss event under way: waiting for the worker at the desk, then the call */
+   if (g->boss)
+   {
+      int32_t kind = g->boss - 1;
+      if (!g->boss_call)
+      {
+         if (at_desk(g) && g->energy >= REMOTE_WORK_ASLEEP)
+         {
+            suspect(g, -boss_events[kind].answered);
+            phone(g, RW_YOU, RT_BOSS_YES + kind);
+            if (boss_events[kind].minutes)
+            {
+               g->boss_call = 1;
+               g->boss_t = boss_events[kind].minutes * FPM;
+               g->boss_noise = 0;
+            }
+            else
+               g->boss = 0;
+         }
+         else if (--g->boss_t <= 0)
+         {
+            suspect(g, boss_events[kind].missed);
+            phone(g, RW_BOSS, RT_BOSS_MISS + kind);
+            g->boss = 0;
+         }
+      }
+      else
+      {
+         on_call(g);
+         if (--g->boss_t <= 0)
+            g->boss = 0, g->boss_call = 0;
+      }
+   }
+   /* the house's timers */
+   if (g->bell_t > 0 && --g->bell_t == 0)
+   {
+      g->bell_owed = 1;
+      phone(g, RW_HOUSE, RT_BELL_GONE);
+   }
+   if (g->drill_t > 0 && --g->drill_t == 0)
+      phone(g, RW_HOUSE, RT_DRILL_END);
+   if (g->net_t > 0 && --g->net_t == 0)
+      phone(g, RW_HOUSE, RT_NET_BACK);
+   if (g->washer_t > 0)
+      g->washer_t--;
+   /* suspicion: away from the desk, asleep on it, or working (nobody watches while the internet is down) */
+   g->away_t = at_desk(g) ? 0 : hd_min(g->away_t + 1, 1 << 30);
+   if (minute && !g->net_t)
+   {
+      if (at_desk(g))
+         suspect(g, g->energy < REMOTE_WORK_ASLEEP ? REMOTE_ASLEEP_RISE : -REMOTE_WORK_CALM);
+      else if (g->away_t > REMOTE_AWAY_GRACE * FPM)
+         suspect(g, REMOTE_AWAY_RISE);
+   }
+   cat_step(s, g);
+   if (g->mate)
+      mate_step(s, g);
+   if (g->phone_new_t > 0)
+      g->phone_new_t--;
+   /* the end: fired at once, or 18:00 */
+   if (g->suspicion >= REMOTE_SUSPICION_MAX)
+      end_day(g, REND_FIRED);
+   else if (g->t + 1 >= REMOTE_DAY_MINUTES * FPM)
+      end_day(g, g->work / REMOTE_WORK_UNIT >= REMOTE_WORK_GOAL ? REND_SURVIVED : REND_MISSED);
+}
+
+/* The chat status the boss sees now. */
+static int32_t status(const hd_remote *g)
+{
+   if (g->net_t)
+      return RS_OFFLINE;
+   if (g->boss && g->boss_call)
+      return g->boss == RE_MEETING + 1 ? RS_MEETING : RS_CALL;
+   if (!at_desk(g) && g->away_t > REMOTE_AWAY_GRACE * FPM)
+      return RS_AWAY;
+   return RS_ONLINE;
 }
 
 /* One frame of an activity under way. */
-static void doing(hd_remote *g, int pressed)
+static void doing(hd_state *s, hd_remote *g, int pressed)
 {
    int32_t a = g->act - 1;
    const activity *v = &activities[a];
-   int minute = (g->t % REMOTE_FRAMES_PER_MINUTE) == REMOTE_FRAMES_PER_MINUTE - 1;
+   int minute = (g->t % FPM) == FPM - 1;
    g->act_t++;
    if (a == RA_WORK)
    {
-      /* full speed with energy, half when tired, nothing asleep on the keyboard */
+      /* full speed with energy, half when tired, nothing asleep on the keyboard, with the cat on it or without internet; the drill halves it */
       int32_t rate = g->energy > REMOTE_WORK_TIRED ? 2 : g->energy >= REMOTE_WORK_ASLEEP ? 1 : 0;
+      if (g->cat_keys == 2 || g->net_t)
+         rate = 0;
+      if (g->drill_t && !g->headphones)
+         rate /= 2;
       g->work += rate;
       g->screen_scroll += rate;
       if (minute)
          g->energy = hd_max(0, g->energy - REMOTE_WORK_DRAIN);
+      if (pressed)
+      {
+         if (g->cat_keys == 2)
+            cat_off(s, g);
+         else if (!g->boss_call)
+            finish(g, 0);
+      }
+      return;
    }
-   else
    {
       /* the energy comes as it goes, so stopping early keeps what was had */
-      int32_t total = v->minutes * REMOTE_FRAMES_PER_MINUTE;
+      int32_t total = v->minutes * FPM;
       int32_t want = (int32_t)((int64_t)v->energy * hd_min(g->act_t, total) / total);
       g->energy = hd_clamp(g->energy + want - g->act_gain, 0, REMOTE_ENERGY_MAX);
       g->act_gain = want;
@@ -205,6 +713,17 @@ void hd_remote_start(hd_state *s)
    g->cam_pitch = 620;
    g->cam_dist = REMOTE_CAM_DIST;
    g->energy = REMOTE_ENERGY_START;
+   /* the cat starts the day on the bed */
+   g->cat_spot = g->cat_goal = SPOT_BED;
+   g->cat_x = ROOM3D_AT(cat_spots[SPOT_BED].rx);
+   g->cat_z = ROOM3D_AT(cat_spots[SPOT_BED].rz);
+   g->cat_y = CM(cat_spots[SPOT_BED].ry);
+   g->cat_yaw = cat_spots[SPOT_BED].yaw;
+   g->cat_mode = CAT_REST;
+   g->cat_t = 40 * 60;
+   plan_day(s, g);
+   phone(g, RW_BOSS, RT_GREETING);
+   g->phone_new_t = 0;
    play3d_follow(target(g), ahead(g), g->cam_yaw, g->cam_pitch, REMOTE_CAM_DIST, &g->cam_dist, &g->cam_lift);
 }
 
@@ -215,6 +734,16 @@ void hd_remote_step(hd_state *s, const hd_input in[MAX_PLAYERS])
    int pressed = (b & ~g->buttons & PAD_JUMP) != 0;
    int32_t dx, dz, tilt, want, top;
    ready();
+   if (g->over)
+   {
+      /* the day is over: START (after a moment, so a held button does not skip it) starts another */
+      int again = (b & ~g->buttons & PAD_START) != 0 && g->over_t > 90;
+      g->buttons = b;
+      g->over_t = hd_min(g->over_t + 1, 1 << 30);
+      if (again)
+         hd_remote_start(s);
+      return;
+   }
    g->buttons = b;
    /* the camera: L and R or the right stick turn it, the right stick's up and down tilt it */
    if (b & PAD_L)
@@ -231,7 +760,7 @@ void hd_remote_step(hd_state *s, const hd_input in[MAX_PLAYERS])
    if (g->act)
    {
       g->prompt = 0;
-      doing(g, pressed);
+      doing(s, g, pressed);
    }
    else
    {
@@ -245,10 +774,15 @@ void hd_remote_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       g->speed += hd_clamp(want - g->speed, -REMOTE_ACCEL * 2, REMOTE_ACCEL);
       if (g->speed > 0)
       {
-         /* along where the worker faces (its face looks along -z of its own parts) */
+         /* along where the worker faces (its face looks along -z of its own parts); the flatmate is in the way */
          int32_t mx = (int32_t)(((int64_t)-g->speed * hd_sin(g->yaw)) >> 14);
          int32_t mz = (int32_t)(((int64_t)-g->speed * hd_cos(g->yaw)) >> 14);
-         if (!play3d_move(&g->x, &g->z, mx, mz, REMOTE_RADIUS))
+         int32_t ox = g->x, oz = g->z;
+         int moved = play3d_move(&g->x, &g->z, mx, mz, REMOTE_RADIUS);
+         if (moved && g->mate && dist2(g->x, g->z, g->mate_x, g->mate_z) < (int64_t)MATE_ROOM * MATE_ROOM &&
+             dist2(g->x, g->z, g->mate_x, g->mate_z) < dist2(ox, oz, g->mate_x, g->mate_z))
+            g->x = ox, g->z = oz, moved = 0;
+         if (!moved)
             g->speed /= 2; /* against a wall: no walking on the spot */
       }
       /* the legs follow the speed: a full walk at walking speed, longer strides running */
@@ -256,8 +790,14 @@ void hd_remote_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       g->phase = (g->phase + (int32_t)((int64_t)g->speed * 60 / REMOTE_WALK)) & (ANGLE_FULL - 1);
       g->prompt = in_reach(g) + 1;
       if (pressed && g->prompt)
-         start(g, g->prompt - 1);
+      {
+         if (g->prompt == RA_WORK + 1 && g->cat_keys == 2)
+            cat_off(s, g);
+         else
+            start(g, g->prompt - 1);
+      }
    }
+   day(s, g);
    play3d_follow(target(g), ahead(g), g->cam_yaw, g->cam_pitch, REMOTE_CAM_DIST, &g->cam_dist, &g->cam_lift);
    g->t++;
 }
@@ -282,28 +822,169 @@ static void bar(hd_surface *sf, int32_t x, int32_t y, int32_t w, int32_t full, u
    gfx_fill(sf, x + scale, y + scale, (int32_t)((int64_t)(w - 2 * scale) * hd_clamp(full, 0, 256) / 256), 4 * scale, c);
 }
 
+/* The byte where a line of at most `cols` letters ends: at the last space that fits, or `cols` letters in when a word is longer. */
+static const char *line_end(const char *p, int32_t cols)
+{
+   const char *q = p, *space = NULL;
+   int32_t n = 0;
+   while (*q && n < cols)
+   {
+      if (*q == ' ')
+         space = q;
+      q++;
+      while ((*q & 0xc0) == 0x80)
+         q++; /* the rest of a UTF-8 letter */
+      n++;
+   }
+   if (!*q || *q == ' ' || !space)
+      return q;
+   return space;
+}
+
+/* A text wrapped to `cols` letters a line from (x, y); draws only when `draw`; returns how many lines it takes. */
+static int32_t wrap(hd_surface *sf, const char *text, int32_t x, int32_t y, int32_t cols, int32_t scale, uint32_t color, int draw)
+{
+   int32_t lines = 0;
+   char buf[160];
+   while (*text)
+   {
+      const char *e = line_end(text, cols);
+      size_t len = hd_min((int32_t)(e - text), (int32_t)sizeof buf - 1);
+      if (draw)
+      {
+         memcpy(buf, text, len);
+         buf[len] = 0;
+         text_draw(sf, buf, x, y + lines * 9 * scale, scale, color, 1, -1);
+      }
+      lines++;
+      text = e;
+      while (*text == ' ')
+         text++;
+   }
+   return lines;
+}
+
+static const uint32_t who_color[RW_COUNT] = { 0xff8fab, 0x8ecae6, 0xffb703, 0x80ed99, 0xbfc7d5 };
+static const uint32_t status_color[5] = { 0x57cc99, 0xf6bd60, 0xe63946, 0xe63946, 0x8d99ae };
+
+/* The phone on the right: the last messages, newest at the bottom, and the countdown when the boss waits. */
+static void phone_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
+{
+   const int32_t w = 186 * scale, x = HD_OUT_W - w - 6 * scale, cols = (w - 14 * scale) / (6 * scale);
+   int32_t shown = hd_min(g->phone_n, 3), i, h = 8 * scale, y;
+   char line[64];
+   if (!shown && !g->boss)
+      return;
+   for (i = 0; i < shown; i++)
+      h += (10 + 9 * wrap(sf, remote_text(g->phone_text[(g->phone_n - shown + i) % REMOTE_PHONE]), 0, 0, cols, scale, 0, 0) + 4) * scale;
+   if (g->boss && !g->boss_call)
+      h += 22 * scale;
+   y = 26 * scale;
+   panel(sf, x, y, w, h, 0x101418, 170);
+   if (g->phone_new_t > 0 && (g->phone_new_t / 8) & 1)
+      gfx_fill(sf, x, y, w, scale, 0xffe66d); /* a new message blinks the phone's edge */
+   y += 6 * scale;
+   for (i = 0; i < shown; i++)
+   {
+      int32_t k = (g->phone_n - shown + i) % REMOTE_PHONE, who = hd_clamp(g->phone_who[k], 0, RW_COUNT - 1), m = g->phone_min[k] + 9 * 60;
+      int newest = i == shown - 1 && g->phone_new_t > 0;
+      snprintf(line, sizeof line, "%s  %02d:%02d", remote_text(RT_WHO + who), (int)(m / 60), (int)(m % 60));
+      text_draw(sf, line, x + 7 * scale, y, scale, who_color[who], 1, -1);
+      y += 10 * scale;
+      y += (9 * wrap(sf, remote_text(g->phone_text[k]), x + 7 * scale, y, cols, scale, newest ? 0xffffff : 0xd8dee9, 1) + 4) * scale;
+   }
+   if (g->boss && !g->boss_call)
+   {
+      /* to the desk before the bar runs out */
+      int32_t left = (g->boss_t + 59) / 60;
+      snprintf(line, sizeof line, "%s %d:%02d", remote_text(RT_ANSWER), (int)(left / 60), (int)(left % 60));
+      text_draw(sf, line, x + 7 * scale, y, scale, (g->t / 15) & 1 ? 0xff4d6d : 0xffffff, 1, -1);
+      panel(sf, x + 7 * scale, y + 10 * scale, w - 14 * scale, 4 * scale, 0x000000, 160);
+      gfx_fill(sf, x + 7 * scale, y + 10 * scale, (int32_t)((int64_t)(w - 14 * scale) * g->boss_t / hd_max(1, g->boss_limit)), 4 * scale, 0xe63946);
+   }
+}
+
+/* The end of the day: the title by score and the numbers. */
+static void end_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
+{
+   int32_t worked = g->work / REMOTE_WORK_UNIT, title, y = 50 * scale, lx = HD_OUT_W / 2 - 150 * scale, rx = HD_OUT_W / 2 + 150 * scale;
+   char line[64];
+   panel(sf, 0, 0, HD_OUT_W, HD_OUT_H, 0x0b0d12, hd_min(210, g->over_t * 6));
+   if (g->over_t < 30)
+      return;
+   if (g->over == REND_FIRED)
+      title = 0;
+   else if (g->over == REND_MISSED)
+      title = 1;
+   else
+      title = g->score < 1500 ? 2 : g->score <= 3000 ? 3 : 4;
+   text_center(sf, remote_text(g->over == REND_FIRED ? RT_END_FIRED_MSG : RT_END_TIME), y, scale, 0xbfc7d5);
+   y += 18 * scale;
+   text_center(sf, remote_text(RT_END_TITLE + title), y, 3 * scale, title == 0 ? 0xe63946 : title == 1 ? 0xf6bd60 : 0xffe66d);
+   y += 40 * scale;
+#define ROW(label, value, color)                                                  \
+   do                                                                             \
+   {                                                                              \
+      snprintf(line, sizeof line, "%+d", (int)(value));                           \
+      text_draw(sf, remote_text(label), lx, y, scale, 0xd8dee9, 1, -1);           \
+      text_draw(sf, line, rx - text_width(line, scale), y, scale, color, 1, -1);  \
+      y += 14 * scale;                                                            \
+   } while (0)
+   ROW(RT_END_POINTS, g->points, 0xffe66d);
+   if (g->over == REND_MISSED)
+      ROW(RT_END_HALF, -(g->points - g->score), 0xe63946);
+   if (g->over == REND_SURVIVED)
+   {
+      ROW(RT_END_SURVIVED, 1000, 0x57cc99);
+      ROW(RT_END_DISCRETION, REMOTE_SUSPICION_MAX - g->suspicion, 0x57cc99);
+      if (worked > REMOTE_OVERTIME)
+         ROW(RT_END_OVERTIME, -2 * (worked - REMOTE_OVERTIME), 0xe63946);
+   }
+#undef ROW
+   gfx_fill(sf, lx, y, rx - lx, scale, 0x5c677d);
+   y += 6 * scale;
+   snprintf(line, sizeof line, "%d", (int)g->score);
+   text_draw(sf, remote_text(RT_END_TOTAL), lx, y, 2 * scale, 0xffffff, 1, -1);
+   text_draw(sf, line, rx - text_width(line, 2 * scale), y, 2 * scale, 0xffe66d, 1, -1);
+   if (g->over_t > 90 && (g->over_t / 30) & 1)
+      text_center(sf, remote_text(RT_END_AGAIN), HD_OUT_H - 30 * scale, scale, 0xffffff);
+}
+
 static void hud(hd_surface *sf, const hd_remote *g)
 {
-   int32_t scale = hd_res, minutes = 9 * 60 + hd_min(g->t / REMOTE_FRAMES_PER_MINUTE, REMOTE_DAY_MINUTES), worked = g->work / REMOTE_WORK_UNIT;
-   int32_t e = g->energy * 256 / REMOTE_ENERGY_MAX;
+   int32_t scale = hd_res, minutes = 9 * 60 + hd_min(g->t / FPM, REMOTE_DAY_MINUTES), worked = g->work / REMOTE_WORK_UNIT;
+   int32_t e = g->energy * 256 / REMOTE_ENERGY_MAX, su = g->suspicion * 256 / REMOTE_SUSPICION_MAX, st = status(g), shake = 0;
    char line[96];
-   /* top left: the clock, the work done and the energy */
-   panel(sf, 6 * scale, 6 * scale, 150 * scale, 76 * scale, 0x101418, 150);
+   if (g->over)
+   {
+      end_hud(sf, g, scale);
+      return;
+   }
+   /* top left: the clock and the status, the work done, the energy and the suspicion */
+   panel(sf, 6 * scale, 6 * scale, 156 * scale, 100 * scale, 0x101418, 150);
    snprintf(line, sizeof line, "%02d:%02d", (int)(minutes / 60), (int)(minutes % 60));
    text_draw(sf, line, 12 * scale, 11 * scale, 2 * scale, 0xffffff, 1, -1);
+   gfx_fill(sf, 12 * scale, 27 * scale, (int32_t)((int64_t)144 * scale * hd_min(g->t, REMOTE_DAY_MINUTES * FPM) / (REMOTE_DAY_MINUTES * FPM)), scale, 0x5c677d);
+   gfx_fill(sf, 80 * scale, 14 * scale, 5 * scale, 5 * scale, status_color[st]);
+   text_draw(sf, remote_text(RT_STATUS + st), 88 * scale, 13 * scale, scale, status_color[st], 1, -1);
    snprintf(line, sizeof line, "%s %d h %02d / 6 h", remote_text(RT_WORK), (int)(worked / 60), (int)(worked % 60));
-   bar(sf, 12 * scale, 32 * scale, 138 * scale, worked * 256 / REMOTE_WORK_GOAL, worked >= REMOTE_WORK_GOAL ? 0x57cc99 : 0x4ea8de, line, scale);
-   bar(sf, 12 * scale, 56 * scale, 138 * scale, e, e > 77 ? 0xf6bd60 : 0xe63946, remote_text(RT_ENERGY), scale);
-   /* top right: the points */
+   bar(sf, 12 * scale, 32 * scale, 144 * scale, worked * 256 / REMOTE_WORK_GOAL, worked >= REMOTE_WORK_GOAL ? 0x57cc99 : 0x4ea8de, line, scale);
+   bar(sf, 12 * scale, 56 * scale, 144 * scale, e, e > 77 ? 0xf6bd60 : 0xe63946, remote_text(RT_ENERGY), scale);
+   if (g->suspicion > 800)
+      shake = ((g->t / 2) & 1) ? scale : -scale; /* close to the end: it shakes */
+   bar(sf, 12 * scale + shake, 80 * scale, 144 * scale, su, su < 100 ? 0x57cc99 : su < 180 ? 0xf6bd60 : 0xe63946, remote_text(RT_SUSPICION), scale);
+   /* top right: the points, the phone under them */
    snprintf(line, sizeof line, "%s %d", remote_text(RT_POINTS), (int)g->points);
    panel(sf, HD_OUT_W - text_width(line, scale) - 18 * scale, 6 * scale, text_width(line, scale) + 12 * scale, 16 * scale, 0x101418, 150);
    text_draw(sf, line, HD_OUT_W - text_width(line, scale) - 12 * scale, 10 * scale, scale, 0xffe66d, 1, -1);
+   phone_hud(sf, g, scale);
    /* bottom: what the button does, or what is being done and how far it went */
    if (g->act)
    {
-      int32_t a = g->act - 1, total = activities[a].minutes * REMOTE_FRAMES_PER_MINUTE;
+      int32_t a = g->act - 1, total = activities[a].minutes * FPM;
       const char *what = a == RA_WORK && g->energy < REMOTE_WORK_ASLEEP ? remote_text(RT_ASLEEP) : remote_text(RT_DOING + a);
-      int32_t w = hd_max(text_width(what, scale), text_width(remote_text(RT_STOP), scale)) + 24 * scale, x = (HD_OUT_W - w) / 2, y = HD_OUT_H - 46 * scale;
+      const char *stop = remote_text(a == RA_WORK && g->cat_keys == 2 ? RT_CAT_OFF : a == RA_WORK && g->boss_call ? RT_ON_CALL : RT_STOP);
+      int32_t w = hd_max(text_width(what, scale), text_width(stop, scale)) + 24 * scale, x = (HD_OUT_W - w) / 2, y = HD_OUT_H - 46 * scale;
       panel(sf, x, y, w, 38 * scale, 0x101418, 170);
       text_center(sf, what, y + 6 * scale, scale, 0xffffff);
       if (total > 0)
@@ -311,11 +992,11 @@ static void hud(hd_surface *sf, const hd_remote *g)
          panel(sf, x + 8 * scale, y + 18 * scale, w - 16 * scale, 4 * scale, 0x000000, 160);
          gfx_fill(sf, x + 8 * scale, y + 18 * scale, (int32_t)((int64_t)(w - 16 * scale) * hd_min(g->act_t, total) / total), 4 * scale, 0x57cc99);
       }
-      text_center(sf, remote_text(RT_STOP), y + 26 * scale, scale, 0xbfc7d5);
+      text_center(sf, stop, y + 26 * scale, scale, g->cat_keys == 2 && a == RA_WORK ? 0xffe66d : 0xbfc7d5);
    }
    else if (g->prompt)
    {
-      const char *what = remote_text(RT_PROMPT + g->prompt - 1);
+      const char *what = remote_text(g->prompt == RA_WORK + 1 && g->cat_keys == 2 ? RT_CAT_OFF : RT_PROMPT + g->prompt - 1);
       int32_t w = text_width(what, scale) + 24 * scale, y = HD_OUT_H - 34 * scale;
       panel(sf, (HD_OUT_W - w) / 2, y, w, 20 * scale, 0x101418, 170);
       text_center(sf, what, y + 6 * scale, scale, 0xffe66d);
@@ -326,7 +1007,7 @@ static void hud(hd_surface *sf, const hd_remote *g)
    if (g->toast && g->toast_t > 0)
    {
       const char *msg = remote_text(g->toast - 1);
-      int32_t w = text_width(msg, scale) + 24 * scale, y = 90 * scale;
+      int32_t w = text_width(msg, scale) + 24 * scale, y = HD_OUT_H - 84 * scale;
       panel(sf, (HD_OUT_W - w) / 2, y, w, (g->toast_points ? 30 : 18) * scale, 0x101418, 170);
       text_center(sf, msg, y + 5 * scale, scale, 0xffffff);
       if (g->toast_points)
@@ -342,9 +1023,10 @@ void hd_remote_draw(const hd_state *s, void *screen)
    hd_surface *sf = (hd_surface *)screen;
    const hd_remote *g = HD_GAME3D_C(s, hd_remote);
    r3d_view v;
-   r3d_instance inst[ACT_INSTANCES];
+   r3d_instance inst[ACT_INSTANCES * 2 + PET_INSTANCES];
    actor3d_pose pose;
-   int32_t n, working = g->act == RA_WORK + 1;
+   pet3d_pose cat;
+   int32_t n, working = g->act == RA_WORK + 1, typing = working && g->energy >= REMOTE_WORK_ASLEEP && !g->net_t;
    ready();
    memset(&v, 0, sizeof v);
    v.eye = play3d_eye(target(g), g->cam_yaw, g->cam_pitch + g->cam_lift, g->cam_dist);
@@ -360,8 +1042,8 @@ void hd_remote_draw(const hd_state *s, void *screen)
    v.vignette = 110;
    v.light = room3d_light();
    /* the desk's screens: code going up while working, asleep otherwise */
-   tex3d_terminal(room3d_desk_screen(0), 11, g->screen_scroll, working && g->energy >= REMOTE_WORK_ASLEEP);
-   tex3d_terminal(room3d_desk_screen(1), 12, g->screen_scroll / 2 + 40, working && g->energy >= REMOTE_WORK_ASLEEP);
+   tex3d_terminal(room3d_desk_screen(0), 11, g->screen_scroll, typing);
+   tex3d_terminal(room3d_desk_screen(1), 12, g->screen_scroll / 2 + 40, typing);
    memset(&pose, 0, sizeof pose);
    pose.at.x = g->x;
    pose.at.z = g->z;
@@ -387,6 +1069,34 @@ void hd_remote_draw(const hd_state *s, void *screen)
       }
    }
    n = actor3d_place(room3d_person(ROOM3D_WORKER), &pose, inst);
+   /* the flatmate, waving while it talks */
+   if (g->mate)
+   {
+      memset(&pose, 0, sizeof pose);
+      pose.at.x = g->mate_x;
+      pose.at.z = g->mate_z;
+      pose.yaw = g->mate_yaw;
+      pose.walk = g->mate_walk;
+      pose.phase = g->mate_walk ? g->mate_phase : (g->t * 40) & 4095;
+      pose.wave = g->mate_talk_t > 18 * 60;
+      n += actor3d_place(room3d_person(ROOM3D_FLATMATE), &pose, inst + n);
+   }
+   /* the cat */
+   memset(&cat, 0, sizeof cat);
+   cat.at.x = g->cat_x;
+   cat.at.y = g->cat_y;
+   cat.at.z = g->cat_z;
+   cat.floor_y = g->cat_mode == CAT_UP || g->cat_mode == CAT_DOWN ? 0 : g->cat_y;
+   cat.yaw = g->cat_yaw;
+   cat.walk = g->cat_walk;
+   cat.phase = g->cat_walk ? g->cat_phase : (g->t * 24) & 4095;
+   if (g->cat_mode == CAT_REST)
+   {
+      cat.lie = cat_spots[g->cat_spot].lie;
+      cat.sit = !cat.lie;
+      cat.look = g->act == RA_CAT + 1 ? 0 : (int32_t)(((int64_t)hd_sin((g->t * 5) & 4095) * 300) >> 14);
+   }
+   n += pet3d_place(room3d_cat(), &cat, inst + n);
    r3d_draw(sf, &v, room3d_scene(), inst, n);
    hud(sf, g);
 }
@@ -420,4 +1130,62 @@ void hd_remote_sanitize(hd_state *s)
    g->toast_t = hd_clamp(g->toast_t, 0, REMOTE_TOAST_FRAMES);
    g->toast_points = hd_clamp(g->toast_points, -100000, 100000);
    g->screen_scroll = hd_clamp(g->screen_scroll, 0, 1 << 30);
+   g->suspicion = hd_clamp(g->suspicion, 0, REMOTE_SUSPICION_MAX);
+   g->away_t = hd_clamp(g->away_t, 0, 1 << 30);
+   g->over = hd_clamp(g->over, REND_PLAYING, REND_SURVIVED);
+   g->over_t = hd_clamp(g->over_t, 0, 1 << 30);
+   g->score = hd_clamp(g->score, -10000000, 10000000);
+   g->ev_count = hd_clamp(g->ev_count, 0, REMOTE_EVENTS_MAX);
+   g->ev_next = hd_clamp(g->ev_next, 0, g->ev_count);
+   for (i = 0; i < REMOTE_EVENTS_MAX; i++)
+   {
+      g->ev_at[i] = hd_clamp(g->ev_at[i], 0, 1 << 20);
+      g->ev_kind[i] = hd_clamp(g->ev_kind[i], 0, RE_KINDS - 1);
+   }
+   g->boss = hd_clamp(g->boss, 0, RE_BOSS_KINDS);
+   g->boss_call = hd_clamp(g->boss_call, 0, 1);
+   g->boss_limit = hd_clamp(g->boss_limit, 0, 1 << 20);
+   g->boss_t = hd_clamp(g->boss_t, 0, 1 << 20);
+   g->boss_noise &= 31;
+   g->bell_t = hd_clamp(g->bell_t, 0, REMOTE_BELL_FRAMES);
+   g->bell_owed = hd_clamp(g->bell_owed, 0, 1);
+   g->drill_t = hd_clamp(g->drill_t, 0, REMOTE_DRILL_MINUTES * FPM);
+   g->net_t = hd_clamp(g->net_t, 0, REMOTE_NET_MINUTES * FPM);
+   g->washer_t = hd_clamp(g->washer_t, 0, REMOTE_WASHER_MINUTES * FPM);
+   g->headphones = hd_clamp(g->headphones, 0, 1);
+   g->cat_x = hd_clamp(g->cat_x, ROOM3D_AT(0), ROOM3D_AT(1600));
+   g->cat_z = hd_clamp(g->cat_z, ROOM3D_AT(-210), ROOM3D_AT(1250));
+   g->cat_y = hd_clamp(g->cat_y, 0, CM(120));
+   g->cat_yaw &= ANGLE_FULL - 1;
+   g->cat_walk = hd_clamp(g->cat_walk, 0, 16384);
+   g->cat_phase &= ANGLE_FULL - 1;
+   g->cat_mode = hd_clamp(g->cat_mode, CAT_REST, CAT_DOWN);
+   g->cat_t = hd_clamp(g->cat_t, 0, 1 << 20);
+   g->cat_spot = hd_clamp(g->cat_spot, 0, SPOT_COUNT - 1);
+   g->cat_goal = hd_clamp(g->cat_goal, 0, SPOT_COUNT - 1);
+   g->cat_keys = hd_clamp(g->cat_keys, 0, 2);
+   g->cat_keys_t = hd_clamp(g->cat_keys_t, 0, 1 << 30);
+   g->cat_logged = hd_clamp(g->cat_logged, 0, 1);
+   g->mate = hd_clamp(g->mate, 0, 1);
+   if (g->mate)
+   {
+      g->mate_x = hd_clamp(g->mate_x, ROOM3D_AT(0), ROOM3D_AT(1600));
+      g->mate_z = hd_clamp(g->mate_z, ROOM3D_AT(-210), ROOM3D_AT(1250));
+   }
+   else
+      g->mate_x = g->mate_z = 0;
+   g->mate_yaw &= ANGLE_FULL - 1;
+   g->mate_walk = hd_clamp(g->mate_walk, 0, 16384);
+   g->mate_phase &= ANGLE_FULL - 1;
+   g->mate_goal = hd_clamp(g->mate_goal, 0, MATE_SPOTS - 1);
+   g->mate_t = hd_clamp(g->mate_t, 0, 1 << 20);
+   g->mate_talk_t = hd_clamp(g->mate_talk_t, 0, 1 << 20);
+   g->phone_n = hd_clamp(g->phone_n, 0, 1 << 30);
+   for (i = 0; i < REMOTE_PHONE; i++)
+   {
+      g->phone_text[i] = hd_clamp(g->phone_text[i], 0, RT_COUNT - 1);
+      g->phone_who[i] = hd_clamp(g->phone_who[i], 0, RW_COUNT - 1);
+      g->phone_min[i] = hd_clamp(g->phone_min[i], 0, REMOTE_DAY_MINUTES);
+   }
+   g->phone_new_t = hd_clamp(g->phone_new_t, 0, 240);
 }

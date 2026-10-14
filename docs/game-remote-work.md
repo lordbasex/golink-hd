@@ -65,6 +65,8 @@ The boss's suspicion rises in three ways:
 | Away from the desk | 1 per game minute after the first 10 minutes away (the chat status turns "away") |
 | A boss event missed (section 5) | 150 to 300, by event |
 | Asleep on the keyboard | 3 per game minute |
+| The boss hears the house on a call (section 5) | 100 each thing, once a call |
+| The cat logs the worker off (section 5) | 100 |
 
 It falls in two ways:
 
@@ -120,25 +122,30 @@ Changes for the game:
 
 ## 4. Activities
 
-The player can do 13 activities besides working. Each one has its place, a
-length in game minutes, energy, points, and a "noise" that tells whether the
-boss can hear it during a call:
+The player can do 13 activities besides working, and two more exist only
+while their event lasts. Each one has its place, a length in game minutes,
+energy and points:
 
-| # | Activity | Room | Minutes | Energy | Points | Noisy |
-|---|---|---|---|---|---|---|
-| 1 | Nap | bed | 30 | +400 | 300 | no |
-| 2 | Coffee | kitchen machine | 3 | +120 | 30 | yes |
-| 3 | Cook lunch | kitchen stove | 25 | +300 | 250 | yes |
-| 4 | Raid the fridge | kitchen | 5 | +80 | 60 | no |
-| 4b | Eat at the table | kitchen table | 20 | +250 | 200 | no |
-| 5 | Play the console | game room TV | 20 | -50 | 350 | yes |
-| 6 | Watch a series | living room sofa | 25 | +100 | 250 | yes |
-| 7 | Sunbathe | terrace lounger | 15 | +150 | 200 | no |
-| 8 | Water the plants | terrace | 5 | 0 | 80 | no |
-| 9 | Shower | bathroom | 15 | +200 | 150 | yes |
-| 10 | Put on the washing | laundry or kitchen | 5 | 0 | 100 | yes |
-| 11 | Play the guitar | game room | 15 | +50 | 220 | yes |
-| 12 | Pet the cat | wherever it is | 3 | +60 | 50 | no |
+| # | Activity | Room | Minutes | Energy | Points |
+|---|---|---|---|---|---|
+| 1 | Nap | bed | 30 | +400 | 300 |
+| 2 | Coffee | kitchen machine | 3 | +120 | 30 |
+| 3 | Cook lunch | kitchen stove | 25 | +300 | 250 |
+| 4 | Raid the fridge | kitchen | 5 | +80 | 60 |
+| 4b | Eat at the table | kitchen table | 20 | +250 | 200 |
+| 5 | Play the console | game room TV | 20 | -50 | 350 |
+| 6 | Watch a series | living room sofa | 25 | +100 | 250 |
+| 7 | Sunbathe | terrace lounger | 15 | +150 | 200 |
+| 8 | Water the plants | terrace | 5 | 0 | 80 |
+| 9 | Shower | bathroom | 15 | +200 | 150 |
+| 10 | Put on the washing | laundry | 5 | 0 | 100 |
+| 11 | Play the guitar | game room | 15 | +50 | 220 |
+| 12 | Pet the cat | wherever it rests | 3 | +60 | 50 |
+| 13 | Open the door | hall, front door (only while the bell rings) | 2 | 0 | 100 |
+| 14 | Put on the headphones | office desk (only while the drill goes) | 1 | 0 | 0 |
+
+The washing machine keeps spinning for 45 game minutes after it is loaded,
+and the boss can hear it (section 5).
 
 Each activity:
 
@@ -164,43 +171,77 @@ When the activity ends, the worker is back at the start point.
 
 ### Boss events
 
-The boss sends events at fixed times plus some random ones (4 to 6 a day,
-from the day's seed). Each event warns first: a notification sound and a
-message on the phone in the HUD. Then the player has a time limit to be at
-the desk.
+The boss sends 4 to 6 events a day: the daily meeting at 10:00 and 3 to 5
+more, picked and timed from the day's seed. Each one arrives as a message on
+the phone in the HUD (a sound comes in phase 5), and the player has a time
+limit to be **awake at the desk**. The phone shows the time left as a
+shrinking red bar.
 
-| Event | Warning | Limit | Missed | Answered |
+| Event | Limit | Then on the call | Missed | Answered |
 |---|---|---|---|---|
-| Surprise video call | phone rings | 45 real seconds | +300 | -100 |
-| Urgent message | chat ping | 30 real seconds | +150 | -50 |
-| Daily meeting (10:00) | 5 game minutes before | at the desk at 10:00 | +250 | -80 |
-| Screen share | the boss asks to see the code | 20 real seconds | +200 | -80 |
+| Daily meeting (10:00) | announced at 09:40, at the desk by 10:00 | 15 game minutes ("in a meeting") | +250 | -80 |
+| Surprise video call | 45 real seconds | 10 game minutes | +300 | -100 |
+| Urgent message | 30 real seconds | none: the answer is enough | +150 | -50 |
+| Screen share | 20 real seconds | 5 game minutes | +200 | -80 |
 
 Limits are in real seconds because they are about the player's reaction, not
-the story's clock.
+the story's clock. The meeting is announced 20 game minutes ahead (about 22
+real seconds), since 5 game minutes are less than 6 real seconds. A boss
+event that comes while another one is under way, or while the internet is
+down, waits 5 game minutes.
 
-During a video call, a noisy activity in the same room as the desk (the
-office) or in the room next to it raises suspicion by 100. The washing machine
-is the classic.
+While a call lasts the worker stays at the desk (the button does nothing but
+take the cat off the keyboard). What the boss can hear is the house, each
+thing once a call, +100 suspicion each:
+
+- the washing machine spinning (45 game minutes after it is loaded): the classic;
+- the bell, when a delivery was not opened (it comes back during the next call);
+- the flatmate in the office;
+- snoring, when the worker falls asleep on the keyboard;
+- the neighbor's drill, without headphones: only a joke from the boss, the drill is not the worker's fault.
 
 ### Random events
 
-Two to four a day, from the seed:
+Two to four a day, all different, from the seed:
 
-- **Delivery at the door:** the bell rings. Opening it gives 100 points; not
-  opening it makes the bell ring again during the next call.
-- **The cat on the keyboard:** work stops until the cat is moved. The cat
-  sometimes logs off the chat (+100 suspicion unless the player is quick).
+- **Delivery at the door:** the bell rings. Opening it within 30 real seconds
+  (the door's activity) gives 100 points; otherwise the courier leaves and
+  rings again during the next call.
+- **The cat on the keyboard:** the cat walks to the office and lies on the
+  keyboard. No work counts while it is there; the action button at the desk
+  takes it off. After 20 real seconds it types something to the boss and
+  logs the worker off: +100 suspicion.
 - **The neighbor's drill:** for 30 game minutes the work speed is halved,
-  except with headphones (an object in the bedroom).
+  except with the headphones (on their stand on the office desk).
 - **The internet drops:** 10 game minutes of no work and no suspicion. It is
   a free break, and the boss cannot see the status either.
-- **The flatmate comes back early:** it gets in the way and talks at the
-  player.
+- **The flatmate comes back early:** it comes in through the front door and
+  walks between five spots of the house for the rest of the day. It gets in
+  the way (the worker cannot walk through it, and it waits when the worker is
+  in its way) and talks at the worker whenever it is within 2 m.
+
+### The cat
+
+The cat lives in the house all day, from the morning on the bed. It walks
+(`play3d_route`) between five spots (the living room rug, the bed, the sun on
+the terrace, the kitchen, the game room), jumps up where the spot is high
+(the bed, the desk), and rests 20 to 45 seconds at each, lying or sitting.
+While it rests the worker can pet it.
+
+### The phone
+
+The phone keeps the last 8 messages (text ids, never strings) with who wrote
+them (the boss, the worker, the cat, the flatmate, the house) and the game
+time; the HUD shows the last three, the newest bright, and blinks its edge
+when one arrives. The chat status the boss sees is shown by the clock:
+online, away (more than 10 game minutes from the desk), on a call, in a
+meeting, offline (no internet).
 
 Everything random comes from `hd_state.rng`, so a day with the same seed and
 the same input is the same day on every computer. That is what lets the lab
-replay bots.
+replay bots. Until phase 4 every day starts from the engine's fixed seed (the
+same day every time); the title screen will mix in how long it waited for
+START.
 
 ## 6. Score
 
@@ -288,9 +329,11 @@ game, so nothing in the game knows about keyboards.
 |---|---|---|
 | Follow camera (behind the character, pulled in front of walls by a ray over the voxel grid) | `src/3d/play3d.c` | yes |
 | Walk collision (a floor grid of 10 cm cells made from the solids, sliding along walls) | `play3d.c` | yes |
-| Interaction spots and prompts | `play3d.c` | yes |
-| HUD helpers (bars, phone, prompt, progress ring) at `hd_res` scale | `src/3d/hud3d.c` | yes |
-| More poses (lie, hold, crouch) and the cat | `actor3d.c`, `pet3d.c` | yes |
+| Routes for what the game moves (the cat, the flatmate, bots) | `play3d.c` (`play3d_route`) | yes |
+| Interaction spots and prompts | the game (`activities` in `remote.c`) | no, for now |
+| HUD (bars, phone, prompt, progress, the end) at `hd_res` scale | the game (`remote.c`); shared helpers in `src/3d/hud3d.c` when a second game needs them | not yet |
+| More poses (lie, hold, crouch) | `actor3d.c` | yes |
+| The cat | `pet3d.c` | yes |
 | The game: rules, events, score, screens | `src/3d/games/remote/` | no |
 | The flat's changes | `room3d.c` | shared with the demo |
 
@@ -364,7 +407,7 @@ before the next one.
 |---|---|---|---|
 | 1 | Walk the flat (**done 2026-10-13**) | Follow camera, collision, character control, run, the state in the coin bitmap's words, the compatibility check | 1 session |
 | 2 | Interact (**done 2026-10-14**) | Spots and prompts, the 12 activities with poses, energy and work, the desk's screens | 1–2 sessions |
-| 3 | The day | Clock, suspicion, boss events, random events, the cat, the phone | 1–2 sessions |
+| 3 | The day (**done 2026-10-14**) | Clock, suspicion, boss events, random events, the cat, the phone | 1–2 sessions |
 | 4 | Screens and HUD | Title, how to play, morning, pause, end, score, record | 1 session |
 | 5 | Sound | Effects and music made with the engine's sound (`sound.c`), the alarm, phone, bell, drill | 1 session |
 | 6 | Polish | Texts in 3 languages, balancing with the bots, attract mode, docs (`docs/3d.md`, README, CHANGELOG, a how-to for the next 3D game) | 1 session |
@@ -372,6 +415,38 @@ before the next one.
 | 8 | Willy Maker | Whatever it needs from this game | last |
 
 ## 12. Progress
+
+**Phase 3, the day (2026-10-14).**
+
+What plays:
+
+- The clock runs from 09:00 to 18:00 (35 640 frames) with a thin bar of the day under it.
+- Suspicion (section 2) rises away from the desk, asleep on it, with missed events, with what the boss hears and with the cat; it falls while working and with answered events. At 1000 the worker is fired at once.
+- The boss's events and the house's (section 5), planned from the seed when the day starts: the meeting at 10:00, 3 to 5 more from the boss, 2 to 4 from the house, spread from 10:15 to 17:35.
+- The cat wanders the house and can be petted; the delivery, the drill and its headphones, the internet cut and the flatmate.
+- The end of the day: fired, hours missed (half the points) or survived (the bonuses and the overtime cost), with the title by score; START starts another day. The screen itself is phase 4's.
+
+On screen:
+
+- The HUD gained the chat status by the clock, the suspicion bar (it shakes over 800), and the phone on the right with the last three messages and the countdown when the boss waits.
+- The end of the day: the reason, the title, the numbers and the total.
+
+New in the engine:
+
+- `src/3d/pet3d.c`: the cat (`room3d_cat()` is the house's, a ginger tabby).
+- `play3d_route`: the shortest way through the walk grid, for the cat, the flatmate and bots.
+
+Fixes to the house found on the way (by the new test that walks to every place):
+
+- A parcel and the umbrella stand closed the way to the front door.
+- The pouf stood between the sofa and the armchair, so the sofa was reached only through the terrace; the armchair moved 50 cm north.
+
+Checks:
+
+- `make test`: suspicion away from the desk, a call missed and one answered (with the washing machine heard), no leaving a call, the cat on the keyboard, the three endings, START for another day, and a whole lazy day twice (the same day, fired before 18:00). Every place the day uses is walked to from the hall at the worker's size.
+- Whole days without drawing: the one who never works is fired at 16:34, the one who never rests falls asleep at the keyboard and misses the hours, the one who works with coffee breaks survives.
+- 720p: 11.6 ms a frame with the cat and the flatmate; the rules take 0.01 ms.
+- ANTÍDOTO's hashes are unchanged.
 
 **Phase 2, doing things (2026-10-14).**
 

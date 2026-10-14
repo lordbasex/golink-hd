@@ -15,6 +15,15 @@
   - the follow camera (`play3d_follow`, `play3d_eye`).
 
   Its pieces underneath are `r3d_solid_at` and `r3d_reach` (the bake's grid for a game's rules). `src/3d/room3d.h` shares the demo's flat, light and people.
+- TELETRABAJO: CÁMARA APAGADA, phase 3 (the day):
+  - a clock from 09:00 to 18:00, the boss's suspicion and the chat status it sees (online, away, on a call, in a meeting, offline);
+  - the boss's events from the day's seed (the daily meeting at 10:00, surprise calls, urgent messages, screen shares): be awake at the desk in time, then stay on the call while the boss hears the house (the washing machine, the bell, the flatmate, snoring);
+  - the house's events: a delivery at the door, the cat on the keyboard (it logs the worker off if left there), the neighbor's drill (headphones on the desk), the internet down, the flatmate home early (in the way, talking);
+  - a cat that wanders the house, jumps on the bed and the desk, and can be petted;
+  - the phone in the HUD with the last messages and the countdown, a suspicion bar;
+  - the end of the day: fired, hours missed or survived, with the bonuses, the overtime cost and a title by score; START for another day.
+- `src/3d/pet3d.h`: a cat of 8 parts posed every frame (trotting, sitting, lying as a loaf, its tail moving). `play3d_route`: the shortest way through the walk grid, for what a game moves itself and for bots.
+- Fixes to the house: a parcel and the umbrella stand closed the way to the front door; the pouf stood between the sofa and the armchair. A test now walks to every place the game uses at the worker's size.
 - TELETRABAJO: CÁMARA APAGADA, phase 2 (doing things):
   - 13 activities around the house, each with its prompt, pose, length, energy and points, stopped early with the main button; the points are cut to a fifth after the second time;
   - work at the desk at full or half speed, asleep on the keyboard when out of energy;

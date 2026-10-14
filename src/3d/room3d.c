@@ -34,6 +34,7 @@
 
 static r3d_mesh scene;
 static actor3d_kit people[ROOM3D_PEOPLE];
+static pet3d_kit cat;
 static const int32_t *T;
 static int32_t ready, poster[10];
 static r3d_light_cfg sunlight;
@@ -557,7 +558,7 @@ static void living(void)
    at(442, 110, 626, 0);
    plant_pot(14, 0x8d99ae, 7);
    /* the armchair, north of the coffee table, and a floor lamp behind the sofa */
-   at(700, 0, 330, 0);
+   at(700, 0, 380, 0);
    mat(TEX3D_FABRIC, 96);
    bx(0, 10, 0, 80, 44, 80, 0xb5654a);
    bx(0, 44, 64, 80, 90, 80, 0xa65a40);
@@ -634,7 +635,7 @@ static void living(void)
    at(480, 0, 300, 0);
    cyl(0, 0, 0, 22, 22, 50, 12, 0xd4b48c);
    cyl(-4, 50, 6, 6, 5, 8, 8, 0x264653);
-   at(640, 0, 300, 0);
+   at(470, 0, 400, 0); /* the pouf out of the way between the sofa and the armchair */
    mat(TEX3D_KNIT, 96);
    cyl(0, 0, 0, 28, 28, 40, 14, 0xe9c46a);
    plain();
@@ -1150,12 +1151,12 @@ static void hall(void)
    r3d_glow(170);
    bxf(4, 4, -1, 96, 66, 0, 0xbcd4e6, R3D_PANE);
    r3d_glow(0);
-   at(1560, 0, 700, 0);
+   at(1578, 0, 668, 0); /* in the corner, clear of the door */
    cyl(0, 0, 0, 12, 12, 50, 10, 0x2a9d8f);
    cyl(-4, 30, -2, 2, 2, 50, 4, 0x222222);
    cyl(5, 30, 3, 2, 2, 46, 4, 0xe63946);
-   /* a parcel nobody opened */
-   at(1450, 0, 680, 300);
+   /* a parcel nobody opened, against the wall out of the way to the door */
+   at(1300, 0, 662, 60);
    cardboard_box(44, 28, 32);
    /* a runner rug along the hall */
    at(330, 0, 690, 0);
@@ -1400,6 +1401,22 @@ static void build_people(void)
    actor3d_build(&people[1], &flatmate, T[TEX3D_FABRIC]);
    people[0].shadow = shadow;
    people[1].shadow = shadow;
+   /* a ginger tabby with green eyes, and a smaller shadow */
+   {
+      static const pet3d_look ginger = { 0xc0601c, 0x7a3208, 0xf3ece0, 0x9ef01a, 0xf4978e };
+      r3d_place(0, 0, 0, 0);
+      r3d_begin();
+      r3d_decal(1);
+      r3d_occlude(0);
+      r3d_material(T[TEX3D_ROUND_SHADOW], 0);
+      r3d_box(-CM(16), CM(1), -CM(26), CM(16), CM(1) + 1, CM(26), 0x3a3a50, R3D_TOP_ONLY);
+      r3d_decal(0);
+      r3d_occlude(1);
+      plain();
+      shadow = r3d_end();
+      pet3d_build(&cat, &ginger);
+      cat.shadow = shadow;
+   }
 }
 
 void hd_r3d_build(void)
@@ -1524,6 +1541,12 @@ const r3d_light_cfg *room3d_light(void)
 {
    hd_r3d_build();
    return &sunlight;
+}
+
+const pet3d_kit *room3d_cat(void)
+{
+   hd_r3d_build();
+   return &cat;
 }
 
 const actor3d_kit *room3d_person(int32_t who)

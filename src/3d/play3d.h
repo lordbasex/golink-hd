@@ -27,6 +27,20 @@ int32_t play3d_fits(int32_t x, int32_t z, int32_t radius);
 /* Moves a person by (dx, dz), sliding along what blocks it; returns 1 when it moved at all. */
 int32_t play3d_move(int32_t *x, int32_t *z, int32_t dx, int32_t dz, int32_t radius);
 
+/*
+ * A way through the walk grid to a goal, for people and pets the game moves
+ * itself: the direction (dx, dz), 16384 long, from (x, z) toward a point a
+ * few cells ahead on the shortest way to (gx, gz), around furniture and
+ * through doorways. Each of PLAY3D_ROUTES slots keeps the distances to its
+ * last goal (worked out again only when the goal moves to another cell), so
+ * a walker per slot costs little. The distances depend only on the grid and
+ * the goal, never on earlier calls, so a save state needs nothing from here.
+ * Returns 0 at the goal's cell or when the goal cannot be reached from there.
+ */
+#define PLAY3D_ROUTES 4
+#define PLAY3D_ROUTE_RADIUS FX_FRAC(23, 100)
+int32_t play3d_route(int32_t slot, int32_t x, int32_t z, int32_t gx, int32_t gz, int32_t *dx, int32_t *dz);
+
 /* The angle (4096 a turn) of the direction (dx, dz): 0 toward +z, 1024 toward +x. */
 int32_t play3d_angle(int32_t dx, int32_t dz);
 /* The square root of v (rounded down). */

@@ -38,7 +38,7 @@ ifeq ($(NO_3D),1)
   INCFLAGS += -DHD_NO_3D
 else
   ENGINE_C += $(CORE_DIR)/src/3d/r3d.c $(CORE_DIR)/src/3d/tex3d.c $(CORE_DIR)/src/3d/actor3d.c $(CORE_DIR)/src/3d/room3d.c \
-	$(CORE_DIR)/src/3d/play3d.c $(CORE_DIR)/src/3d/games/remote/remote.c $(CORE_DIR)/src/3d/games/remote/remote_text.c
+	$(CORE_DIR)/src/3d/play3d.c $(CORE_DIR)/src/3d/pet3d.c $(CORE_DIR)/src/3d/games/remote/remote.c $(CORE_DIR)/src/3d/games/remote/remote_text.c
 endif
 
 SOURCES_C := $(ENGINE_C) $(CORE_DIR)/src/api.c

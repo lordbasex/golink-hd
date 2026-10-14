@@ -11,6 +11,11 @@
 
 static uint8_t grid[PLAY3D_GRID_MAX];
 static int32_t grid_x0, grid_z0, grid_nx, grid_nz;
+/* The routes: the cells a walker of PLAY3D_ROUTE_RADIUS fits in, and each slot's distances (in cells) to its goal. */
+#define FAR 0xffff
+static uint8_t room[PLAY3D_GRID_MAX];
+static uint16_t route_dist[PLAY3D_ROUTES][PLAY3D_GRID_MAX];
+static int32_t route_goal[PLAY3D_ROUTES];
 
 int32_t play3d_grid(r3d_vec lo, r3d_vec hi, int32_t floor_y)
 {
@@ -43,6 +48,11 @@ int32_t play3d_grid(r3d_vec lo, r3d_vec hi, int32_t floor_y)
          grid[k * grid_nx + i] = (uint8_t)free_cell;
          n += free_cell;
       }
+   for (k = 0; k < grid_nz; k++)
+      for (i = 0; i < grid_nx; i++)
+         room[k * grid_nx + i] = (uint8_t)play3d_fits(grid_x0 + i * PLAY3D_CELL + PLAY3D_CELL / 2, grid_z0 + k * PLAY3D_CELL + PLAY3D_CELL / 2, PLAY3D_ROUTE_RADIUS);
+   for (i = 0; i < PLAY3D_ROUTES; i++)
+      route_goal[i] = -1;
    return n;
 }
 
@@ -124,6 +134,111 @@ int32_t play3d_move(int32_t *x, int32_t *z, int32_t dx, int32_t dz, int32_t radi
          }
    }
    return 0;
+}
+
+static int32_t cell_of(int32_t x, int32_t z)
+{
+   int32_t i, k;
+   if (x < grid_x0 || z < grid_z0)
+      return -1;
+   i = (x - grid_x0) / PLAY3D_CELL;
+   k = (z - grid_z0) / PLAY3D_CELL;
+   return i < grid_nx && k < grid_nz ? k * grid_nx + i : -1;
+}
+
+/* The eight steps from a cell; a diagonal only where both of its sides are open (never through a wall's corner). */
+static const int8_t step_i[8] = { 1, -1, 0, 0, 1, 1, -1, -1 }, step_k[8] = { 0, 0, 1, -1, 1, -1, 1, -1 };
+
+static int32_t step_ok(int32_t c, int32_t d)
+{
+   int32_t i = c % grid_nx + step_i[d], k = c / grid_nx + step_k[d];
+   if (i < 0 || k < 0 || i >= grid_nx || k >= grid_nz || !room[k * grid_nx + i])
+      return -1;
+   if (d >= 4 && (!room[k * grid_nx + c % grid_nx] || !room[(c / grid_nx) * grid_nx + i]))
+      return -1;
+   return k * grid_nx + i;
+}
+
+/* The distances of every open cell to the goal's cell, breadth first (diagonals count as one step: walkers cut corners a little). */
+static void route_fill(uint16_t *dist, int32_t goal)
+{
+   static int32_t queue[PLAY3D_GRID_MAX];
+   int32_t head = 0, tail = 0, d;
+   memset(dist, 0xff, sizeof(uint16_t) * PLAY3D_GRID_MAX);
+   dist[goal] = 0;
+   queue[tail++] = goal;
+   while (head < tail)
+   {
+      int32_t c = queue[head++];
+      for (d = 0; d < 8; d++)
+      {
+         int32_t n = step_ok(c, d);
+         if (n >= 0 && dist[n] == FAR)
+         {
+            dist[n] = (uint16_t)(dist[c] + 1);
+            queue[tail++] = n;
+         }
+      }
+   }
+}
+
+int32_t play3d_route(int32_t slot, int32_t x, int32_t z, int32_t gx, int32_t gz, int32_t *dx, int32_t *dz)
+{
+   int32_t goal = cell_of(gx, gz), c = cell_of(x, z), s, d, tx, tz, len;
+   uint16_t *dist;
+   *dx = *dz = 0;
+   slot = hd_clamp(slot, 0, PLAY3D_ROUTES - 1);
+   if (goal < 0 || c < 0 || c == goal)
+      return 0;
+   dist = route_dist[slot];
+   if (route_goal[slot] != goal)
+   {
+      route_fill(dist, goal);
+      route_goal[slot] = goal;
+   }
+   if (dist[c] == FAR)
+   {
+      /* standing where the walker does not fit (against furniture): out by the nearest open neighbor */
+      int32_t best = -1;
+      for (d = 0; d < 8; d++)
+      {
+         int32_t i = c % grid_nx + step_i[d], k = c / grid_nx + step_k[d], n = k * grid_nx + i;
+         if (i >= 0 && k >= 0 && i < grid_nx && k < grid_nz && dist[n] != FAR && (best < 0 || dist[n] < dist[best]))
+            best = n;
+      }
+      if (best < 0)
+         return 0;
+      c = best;
+   }
+   else
+      /* a few cells down the way, so the walk is a line and not a staircase */
+      for (s = 0; s < 4 && dist[c]; s++)
+      {
+         int32_t best = -1;
+         for (d = 0; d < 8; d++)
+         {
+            int32_t n = step_ok(c, d);
+            if (n >= 0 && dist[n] < dist[c] && (best < 0 || dist[n] < dist[best]))
+               best = n;
+         }
+         if (best < 0)
+            break;
+         c = best;
+      }
+   if (c == goal)
+      tx = gx, tz = gz;
+   else
+   {
+      tx = grid_x0 + (c % grid_nx) * PLAY3D_CELL + PLAY3D_CELL / 2;
+      tz = grid_z0 + (c / grid_nx) * PLAY3D_CELL + PLAY3D_CELL / 2;
+   }
+   tx -= x, tz -= z;
+   len = play3d_sqrt((int64_t)tx * tx + (int64_t)tz * tz);
+   if (!len)
+      return 0;
+   *dx = (int32_t)((int64_t)tx * 16384 / len);
+   *dz = (int32_t)((int64_t)tz * 16384 / len);
+   return 1;
 }
 
 static int64_t facing(int32_t a, int32_t dx, int32_t dz)

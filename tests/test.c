@@ -12,6 +12,7 @@
 #ifndef HD_NO_3D
 #include "r3d.h"
 #include "room3d.h"
+#include "play3d.h"
 #include "games/remote/remote.h"
 #endif
 #include "pack.h"
@@ -721,6 +722,130 @@ static void test_remote_activities(void)
    for (f = 0; f < REMOTE_FRAMES_PER_MINUTE; f++)
       hd_step(&a, in);
    CHECK(g->work == 10 * REMOTE_WORK_UNIT + REMOTE_FRAMES_PER_MINUTE);
+}
+
+/* TELETRABAJO: CÁMARA APAGADA, phase 3: suspicion, the boss's events, noise on a call, the cat, and the day's three endings. */
+static void remote_steps(hd_state *s, int32_t n, uint32_t buttons)
+{
+   hd_input in[MAX_PLAYERS];
+   int32_t f;
+   for (f = 0; f < n; f++)
+   {
+      memset(in, 0, sizeof in);
+      in[0].buttons = f == 0 ? buttons : 0;
+      hd_step(s, in);
+   }
+}
+
+/* The next event comes now: the boss's or the house's. */
+static void remote_event(hd_remote *g, int32_t kind)
+{
+   g->ev_next = g->ev_count - 1;
+   g->ev_kind[g->ev_next] = kind;
+   g->ev_at[g->ev_next] = g->t / REMOTE_FRAMES_PER_MINUTE;
+}
+
+static void test_remote_day(void)
+{
+   static hd_state a, b;
+   hd_remote *g = HD_GAME3D(&a, hd_remote);
+   const int32_t fpm = REMOTE_FRAMES_PER_MINUTE;
+   int32_t f, s0;
+   hd_reset(&a);
+   hd_remote_start(&a);
+   /* the day's events: the meeting first, 4 to 6 from the boss in all, 2 to 4 from the house, in order */
+   CHECK(g->ev_kind[0] == RE_MEETING && g->ev_count >= 7 && g->ev_count <= 10);
+   for (f = 1; f < g->ev_count; f++)
+      CHECK(g->ev_at[f] > g->ev_at[f - 1] && g->ev_at[f] < REMOTE_DAY_MINUTES);
+   g->ev_next = g->ev_count;
+   /* away from the desk: nothing for 10 minutes, then 1 a minute */
+   remote_steps(&a, 25 * fpm, 0);
+   CHECK(g->suspicion >= 14 && g->suspicion <= 16);
+   /* a call nobody answers: +300 when its 45 seconds run out */
+   s0 = g->suspicion;
+   remote_event(g, RE_CALL);
+   remote_steps(&a, 2, 0);
+   CHECK(g->boss == RE_CALL + 1 && !g->boss_call);
+   remote_steps(&a, 45 * 60, 0);
+   CHECK(!g->boss && g->suspicion >= s0 + 300 && g->phone_text[(g->phone_n - 1) % REMOTE_PHONE] == RT_BOSS_MISS + RE_CALL);
+   /* answered at the desk: -100, then the worker stays on the call, and the boss hears the washing machine */
+   g->x = ROOM3D_AT(950), g->z = ROOM3D_AT(1035), g->energy = 800;
+   remote_steps(&a, 1, 0);
+   remote_steps(&a, 1, PAD_JUMP);
+   CHECK(g->act == RA_WORK + 1);
+   g->washer_t = 100;
+   s0 = g->suspicion;
+   remote_event(g, RE_CALL);
+   remote_steps(&a, 2, 0);
+   /* (a minute of work may have passed too: -1) */
+   CHECK(g->boss == RE_CALL + 1 && g->boss_call && g->suspicion >= s0 - 101 + REMOTE_NOISE && g->suspicion <= s0 - 100 + REMOTE_NOISE);
+   remote_steps(&a, 1, PAD_JUMP);
+   CHECK(g->act == RA_WORK + 1); /* no leaving a call */
+   remote_steps(&a, 10 * fpm, 0);
+   CHECK(!g->boss);
+   /* the cat on the keyboard: no work until it is taken off */
+   g->cat_keys = 2, g->cat_mode = CAT_REST, g->cat_spot = 5, g->cat_y = FX_FRAC(79, 100);
+   s0 = g->work;
+   remote_steps(&a, 60, 0);
+   CHECK(g->work == s0);
+   remote_steps(&a, 1, PAD_JUMP);
+   CHECK(!g->cat_keys && g->act == RA_WORK + 1);
+   remote_steps(&a, 60, 0);
+   CHECK(g->work > s0);
+   /* 18:00 with the hours done: survived, with the bonuses */
+   g->t = REMOTE_DAY_MINUTES * fpm - 1, g->work = REMOTE_WORK_GOAL * REMOTE_WORK_UNIT, g->points = 500, g->suspicion = 200;
+   remote_steps(&a, 1, 0);
+   CHECK(g->over == REND_SURVIVED && g->score == 500 + 1000 + REMOTE_SUSPICION_MAX - g->suspicion && g->suspicion >= 199);
+   remote_steps(&a, 100, 0);
+   remote_steps(&a, 1, PAD_START);
+   CHECK(!g->over && g->t == 0);
+   /* missing hours halves the points; full suspicion fires at once */
+   g->t = REMOTE_DAY_MINUTES * fpm - 1, g->work = 0, g->points = 500;
+   remote_steps(&a, 1, 0);
+   CHECK(g->over == REND_MISSED && g->score == 250);
+   hd_remote_start(&a);
+   g->ev_next = g->ev_count;
+   g->suspicion = REMOTE_SUSPICION_MAX - 1;
+   remote_steps(&a, 12 * fpm, 0);
+   CHECK(g->over == REND_FIRED);
+   /* a whole day without touching anything, twice: the same day (the lazy one is fired before 18:00) */
+   hd_reset(&a);
+   hd_remote_start(&a);
+   hd_reset(&b);
+   hd_remote_start(&b);
+   for (f = 0; f < REMOTE_DAY_MINUTES * fpm && !g->over; f++)
+   {
+      remote_steps(&a, 1, 0);
+      remote_steps(&b, 1, 0);
+   }
+   CHECK(g->over == REND_FIRED && g->t < REMOTE_DAY_MINUTES * fpm && memcmp(&a, &b, sizeof a) == 0);
+}
+
+/* Every place the day uses is reached on foot from the hall, by the worker's size, along play3d_route. */
+static void test_remote_places(void)
+{
+   static hd_state a;
+   hd_remote *g = HD_GAME3D(&a, hd_remote);
+   int32_t kind, i, px, pz;
+   hd_reset(&a);
+   hd_remote_start(&a);
+   for (kind = REMOTE_PLACE_ACTIVITY; kind <= REMOTE_PLACE_MATE; kind++)
+      for (i = 0; remote_place(kind, i, &px, &pz); i++)
+      {
+         int32_t x = ROOM3D_AT(450), z = ROOM3D_AT(725), tx = ROOM3D_AT(px), tz = ROOM3D_AT(pz), f, dx, dz;
+         int64_t d2 = 0;
+         for (f = 0; f < 3000; f++)
+         {
+            d2 = (int64_t)(x - tx) * (x - tx) + (int64_t)(z - tz) * (z - tz);
+            if (d2 < (int64_t)FX_FRAC(15, 100) * FX_FRAC(15, 100) || !play3d_route(3, x, z, tx, tz, &dx, &dz))
+               break;
+            play3d_move(&x, &z, (int32_t)(((int64_t)REMOTE_WALK * dx) >> 14), (int32_t)(((int64_t)REMOTE_WALK * dz) >> 14), REMOTE_RADIUS);
+         }
+         if (d2 >= (int64_t)FX_FRAC(15, 100) * FX_FRAC(15, 100))
+            fprintf(stderr, "  remote: place %d of kind %d at (%d, %d) not reached\n", (int)i, (int)kind, (int)px, (int)pz);
+         CHECK(d2 < (int64_t)FX_FRAC(15, 100) * FX_FRAC(15, 100));
+      }
+   (void)g;
 }
 
 /* TELETRABAJO: CÁMARA APAGADA: the same walk twice, through a save state, and never out of the flat. */
@@ -2321,6 +2446,8 @@ int main(void)
    test_3d();
    test_remote();
    test_remote_activities();
+   test_remote_day();
+   test_remote_places();
 #endif
    test_effects_package();
    test_goal_height();

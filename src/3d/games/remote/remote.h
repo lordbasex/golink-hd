@@ -24,8 +24,41 @@ enum
    RA_PLANTS,
    RA_SHOWER,
    RA_WASHING,
+   RA_DOOR,    /* only while the bell rings */
+   RA_CAT,     /* wherever the cat rests */
+   RA_PHONES,  /* the headphones on the desk, only while the drill goes */
    RA_COUNT
 };
+
+/* The day's events (section 5 of the design): the boss's, then the house's. */
+enum
+{
+   RE_MEETING = 0, /* the daily meeting at 10:00 */
+   RE_CALL,        /* a surprise video call */
+   RE_MESSAGE,     /* an urgent message */
+   RE_SHARE,       /* "share your screen" */
+   RE_BOSS_KINDS,
+   RE_DELIVERY = RE_BOSS_KINDS, /* the bell rings */
+   RE_CAT,         /* the cat goes for the keyboard */
+   RE_DRILL,       /* the neighbor's drill */
+   RE_NET,         /* the internet drops */
+   RE_MATE,        /* the flatmate comes back early */
+   RE_KINDS
+};
+#define REMOTE_EVENTS_MAX 12
+
+/* How the day ended (`over`). */
+enum { REND_PLAYING = 0, REND_FIRED, REND_MISSED, REND_SURVIVED };
+
+/* The chat status the boss sees. */
+enum { RS_ONLINE = 0, RS_AWAY, RS_CALL, RS_MEETING, RS_OFFLINE };
+
+/* Who wrote a message on the phone. */
+enum { RW_BOSS = 0, RW_YOU, RW_CAT, RW_MATE, RW_HOUSE, RW_COUNT };
+#define REMOTE_PHONE 8 /* the messages the phone keeps */
+
+/* What the cat is doing (`cat_mode`). */
+enum { CAT_REST = 0, CAT_WALK, CAT_UP, CAT_DOWN };
 
 /* The game's state: 32-bit fields only (a save state is these words). */
 typedef struct
@@ -49,6 +82,38 @@ typedef struct
    int32_t toast, toast_t;     /* the last message (a text id + 1) and its frames left */
    int32_t toast_points;       /* the points shown with it */
    int32_t screen_scroll;      /* how far the code on the desk's screens went up (pixels) */
+   /* phase 3: the day */
+   int32_t suspicion;          /* 0..REMOTE_SUSPICION_MAX: the boss's */
+   int32_t away_t;             /* frames since the worker left the desk */
+   int32_t over, over_t;       /* how the day ended (REND_*) and the frames since */
+   int32_t score;              /* the day's score, once it ended */
+   int32_t ev_count, ev_next;  /* the day's events and the next one to come */
+   int32_t ev_at[REMOTE_EVENTS_MAX];   /* the game minute each one comes */
+   int32_t ev_kind[REMOTE_EVENTS_MAX]; /* RE_* */
+   int32_t boss;               /* the boss event under way + 1, 0: none */
+   int32_t boss_call;          /* 0: waiting for the worker at the desk, 1: on the call */
+   int32_t boss_t;             /* frames left to answer, or of the call */
+   int32_t boss_limit;         /* the frames there were to answer (for the countdown bar) */
+   int32_t boss_noise;         /* what the boss already heard on this call (one bit each) */
+   int32_t bell_t;             /* frames the delivery still waits at the door */
+   int32_t bell_owed;          /* 1: the delivery comes back during the next call */
+   int32_t drill_t, net_t;     /* frames left of the drill and of no internet */
+   int32_t washer_t;           /* frames the washing machine still spins */
+   int32_t headphones;         /* 1: on, the drill is far away */
+   int32_t cat_x, cat_z, cat_y, cat_yaw; /* the cat (16.16 meters, y over the floor) */
+   int32_t cat_walk, cat_phase;
+   int32_t cat_mode, cat_t;    /* CAT_*, and frames left resting or hopping */
+   int32_t cat_spot, cat_goal; /* where it is (or was) and where it goes, in the cat's spots */
+   int32_t cat_keys;           /* 0: free, 1: going for the keyboard, 2: on it */
+   int32_t cat_keys_t;         /* frames on the keyboard */
+   int32_t cat_logged;         /* 1: it already logged the worker off this time */
+   int32_t mate;               /* 1: the flatmate is home */
+   int32_t mate_x, mate_z, mate_yaw, mate_walk, mate_phase;
+   int32_t mate_goal, mate_t;  /* where it goes, and frames left where it stands */
+   int32_t mate_talk_t;        /* frames until it talks again */
+   int32_t phone_n;            /* how many messages came in all (the last REMOTE_PHONE are kept) */
+   int32_t phone_text[REMOTE_PHONE], phone_who[REMOTE_PHONE], phone_min[REMOTE_PHONE];
+   int32_t phone_new_t;        /* frames the phone still shows its newest message bright */
 } hd_remote;
 
 /* Every number that balances the game, in one place. */
@@ -71,6 +136,18 @@ typedef struct
 #define REMOTE_CAM_PITCH_MIN 250
 #define REMOTE_CAM_PITCH_MAX 1000
 #define REMOTE_TOAST_FRAMES 180                /* a message stays three seconds */
+#define REMOTE_SUSPICION_MAX 1000              /* the boss's patience: fired at once */
+#define REMOTE_AWAY_GRACE 10                   /* game minutes away before the status says "away" */
+#define REMOTE_AWAY_RISE 1                     /* suspicion a game minute away after that */
+#define REMOTE_ASLEEP_RISE 3                   /* suspicion a game minute asleep on the keyboard */
+#define REMOTE_WORK_CALM 1                     /* suspicion a game minute of real work takes away */
+#define REMOTE_NOISE 100                       /* suspicion when the boss hears something on a call */
+#define REMOTE_CAT_LOGOFF (20 * 60)            /* frames on the keyboard until the cat logs the worker off */
+#define REMOTE_OVERTIME 420                    /* work minutes after which each one costs points */
+#define REMOTE_WASHER_MINUTES 45               /* the washing machine spins after it is loaded */
+#define REMOTE_DRILL_MINUTES 30
+#define REMOTE_NET_MINUTES 10
+#define REMOTE_BELL_FRAMES (30 * 60)           /* the delivery waits half a minute */
 
 /* The game's texts, each in English, Spanish and Portuguese (remote_text.c). */
 enum
@@ -86,8 +163,50 @@ enum
    RT_DOING = RT_PROMPT + RA_COUNT,  /* RA_COUNT: "napping..." */
    RT_DONE = RT_DOING + RA_COUNT,    /* RA_COUNT: the line when it ends */
    RT_AGAIN = RT_DONE + RA_COUNT,    /* an activity done too often */
+   RT_SUSPICION,
+   RT_STATUS,        /* 5: RS_* */
+   RT_WHO = RT_STATUS + 5,           /* RW_COUNT: who wrote a message */
+   RT_ON_CALL = RT_WHO + RW_COUNT,   /* "on a call" instead of "A: stop" */
+   RT_CAT_OFF,       /* "A: get the cat off" */
+   RT_ANSWER,        /* "answer at the desk" with the countdown */
+   RT_GREETING,      /* the boss's good morning */
+   RT_BOSS_ASK,      /* RE_BOSS_KINDS x 2: the boss asks */
+   RT_BOSS_YES = RT_BOSS_ASK + RE_BOSS_KINDS * 2, /* RE_BOSS_KINDS: the worker answers */
+   RT_BOSS_MISS = RT_BOSS_YES + RE_BOSS_KINDS,    /* RE_BOSS_KINDS: the boss, unanswered */
+   RT_HEARD = RT_BOSS_MISS + RE_BOSS_KINDS,       /* 5: what the boss hears on a call: washer, bell, flatmate, drill, snoring */
+   RT_BELL = RT_HEARD + 5,           /* the house's events */
+   RT_BELL_GONE,
+   RT_CAT_KEYS,
+   RT_CAT_TYPED,
+   RT_CAT_LOGOFF,
+   RT_CAT_MOVED,
+   RT_DRILL,
+   RT_DRILL_END,
+   RT_NET,
+   RT_NET_BACK,
+   RT_MATE_HOME,
+   RT_MATE_TALK,     /* 4 */
+   RT_WASHER = RT_MATE_TALK + 4,
+   RT_END_TIME = RT_WASHER + 1,      /* 18:00 */
+   RT_END_FIRED_MSG,
+   RT_END_TITLE,     /* 5: fired, sofa intern, model employee, remote ninja, legend */
+   RT_END_POINTS = RT_END_TITLE + 5,
+   RT_END_SURVIVED,
+   RT_END_DISCRETION,
+   RT_END_OVERTIME,
+   RT_END_HALF,
+   RT_END_TOTAL,
+   RT_END_AGAIN,
    RT_COUNT
 };
 const char *remote_text(int32_t id);
+
+/*
+ * The places the day uses, for bots and tests: where the worker starts
+ * activity `a`, the floor beside the cat's spot `a`, the flatmate's spot `a`
+ * (centimeters of the plan). Each returns 0 past the last one.
+ */
+enum { REMOTE_PLACE_ACTIVITY = 0, REMOTE_PLACE_CAT, REMOTE_PLACE_MATE };
+int32_t remote_place(int32_t kind, int32_t a, int32_t *x, int32_t *z);
 
 #endif
