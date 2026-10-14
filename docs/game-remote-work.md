@@ -498,6 +498,15 @@ before the next one.
 
 ## 13. Progress
 
+**Models made by artists (2026-10-14, phase "models").** The user asked for a
+character and things that look much better than the built boxes, from
+open-licensed 3D models. What was searched and why (the same rules as the
+sound: the files ship in a public game):
+
+- Free CC0: Quaternius's characters and animals, through Poly Pizza and OpenGameArt (Quaternius's own site changed its license in August 2026 to one that forbids passing the files on; the older CC0 copies stay CC0), Kenney's Furniture Kit, KayKit. Sketchfab only with its CC0/CC-BY filter (and a login). Magnific/Freepik and Sketchfab's store licenses: no. A shop's paid characters (threedee.design): their license lets a game use them but not pass the original files on; possible if the user buys one, with only the converted model in the package.
+- Picked: Quaternius's "Casual Character" (the worker) and "Hoodie Character" (the flatmate), CC0, about 5,800 triangles, 22 bones kept, clips Idle, Walk, Run, Wave, Interact. Their cat was blockier than the built one, so the built cat stays; Kenney's furniture was simpler than the built furniture.
+- The engine got `model3d` (docs/3d.md); the package's `"models"`; `actor3d_place_model` (the clips, and the pose's angles on the bones for sitting, typing, lying, holding, the guitar). The first try opened the arms when lying (an artist's rest is an A): each limb now hangs straight before its angle.
+
 **More of the boss (2026-10-14, after phase 6).** The user asked for a video
 call that shows, and for events like "production is down, deploy a fix",
 "can you work this weekend?" and "share your screen". Added (section 5): the

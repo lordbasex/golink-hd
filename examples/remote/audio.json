@@ -453,5 +453,27 @@
    "length": 16,
    "loop": true
   }
+ },
+ "models": {
+  "worker": {
+   "title": "Casual Character",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://poly.pizza/m/kZ3DmIoGip",
+   "url": "https://static.poly.pizza/90a9e2d4-053f-42f1-99a2-8f5e1180ea7f.glb",
+   "file": "models/casual.glb",
+   "height": 1.75,
+   "clips": "Idle,Walk,Run,Wave,Interact"
+  },
+  "flatmate": {
+   "title": "Hoodie Character",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://poly.pizza/m/gKLBoRsyKe",
+   "url": "https://static.poly.pizza/bcd66ec5-5e81-4901-a222-47abc875fe2a.glb",
+   "file": "models/hoodie.glb",
+   "height": 1.72,
+   "clips": "Idle,Walk,Run,Wave,Interact"
+  }
  }
 }

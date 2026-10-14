@@ -1749,6 +1749,7 @@ static void worker_pose(const hd_remote *g, actor3d_pose *pose)
    pose->yaw = g->yaw;
    pose->walk = g->walk;
    pose->phase = g->phase;
+   pose->clock = g->screen_t;
    if (g->act)
    {
       const activity *a = &activities[g->act - 1];
@@ -1777,6 +1778,15 @@ static void worker_pose(const hd_remote *g, actor3d_pose *pose)
    }
 }
 
+/* A person: the package's model when it has one, else the built one. */
+static int32_t place_person(int32_t who, const actor3d_pose *pose, r3d_instance *out)
+{
+   model3d_body *body = room3d_person_model(who);
+   if (body)
+      return actor3d_place_model(body, pose, room3d_shadow(), out);
+   return actor3d_place(room3d_person(who), pose, out);
+}
+
 /* The house seen from `v` with the worker (in `worker`'s pose), the flatmate and the cat. */
 static void scene(hd_surface *sf, const hd_remote *g, r3d_view *v, const actor3d_pose *worker)
 {
@@ -1796,7 +1806,7 @@ static void scene(hd_surface *sf, const hd_remote *g, r3d_view *v, const actor3d
    /* the desk's screens: code going up while working, asleep otherwise */
    tex3d_terminal(room3d_desk_screen(0), 11, g->screen_scroll, typing);
    tex3d_terminal(room3d_desk_screen(1), 12, g->screen_scroll / 2 + 40, typing);
-   n = actor3d_place(room3d_person(ROOM3D_WORKER), worker, inst);
+   n = place_person(ROOM3D_WORKER, worker, inst);
    /* the flatmate, waving while it talks */
    if (g->mate)
    {
@@ -1807,7 +1817,8 @@ static void scene(hd_surface *sf, const hd_remote *g, r3d_view *v, const actor3d
       pose.walk = g->mate_walk;
       pose.phase = g->mate_walk ? g->mate_phase : (g->t * 40) & 4095;
       pose.wave = g->mate_talk_t > 18 * 60;
-      n += actor3d_place(room3d_person(ROOM3D_FLATMATE), &pose, inst + n);
+      pose.clock = g->screen_t + 37;
+      n += place_person(ROOM3D_FLATMATE, &pose, inst + n);
    }
    /* the cat */
    memset(&cat, 0, sizeof cat);

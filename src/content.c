@@ -28,6 +28,9 @@
 #include "pack.h"
 #include "gfx.h"
 #include "sprite.h"
+#ifndef HD_NO_3D
+#include "model3d.h"
+#endif
 
 char hd_title[64];
 static char credits[LANGS][CREDITS_MAX][CREDIT_LEN];
@@ -73,6 +76,9 @@ void hd_content_builtin(void)
    fx_grade_build(GRADE_NONE, NULL);
    memset(hd_content_id, 0, sizeof hd_content_id);
    hd_code_game = HD_GAME_LEVELS;
+#ifndef HD_NO_3D
+   model3d_free_all();
+#endif
    hd_content_gen++;
 }
 
@@ -806,6 +812,46 @@ static const char *load_credits(const json *c)
    return err;
 }
 
+/* Format 3's "models": {"name": "file.hdm"}, for a game coded in the engine (model3d.h). */
+static const char *load_models(const hd_zip *zip, const json *models)
+{
+   static char msg[200];
+   const json *it;
+   if (!models)
+      return NULL;
+#ifdef HD_NO_3D
+   (void)zip;
+   return "this go-link HD was built without its 3D games";
+#else
+   if (models->type != JSON_OBJECT)
+      return "manifest.json's models must be an object of names and .hdm files";
+   for (it = models->child; it; it = it->next)
+   {
+      const char *err;
+      size_t len;
+      uint8_t *data;
+      if (it->type != JSON_STRING || !it->key || !it->key[0] || strlen(it->key) >= 32)
+         return "each of manifest.json's models is a name (shorter than 32 letters) and a file";
+      if (model3d_find(it->key))
+         return "two of manifest.json's models have the same name";
+      data = hd_zip_read(zip, it->str, &len, &err);
+      if (!data)
+      {
+         snprintf(msg, sizeof msg, "%s: %s", it->str, err);
+         return msg;
+      }
+      err = model3d_load(it->key, data, len);
+      free(data);
+      if (err)
+      {
+         snprintf(msg, sizeof msg, "%s: %s", it->str, err);
+         return msg;
+      }
+   }
+   return NULL;
+#endif
+}
+
 static const char *load_package(const uint8_t *data, size_t size)
 {
    static char msg[160];
@@ -946,6 +992,8 @@ static const char *load_package(const uint8_t *data, size_t size)
       err = hd_sounds_load(&zip, hd_json_get(man, "sounds"), hd_json_get(man, "music"));
    if (!err)
       err = hd_audio_load(&zip, hd_json_get(man, "audio"));
+   if (!err)
+      err = load_models(&zip, hd_json_get(man, "models"));
    if (!err && levels)
       err = load_stages(&zip, levels);
    hd_json_free(man);

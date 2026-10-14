@@ -221,6 +221,12 @@ void r3d_detail(int32_t cell)
    cur_cell = hd_max(0, cell);
 }
 
+void r3d_truncate(int32_t count)
+{
+   if (count >= 0 && count < tri_count)
+      tri_count = count;
+}
+
 int32_t r3d_triangles(void)
 {
    return tri_count;
@@ -319,6 +325,7 @@ static void world_uv(r3d_vec p, int32_t nx, int32_t ny, int32_t nz, int32_t *u, 
  */
 /* The corners' own normals (in the piece's space) for the next triangle: round surfaces lit smoothly. NULL: the face's. */
 static const int32_t (*next_vn)[3];
+static int keep_flat; /* a model's triangle is kept even without area (its place in the mesh matters: r3d_tri_pose) */
 
 static void add_tri_uv(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t hx, int64_t hy, int64_t hz, const int32_t *uv, const int32_t *lmuv)
 {
@@ -331,7 +338,11 @@ static void add_tri_uv(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t 
       return;
    unit(nx, ny, nz, &ix, &iy, &iz);
    if (!ix && !iy && !iz)
-      return; /* no area */
+   {
+      if (!keep_flat)
+         return; /* no area */
+      iy = TRIG_ONE;
+   }
    unit(hx, hy, hz, &jx, &jy, &jz);
    if ((int64_t)ix * jx + (int64_t)iy * jy + (int64_t)iz * jz < 0)
    {
@@ -409,6 +420,42 @@ static void add_tri_n(r3d_vec a, r3d_vec b, r3d_vec c, uint32_t color, int64_t h
    next_vn = (const int32_t(*)[3])n;
    add_tri_uv(a, b, c, color, hx, hy, hz, NULL, NULL);
    next_vn = NULL;
+}
+
+void r3d_triangle(r3d_vec a, r3d_vec b, r3d_vec c, const int32_t na[3], const int32_t nb[3], const int32_t nc[3], uint32_t color)
+{
+   int64_t ux = (int64_t)b.x - a.x, uy = (int64_t)b.y - a.y, uz = (int64_t)b.z - a.z, vx = (int64_t)c.x - a.x, vy = (int64_t)c.y - a.y, vz = (int64_t)c.z - a.z;
+   int64_t hx = uy * vz - uz * vy, hy = uz * vx - ux * vz, hz = ux * vy - uy * vx;
+   while ((hx < 0 ? -hx : hx) > ((int64_t)1 << 40) || (hy < 0 ? -hy : hy) > ((int64_t)1 << 40) || (hz < 0 ? -hz : hz) > ((int64_t)1 << 40))
+      hx /= 2, hy /= 2, hz /= 2;
+   keep_flat = 1;
+   if (na && nb && nc)
+      add_tri_n(a, b, c, color, hx, hy, hz, na, nb, nc);
+   else
+      add_tri(a, b, c, color, hx, hy, hz);
+   keep_flat = 0;
+}
+
+void r3d_tri_pose(int32_t index, r3d_vec a, r3d_vec b, r3d_vec c, const int32_t na[3], const int32_t nb[3], const int32_t nc[3])
+{
+   r3d_tri *t;
+   int64_t ux, uy, uz, vx, vy, vz;
+   int32_t nx, ny, nz, k;
+   if (index < 0 || index >= tri_count)
+      return;
+   t = &tris[index];
+   t->v[0] = a, t->v[1] = b, t->v[2] = c;
+   ux = (int64_t)b.x - a.x, uy = (int64_t)b.y - a.y, uz = (int64_t)b.z - a.z;
+   vx = (int64_t)c.x - a.x, vy = (int64_t)c.y - a.y, vz = (int64_t)c.z - a.z;
+   unit(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx, &nx, &ny, &nz);
+   if (nx | ny | nz)
+      t->nx = nx, t->ny = ny, t->nz = nz; /* a triangle squeezed flat keeps its last face */
+   for (k = 0; k < 3; k++)
+   {
+      t->vn[0][k] = na[k];
+      t->vn[1][k] = nb[k];
+      t->vn[2][k] = nc[k];
+   }
 }
 
 /*

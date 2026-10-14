@@ -192,6 +192,16 @@ def build(spec):
         out = f"music_{name}.wav"
         adpcm(pcm, 2, os.path.join(OUT, out))
         tracks[name] = {"file": out, "volume": t.get("volume", 200)}
+    models = {}
+    for name, m in spec.get("models", {}).items():
+        out = f"model_{name}.hdm"
+        cmd = ["python3", os.path.join(HERE, "models", "hdm.py"), source_path(m), os.path.join(OUT, out)]
+        if m.get("height"):
+            cmd += ["--height", str(m["height"])]
+        if m.get("clips"):
+            cmd += ["--clips", m["clips"]]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+        models[name] = out
     manifest = {
         "format": 3,
         "title": "TELETRABAJO: CÁMARA APAGADA",
@@ -199,6 +209,7 @@ def build(spec):
         "game": "remote",
         "players": 1,
         "audio": {"effects": effects, "tracks": tracks},
+        "models": models,
         "credits": game_credits(spec),
     }
     with open(os.path.join(OUT, "manifest.json"), "w") as f:
@@ -216,7 +227,8 @@ HEADINGS = {
     "music": {"en": "MUSIC", "es": "MÚSICA", "pt": "MÚSICA"},
     "by": {"en": "by", "es": "por", "pt": "por"},
     "sounds": {"en": "SOUND EFFECTS", "es": "EFECTOS DE SONIDO", "pt": "EFEITOS SONOROS"},
-    "license": {"en": "music and sounds in the public domain (CC0)", "es": "música y sonidos de dominio público (CC0)", "pt": "música e sons de domínio público (CC0)"},
+    "models": {"en": "3D CHARACTERS", "es": "PERSONAJES 3D", "pt": "PERSONAGENS 3D"},
+    "license": {"en": "characters, music and sounds: public domain (CC0)", "es": "personajes, música y sonidos: dominio público (CC0)", "pt": "personagens, música e sons: domínio público (CC0)"},
     "plays": {"en": "PLAYED WITH", "es": "SE JUEGA CON", "pt": "SE JOGA COM"},
     "logo": {"en": "GO-LINK LOGO", "es": "LOGO DE GO-LINK", "pt": "LOGO DO GO-LINK"},
     "family": {"en": "MY FAMILY", "es": "MI FAMILIA", "pt": "MINHA FAMÍLIA"},
@@ -240,6 +252,11 @@ def game_credits(spec):
                  f"# {h['music']}"]
         for t in spec["tracks"].values():
             lines += [t["title"].split(" (")[0], f"{h['by']} {t['author']}", ""]
+        if spec.get("models"):
+            lines.append(f"# {h['models']}")
+            for author in dict.fromkeys(m["author"] for m in spec["models"].values()):
+                lines.append(author)
+            lines.append("")
         lines.append(f"# {h['sounds']}")
         authors = []
         for e in spec["effects"].values():
@@ -267,7 +284,7 @@ def credits(spec):
         "| In the game | Recording | Author | License | Source |",
         "|---|---|---|---|---|",
     ]
-    for kind in ("tracks", "effects"):
+    for kind in ("tracks", "effects", "models"):
         for name, e in spec[kind].items():
             lines.append(f"| {kind[:-1]} `{name}` | {e.get('title', '')} | {e.get('author', '')} | {e['license']} | {e.get('page', e['url'])} |")
     with open(os.path.join(HERE, "CREDITS.md"), "w") as f:
@@ -278,7 +295,7 @@ def main():
     with open(os.path.join(HERE, "audio.json")) as f:
         spec = json.load(f)
     if len(sys.argv) > 1 and sys.argv[1] == "fetch":
-        fetch({**spec["tracks"], **spec["effects"]})
+        fetch({**spec["tracks"], **spec["effects"], **spec.get("models", {})})
     else:
         build(spec)
 

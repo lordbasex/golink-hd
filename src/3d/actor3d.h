@@ -7,6 +7,7 @@
 #define HD_ACTOR3D_H
 
 #include "r3d.h"
+#include "model3d.h"
 
 enum
 {
@@ -57,11 +58,23 @@ typedef struct
    const r3d_mesh *prop;
    int32_t prop_pitch, prop_roll;
    int32_t strum;     /* playing a guitar (the prop, in front of the belly): one hand along its neck, the other strumming over its body */
+   int32_t clock;     /* game frames, for a model's idle breathing (actor3d_place_model) */
 } actor3d_pose;
 
 /* Builds the parts (with the fabric texture's id for the clothes, -1 none). */
 void actor3d_build(actor3d_kit *k, const actor3d_look *look, int32_t fabric_tex);
 /* The instances of a pose into out (up to ACT_INSTANCES); returns how many. */
 int32_t actor3d_place(const actor3d_kit *k, const actor3d_pose *p, r3d_instance *out);
+
+/*
+ * The same pose for a person made by an artist (model3d.h): its clips
+ * where they fit (Idle, Walk, Run, Wave), and the pose's angles turned onto
+ * its bones where none does (sitting, typing, holding, lying, playing the
+ * guitar); the body is posed and its instance, what it holds and its
+ * shadow go into out (up to 3). The bones are found by name (Hips, Abdomen,
+ * Head, UpperArm.L, LowerArm.L, Wrist.L, UpperLeg.L, LowerLeg.L and .R).
+ */
+#define ACT_MODEL_INSTANCES 3
+int32_t actor3d_place_model(model3d_body *body, const actor3d_pose *p, const r3d_mesh *shadow, r3d_instance *out);
 
 #endif

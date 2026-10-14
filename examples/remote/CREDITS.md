@@ -52,3 +52,5 @@ and, for the music, looped and stored as IMA ADPCM.
 | effect `tv` | Muffled TV Program #7 | milcahrawr (freesound.org) | CC0 1.0 | https://freesound.org/people/milcahrawr/sounds/873562/ |
 | effect `console` | Gaming Controller Playing Sounds 1 | Joao_Janz (freesound.org) | CC0 1.0 | https://freesound.org/people/Joao_Janz/sounds/477534/ |
 | effect `shower` | shower.wav | simosco (freesound.org) | CC0 1.0 | https://freesound.org/people/simosco/sounds/235574/ |
+| model `worker` | Casual Character | Quaternius | CC0 1.0 | https://poly.pizza/m/kZ3DmIoGip |
+| model `flatmate` | Hoodie Character | Quaternius | CC0 1.0 | https://poly.pizza/m/gKLBoRsyKe |

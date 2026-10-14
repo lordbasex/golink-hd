@@ -374,6 +374,8 @@ static int pack_names(const char *dir, char (*names)[256], int *count)
    /* format 3's audio: its effects (a file name, or an object with its "file") and its tracks */
    j = hd_json_get(man, "audio");
    ok = ok && add_values(hd_json_get(j, "effects"), names, count, path) && add_files(j, names, count, path);
+   /* format 3's models (a game coded in the engine) */
+   ok = ok && add_values(hd_json_get(man, "models"), names, count, path);
    /* format 3's levels: each one's level file and intro, every "file" inside it (layers, music) and its textures */
    for (j = hd_json_get(man, "levels"), j = j && j->type == JSON_ARRAY ? j->child : NULL; ok && j; j = j->next)
    {

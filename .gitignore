@@ -28,3 +28,4 @@ examples/antidoto/textures_x*/
 # TELETRABAJO: CÁMARA APAGADA: the downloaded recordings and the package folder
 examples/remote/source/
 examples/remote/game/
+__pycache__/

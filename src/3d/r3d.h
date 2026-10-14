@@ -90,6 +90,15 @@ void r3d_ball(int32_t x, int32_t y, int32_t z, int32_t rx, int32_t ry, int32_t r
 /* A flat quad, one side: the side where (b - a) x (c - a) points. */
 void r3d_quad(r3d_vec a, r3d_vec b, r3d_vec c, r3d_vec d, uint32_t color);
 
+/*
+ * One triangle, its front where a, b, c turn counterclockwise (a model's),
+ * each corner lit by its own normal (16384 long; NULL: the face's). It is
+ * kept even without area, so a model's triangles stay where it put them.
+ */
+void r3d_triangle(r3d_vec a, r3d_vec b, r3d_vec c, const int32_t na[3], const int32_t nb[3], const int32_t nc[3], uint32_t color);
+/* Moves triangle `index` (a mesh's first + i), in the world, with its corners' normals: a skinned model posed every frame (model3d.h). */
+void r3d_tri_pose(int32_t index, r3d_vec a, r3d_vec b, r3d_vec c, const int32_t na[3], const int32_t nb[3], const int32_t nc[3]);
+
 /* A lamp: where, how far its light reaches, its color and strength (256 is a desk lamp's). */
 void r3d_light(int32_t x, int32_t y, int32_t z, int32_t radius, uint32_t color, int32_t strength);
 
@@ -119,6 +128,8 @@ void r3d_bake(const r3d_light_cfg *c);
 int32_t r3d_solid_at(r3d_vec p);
 int32_t r3d_reach(r3d_vec from, r3d_vec to);
 int32_t r3d_triangles(void);
+/* Drops the triangles from `count` on (what was built last, to build it again: a package's models). */
+void r3d_truncate(int32_t count);
 
 /* ---- drawing (every frame) ---- */
 

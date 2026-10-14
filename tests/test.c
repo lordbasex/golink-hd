@@ -13,6 +13,7 @@
 #include "r3d.h"
 #include "room3d.h"
 #include "play3d.h"
+#include "model3d.h"
 #include "games/remote/remote.h"
 #endif
 #include "pack.h"
@@ -1057,6 +1058,103 @@ static void remote_plays(hd_state *s, int32_t n, uint32_t buttons)
       remote_steps(s, 1, f == 0 ? buttons : 0);
       hd_mix(s, out, 1);
    }
+}
+
+/* A small .hdm: a triangle on two bones (the second a child 1 m up), one clip of 2 frames that turns the child a quarter around z. */
+static size_t tiny_hdm(uint8_t *out)
+{
+   uint8_t *p = out;
+   int32_t f, b, k;
+   memcpy(p, "HDM1", 4); p += 4;
+   le32(&p, 1); le32(&p, 3); le32(&p, 1); le32(&p, 2); le32(&p, 1);
+   for (k = 0; k < 3; k++)
+   {
+      /* x, y, z; a normal +z; the first vertex on bone 0, the others on bone 1 */
+      le32(&p, (uint32_t)(k == 1 ? FX(1) : 0)); le32(&p, (uint32_t)(k ? FX(2) : 0)); le32(&p, 0);
+      le16(&p, 0); le16(&p, 0); le16(&p, 16384);
+      *p++ = (uint8_t)(k ? 1 : 0); *p++ = 0; *p++ = 0; *p++ = 0;
+      *p++ = 255; *p++ = 0; *p++ = 0; *p++ = 0;
+   }
+   le16(&p, 0); le16(&p, 1); le16(&p, 2); le16(&p, 0); le32(&p, 0x336699);
+   for (b = 0; b < 2; b++)
+   {
+      le32(&p, (uint32_t)(b ? 0 : -1));
+      memset(p, 0, 24); memcpy(p, b ? "Arm" : "Hips", b ? 3 : 4); p += 24;
+      le16(&p, 0); le16(&p, 0); le16(&p, 0); le16(&p, 16384);
+      le32(&p, 0); le32(&p, (uint32_t)(b ? FX(1) : 0)); le32(&p, 0);
+   }
+   memset(p, 0, 24); memcpy(p, "Wave", 4); p += 24;
+   le32(&p, 2); le32(&p, 30);
+   for (f = 0; f < 2; f++)
+      for (b = 0; b < 2; b++)
+      {
+         /* frame 1 turns the arm 90 degrees around z: (0, 0, sin 45, cos 45) */
+         int32_t turn = f == 1 && b == 1;
+         le16(&p, 0); le16(&p, 0); le16(&p, (uint32_t)(turn ? 11585 : 0)); le16(&p, (uint32_t)(turn ? 11585 : 16384));
+         le32(&p, 0); le32(&p, (uint32_t)(b ? FX(1) : 0)); le32(&p, 0);
+      }
+   return (size_t)(p - out);
+}
+
+/* Models made by artists (model3d.h): read, animated, skinned, refused when broken, and brought by a package. */
+static void test_model3d(void)
+{
+   static uint8_t hdm[4096], zip[16384];
+   model3d_xf local[MODEL3D_BONES], global[MODEL3D_BONES];
+   const model3d *m;
+   model3d_body body;
+   size_t n = tiny_hdm(hdm), z;
+   int32_t place[9], first;
+   zfile files[2] = {{0}};
+   const char *err;
+   r3d_vec at = { 0, 0, 0 };
+   hd_content_builtin();
+   CHECK(model3d_load("tiny", hdm, n) == NULL);
+   m = model3d_find("tiny");
+   CHECK(m && model3d_bones(m) == 2 && model3d_bone(m, "Arm") == 1 && model3d_parent(m, 1) == 0 && model3d_clip(m, "Wave") == 0);
+   CHECK(model3d_clip_frames(m, 0) == 4); /* 2 frames at 30 a second: 4 game frames */
+   /* at rest the arm's joint is 1 m up; at frame 1 of the clip it is turned a quarter: its +y points to -x */
+   model3d_sample(m, -1, 0, local);
+   model3d_globals(m, local, global);
+   CHECK(global[1].t.y == FX(1) && global[1].r[4] == 16384);
+   model3d_sample(m, 0, 2 << 16, local);
+   model3d_globals(m, local, global);
+   CHECK(hd_abs(global[1].r[1] + 16384) < 40 && hd_abs(global[1].r[4]) < 40);
+   /* halfway between the frames: half the turn */
+   model3d_sample(m, 0, 1 << 16, local);
+   CHECK(hd_abs(local[1].r[4] - 11585) < 60);
+   /* skinned: the vertex 1 m up the arm swings to the left, the one on the hips stays */
+   r3d_place(0, 0, 0, 0);
+   first = r3d_triangles();
+   model3d_body_build(&body, m);
+   CHECK(body.mesh.count == 1 && body.mesh.first == first);
+   model3d_sample(m, 0, 2 << 16, local);
+   model3d_globals(m, local, global);
+   r3d_rotation(0, 0, 0, place);
+   model3d_body_pose(&body, global, place, at);
+   r3d_truncate(first);
+   CHECK(r3d_triangles() == first);
+   /* broken files are refused, never read past their end */
+   CHECK(model3d_load("short", hdm, 40) != NULL);
+   hdm[0] = 'X';
+   CHECK(model3d_load("bad", hdm, n) != NULL);
+   hdm[0] = 'H';
+   CHECK(model3d_find("short") == NULL && model3d_find("bad") == NULL);
+   /* a package brings them by name */
+   hd_content_builtin();
+   CHECK(model3d_find("tiny") == NULL);
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Remote\", \"game\": \"remote\", \"models\": {\"worker\": \"w.hdm\"}}";
+   files[1].name = "w.hdm";
+   files[1].text = (const char *)hdm;
+   files[1].len = n;
+   z = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, z, &err) == 1);
+   CHECK(model3d_find("worker") != NULL);
+   files[0].text = "{\"format\": 3, \"title\": \"Remote\", \"game\": \"remote\", \"models\": {\"worker\": \"missing.hdm\"}}";
+   z = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, z, &err) == 0 && strstr(err, "missing.hdm") != NULL && model3d_find("worker") == NULL);
+   hd_content_builtin();
 }
 
 /* TELETRABAJO as a package ("game": "remote") with its effects and tracks by name: the title's music, the alarm in the morning, loops that keep their channel, a call's music and back. */
@@ -2785,6 +2883,7 @@ int main(void)
    test_remote_boss();
    test_remote_screens();
    test_remote_sound();
+   test_model3d();
 #endif
    test_effects_package();
    test_goal_height();

@@ -21,6 +21,13 @@ enum { ROOM3D_WORKER = 0, ROOM3D_FLATMATE, ROOM3D_PEOPLE };
 const r3d_mesh *room3d_scene(void);
 const r3d_light_cfg *room3d_light(void);
 const actor3d_kit *room3d_person(int32_t who);
+/*
+ * The person made by an artist when the package brings one (its "models":
+ * "worker", "flatmate"), else NULL: draw it with actor3d_place_model and
+ * room3d_shadow, or the built one with actor3d_place.
+ */
+model3d_body *room3d_person_model(int32_t who);
+const r3d_mesh *room3d_shadow(void);
 /* What people hold (actor3d_pose.prop). */
 enum { ROOM3D_PROP_MUG = 0, ROOM3D_PROP_PAN, ROOM3D_PROP_CAN, ROOM3D_PROP_BOWL, ROOM3D_PROP_PAD, ROOM3D_PROP_GUITAR,
        ROOM3D_PROP_WATERING, ROOM3D_PROP_PARCEL, ROOM3D_PROP_HEADPHONES,
