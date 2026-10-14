@@ -21,6 +21,16 @@ enum { ROOM3D_WORKER = 0, ROOM3D_FLATMATE, ROOM3D_PEOPLE };
 const r3d_mesh *room3d_scene(void);
 const r3d_light_cfg *room3d_light(void);
 const actor3d_kit *room3d_person(int32_t who);
+/* What people hold (actor3d_pose.prop). */
+enum { ROOM3D_PROP_MUG = 0, ROOM3D_PROP_PAN, ROOM3D_PROP_CAN, ROOM3D_PROP_BOWL, ROOM3D_PROP_PAD, ROOM3D_PROP_GUITAR,
+       ROOM3D_PROP_WATERING, ROOM3D_PROP_PARCEL, ROOM3D_PROP_HEADPHONES,
+       ROOM3D_PROP_SHOWER, /* the shower's water: streaks 28 cm apart from its top down 140 cm; move it down a little each frame */
+       ROOM3D_PROPS };
+/* Where the shower's water falls in the plan (centimeters, under its head and inside the tub), and from how high. */
+#define ROOM3D_SHOWER_X 640
+#define ROOM3D_SHOWER_Z 1208
+#define ROOM3D_SHOWER_Y 175
+const r3d_mesh *room3d_prop(int32_t which);
 /* The house's cat. */
 const pet3d_kit *room3d_cat(void);
 /* The texture of one of the office desk's two screens (0, 1), for tex3d_terminal. */

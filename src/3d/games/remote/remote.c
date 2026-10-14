@@ -66,7 +66,7 @@ static const activity activities[RA_COUNT] = {
    [RA_GUITAR] = { 1470, 1170, 1470, 0, 1170, FACE_SOUTH, P_HOLD, 15, 50, 220 },
    [RA_SUN] = { 650, -60, 640, 38, -138, FACE_WEST, P_LIE, 15, 150, 200 },
    [RA_PLANTS] = { 440, -135, 440, 0, -135, FACE_SOUTH, P_HOLD, 5, 0, 80 },
-   [RA_SHOWER] = { 590, 1060, 590, 30, 1175, FACE_SOUTH, P_STAND, 15, 200, 150 },
+   [RA_SHOWER] = { 590, 1060, 638, 30, 1204, FACE_NORTH, P_STAND, 15, 200, 150 },
    [RA_WASHING] = { 120, 700, 120, 0, 700, FACE_WEST, P_CROUCH, 5, 0, 100 },
    [RA_DOOR] = { 1540, 730, 1540, 0, 730, FACE_WEST, P_HOLD, 2, 0, 100 },
    [RA_CAT] = { 0, 0, 0, 0, 0, 0, P_CROUCH, 3, 60, 50 },   /* where the cat is */
@@ -589,7 +589,7 @@ static void day(hd_state *s, hd_remote *g)
       {
          if (at_desk(g) && g->energy >= REMOTE_WORK_ASLEEP)
          {
-            suspect(g, -boss_events[kind].answered);
+            suspect(g, -boss_events[kind].answered * REMOTE_ANSWER_CALM / 100);
             phone(g, RW_YOU, RT_BOSS_YES + kind);
             if (boss_events[kind].minutes)
             {
@@ -631,7 +631,12 @@ static void day(hd_state *s, hd_remote *g)
    if (minute && !g->net_t)
    {
       if (at_desk(g))
-         suspect(g, g->energy < REMOTE_WORK_ASLEEP ? REMOTE_ASLEEP_RISE : -REMOTE_WORK_CALM);
+      {
+         if (g->energy < REMOTE_WORK_ASLEEP)
+            suspect(g, REMOTE_ASLEEP_RISE);
+         else if ((g->t / FPM) % REMOTE_WORK_CALM_EVERY == 0)
+            suspect(g, -REMOTE_WORK_CALM);
+      }
       else if (g->away_t > REMOTE_AWAY_GRACE * FPM)
          suspect(g, REMOTE_AWAY_RISE);
    }
@@ -1592,6 +1597,14 @@ static void hud(hd_surface *sf, const hd_remote *g)
    }
 }
 
+/* What the worker holds in each activity (-1: nothing). */
+static const int8_t activity_prop[RA_COUNT] = {
+   [RA_WORK] = -1, [RA_NAP] = -1, [RA_COFFEE] = ROOM3D_PROP_MUG, [RA_COOK] = ROOM3D_PROP_PAN, [RA_FRIDGE] = ROOM3D_PROP_CAN,
+   [RA_EAT] = ROOM3D_PROP_BOWL, [RA_SERIES] = -1, [RA_CONSOLE] = ROOM3D_PROP_PAD, [RA_GUITAR] = ROOM3D_PROP_GUITAR, [RA_SUN] = -1,
+   [RA_PLANTS] = ROOM3D_PROP_WATERING, [RA_SHOWER] = -1, [RA_WASHING] = -1, [RA_DOOR] = ROOM3D_PROP_PARCEL, [RA_CAT] = -1,
+   [RA_PHONES] = ROOM3D_PROP_HEADPHONES,
+};
+
 /* The worker's pose from the state: walking, or the activity's pose. */
 static void worker_pose(const hd_remote *g, actor3d_pose *pose)
 {
@@ -1611,6 +1624,10 @@ static void worker_pose(const hd_remote *g, actor3d_pose *pose)
       pose->hold = (a->pose & P_HOLD) != 0;
       pose->crouch = (a->pose & P_CROUCH) != 0;
       pose->lie = (a->pose & P_LIE) != 0;
+      if (activity_prop[g->act - 1] >= 0)
+         pose->prop = room3d_prop(activity_prop[g->act - 1]);
+      if (g->act == RA_GUITAR + 1)
+         pose->prop_roll = -420 + (int32_t)(((int64_t)hd_sin((g->t * 90) & 4095) * 30) >> 14); /* the neck up, swaying with the strum */
       pose->phase = (g->t * 40) & 4095;
       if (g->act == RA_WORK + 1)
       {
@@ -1624,7 +1641,7 @@ static void worker_pose(const hd_remote *g, actor3d_pose *pose)
 /* The house seen from `v` with the worker (in `worker`'s pose), the flatmate and the cat. */
 static void scene(hd_surface *sf, const hd_remote *g, r3d_view *v, const actor3d_pose *worker)
 {
-   r3d_instance inst[ACT_INSTANCES * 2 + PET_INSTANCES];
+   r3d_instance inst[ACT_INSTANCES * 2 + PET_INSTANCES + 1];
    actor3d_pose pose;
    pet3d_pose cat;
    int32_t n, typing = g->act == RA_WORK + 1 && g->energy >= REMOTE_WORK_ASLEEP && !g->net_t;
@@ -1669,6 +1686,16 @@ static void scene(hd_surface *sf, const hd_remote *g, r3d_view *v, const actor3d
       cat.look = g->act == RA_CAT + 1 ? 0 : (int32_t)(((int64_t)hd_sin((g->screen_t * 5) & 4095) * 300) >> 14);
    }
    n += pet3d_place(room3d_cat(), &cat, inst + n);
+   /* the shower's water while it runs, falling */
+   if (g->act == RA_SHOWER + 1)
+   {
+      r3d_instance *w = &inst[n++];
+      memset(w, 0, sizeof *w);
+      w->mesh = *room3d_prop(ROOM3D_PROP_SHOWER);
+      w->at.x = ROOM3D_AT(ROOM3D_SHOWER_X);
+      w->at.y = CM(ROOM3D_SHOWER_Y) - CM((g->t * 7) % 28);
+      w->at.z = ROOM3D_AT(ROOM3D_SHOWER_Z);
+   }
    r3d_draw(sf, v, room3d_scene(), inst, n);
 }
 

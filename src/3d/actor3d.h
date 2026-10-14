@@ -19,8 +19,8 @@ enum
    ACT_SHIN_L, ACT_SHIN_R,
    ACT_PARTS
 };
-/* The most instances a pose makes: every part and the shadow. */
-#define ACT_INSTANCES (ACT_PARTS + 1)
+/* The most instances a pose makes: every part, what it holds and the shadow. */
+#define ACT_INSTANCES (ACT_PARTS + 2)
 
 /* How a person looks (0xRRGGBB). */
 typedef struct
@@ -48,6 +48,14 @@ typedef struct
    int32_t hold;      /* the arms forward at the chest: a mug, a watering can, a guitar, a controller */
    int32_t crouch;    /* the knees bent low: in front of the washing machine */
    int32_t lie;       /* lying on the back, the head toward where it faces' back; at.y is what it lies on (a bed, a lounger) */
+   /*
+    * What the hands hold (NULL: nothing): between both hands with `hold`, else
+    * in the right one. Built around where it is gripped, its front toward -z
+    * like the person's face; prop_pitch tilts it (a positive pitch raises its
+    * front) and prop_roll turns it around its front (a guitar's neck up).
+    */
+   const r3d_mesh *prop;
+   int32_t prop_pitch, prop_roll;
 } actor3d_pose;
 
 /* Builds the parts (with the fabric texture's id for the clothes, -1 none). */

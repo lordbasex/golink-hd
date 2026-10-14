@@ -100,7 +100,14 @@ bench: tools/bench
 tools/bench: tools/bench.c $(ENGINE_C) $(HEADERS)
 	$(CC) -std=c11 $(WARNINGS) -O2 $(INCFLAGS) -o $@ tools/bench.c $(ENGINE_C)
 
-clean:
-	rm -f $(OBJECTS) lib$(NAME).so lib$(NAME).dylib $(NAME).dll lib$(NAME).a $(TEST_BIN) tools/hdrun tools/glhd tools/bench
+# TELETRABAJO's balance: bots of four styles play 50 days each (tools/remotebots.c).
+remotebots: tools/remotebots
+	tools/remotebots
 
-.PHONY: all clean static test tools bench
+tools/remotebots: tools/remotebots.c $(ENGINE_C) $(HEADERS)
+	$(CC) -std=c99 $(WARNINGS) -O2 $(INCFLAGS) -o $@ tools/remotebots.c $(ENGINE_C)
+
+clean:
+	rm -f $(OBJECTS) lib$(NAME).so lib$(NAME).dylib $(NAME).dll lib$(NAME).a $(TEST_BIN) tools/hdrun tools/glhd tools/bench tools/remotebots
+
+.PHONY: all clean static test tools bench remotebots

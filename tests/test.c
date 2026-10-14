@@ -758,9 +758,9 @@ static void test_remote_day(void)
    for (f = 1; f < g->ev_count; f++)
       CHECK(g->ev_at[f] > g->ev_at[f - 1] && g->ev_at[f] < REMOTE_DAY_MINUTES);
    g->ev_next = g->ev_count;
-   /* away from the desk: nothing for 10 minutes, then 1 a minute */
+   /* away from the desk: nothing for 10 minutes, then REMOTE_AWAY_RISE a minute */
    remote_steps(&a, 25 * fpm, 0);
-   CHECK(g->suspicion >= 14 && g->suspicion <= 16);
+   CHECK(g->suspicion >= 14 * REMOTE_AWAY_RISE && g->suspicion <= 16 * REMOTE_AWAY_RISE);
    /* a call nobody answers: +300 when its 45 seconds run out */
    s0 = g->suspicion;
    remote_event(g, RE_CALL);
@@ -768,7 +768,7 @@ static void test_remote_day(void)
    CHECK(g->boss == RE_CALL + 1 && !g->boss_call);
    remote_steps(&a, 45 * 60, 0);
    CHECK(!g->boss && g->suspicion >= s0 + 300 && g->phone_text[(g->phone_n - 1) % REMOTE_PHONE] == RT_BOSS_MISS + RE_CALL);
-   /* answered at the desk: -100, then the worker stays on the call, and the boss hears the washing machine */
+   /* answered at the desk: its calm (100 for a call, REMOTE_ANSWER_CALM of it), then the worker stays on the call, and the boss hears the washing machine */
    g->x = ROOM3D_AT(950), g->z = ROOM3D_AT(1035), g->energy = 800;
    remote_steps(&a, 1, 0);
    remote_steps(&a, 1, PAD_JUMP);
@@ -778,7 +778,8 @@ static void test_remote_day(void)
    remote_event(g, RE_CALL);
    remote_steps(&a, 2, 0);
    /* (a minute of work may have passed too: -1) */
-   CHECK(g->boss == RE_CALL + 1 && g->boss_call && g->suspicion >= s0 - 101 + REMOTE_NOISE && g->suspicion <= s0 - 100 + REMOTE_NOISE);
+   CHECK(g->boss == RE_CALL + 1 && g->boss_call && g->suspicion >= s0 - 100 * REMOTE_ANSWER_CALM / 100 - 1 + REMOTE_NOISE &&
+         g->suspicion <= s0 - 100 * REMOTE_ANSWER_CALM / 100 + REMOTE_NOISE);
    remote_steps(&a, 1, PAD_JUMP);
    CHECK(g->act == RA_WORK + 1); /* no leaving a call */
    remote_steps(&a, 10 * fpm, 0);
@@ -914,6 +915,35 @@ static void test_remote_screens(void)
    remote_steps(&a, 130, 0);
    remote_steps(&a, 2, PAD_START);
    CHECK(g->screen == RSC_TITLE);
+}
+
+/* Every text of TELETRABAJO exists in the three languages and fits the 640 logical pixels at the size it is drawn (the help's lines wrap). */
+static void test_remote_texts(void)
+{
+   int32_t lang = hd_lang, l, id;
+   for (l = 0; l < LANGS; l++)
+   {
+      hd_lang = l;
+      for (id = 0; id < RT_COUNT; id++)
+      {
+         const char *t = remote_text(id);
+         int32_t scale = 1;
+         CHECK(t != NULL && t[0] != 0);
+         if (!t || id == RT_TITLE || (id >= RT_HELP_LINE && id < RT_HELP_LINE + REMOTE_HELP_PAGES * 4))
+            continue;
+         if (id == RT_PAUSE)
+            scale = 4;
+         else if ((id >= RT_END_TITLE && id < RT_END_TITLE + 5) || (id >= RT_HELP_TITLE && id < RT_HELP_TITLE + REMOTE_HELP_PAGES) || id == RT_MORNING_RING)
+            scale = 3;
+         else if (id == RT_MENU_PLAY || id == RT_MENU_HELP || id == RT_MENU_CREDITS || id == RT_PAUSE_GO_ON || id == RT_PAUSE_RESTART ||
+                  id == RT_PAUSE_QUIT || id == RT_DEMO || id == RT_NEW_RECORD || id == RT_END_TOTAL || id == RT_END_FIRED_MSG)
+            scale = 2;
+         if (text_width(t, scale) + 24 * scale > 620)
+            fprintf(stderr, "  remote: text %d in language %d is too wide: %s\n", (int)id, (int)l, t);
+         CHECK(text_width(t, scale) + 24 * scale <= 620);
+      }
+   }
+   hd_lang = lang;
 }
 
 /* Every place the day uses is reached on foot from the hall, by the worker's size, along play3d_route. */
@@ -2701,6 +2731,7 @@ int main(void)
    test_remote_activities();
    test_remote_day();
    test_remote_places();
+   test_remote_texts();
    test_remote_screens();
    test_remote_sound();
 #endif

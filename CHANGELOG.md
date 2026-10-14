@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- TELETRABAJO: CÁMARA APAGADA, phase 6 (polish): balanced with bots that play like people (`make remotebots`, `tools/remotebots.c`): the boss's suspicion moves now (working calms 1 every 3 minutes, answering half as much, being away weighs 2 a minute); things in the hands (a mug, a pan, a controller, a guitar, a watering can, the parcel, headphones); water in the shower; every text checked to fit in its three languages; `docs/3d.md` guide for the next 3D game, steps 12 to 18.
+- People can hold things: `actor3d_pose.prop` (between both hands or in the right one, turned by `prop_pitch` and `prop_roll`); `room3d_prop`.
 - TELETRABAJO: CÁMARA APAGADA, phase 5 (the sound), recorded and not synthesized, all in the public domain (CC0):
   - chill-out and lo-fi music for the title, the day, the boss's calls (the day's goes on where it was after a call) and the results;
   - 43 effects heard from what changes in the game: the alarm, the computer ringing, messages, the bell, the drill and the headphones, the washing machine, the cat (meows, purring, walking on the keys), steps, typing, snoring, every activity's sound (coffee, frying, the TV, the console, the guitar, birds, the shower...), a heartbeat when the boss is close to firing, the menus and the end's jingles;

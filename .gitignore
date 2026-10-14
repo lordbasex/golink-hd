@@ -15,6 +15,7 @@ demo/
 walk.out
 *.sha256
 tools/bench
+tools/remotebots
 showcase.out
 # ANTÍDOTO's generated files: the package folder and the music (big WAVs, until packages carry compressed audio)
 examples/antidoto/game/

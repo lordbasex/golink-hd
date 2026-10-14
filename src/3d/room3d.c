@@ -35,6 +35,7 @@
 static r3d_mesh scene;
 static actor3d_kit people[ROOM3D_PEOPLE];
 static pet3d_kit cat;
+static r3d_mesh props[ROOM3D_PROPS];
 static const int32_t *T;
 static int32_t ready, poster[10];
 static r3d_light_cfg sunlight;
@@ -1381,6 +1382,95 @@ static void city(void)
 }
 
 /* The two people who live here, with their soft shadows: one works at the desk, one walks around the living room. */
+/*
+ * What people hold (actor3d_pose.prop), each built around where it is
+ * gripped, its front toward -z like the person's face.
+ */
+static void build_props(void)
+{
+   r3d_place(0, 0, 0, 0);
+   r3d_detail(0);
+   r3d_bevel(0);
+   /* a mug of coffee */
+   r3d_begin();
+   cyl(0, -5, -4, 4, 4, 9, 10, 0xe76f51);
+   cyl(0, 3, -4, 3, 3, 1, 10, 0x4a2c1a);
+   bx(4, -3, -5, 6, 2, -3, 0xe76f51);
+   props[ROOM3D_PROP_MUG] = r3d_end();
+   /* a frying pan, the handle in the hands */
+   r3d_begin();
+   bx(-2, -1, -16, 2, 1, 2, 0x2b2b2b);
+   cyl(0, -2, -28, 13, 13, 4, 12, 0x333333);
+   cyl(0, 1, -28, 11, 11, 1, 12, 0xc8a165); /* what is frying */
+   props[ROOM3D_PROP_PAN] = r3d_end();
+   /* a can from the fridge */
+   r3d_begin();
+   cyl(0, -6, -3, 3, 3, 12, 10, 0xd62828);
+   cyl(0, 6, -3, 2, 2, 1, 10, 0xcccccc);
+   props[ROOM3D_PROP_CAN] = r3d_end();
+   /* a bowl and a fork */
+   r3d_begin();
+   cyl(0, -5, -8, 5, 9, 6, 12, 0xf1faee);
+   cyl(0, 0, -8, 8, 8, 1, 12, 0xe9c46a);
+   bx(4, 1, -12, 5, 2, 2, 0xb0b0b0);
+   props[ROOM3D_PROP_BOWL] = r3d_end();
+   /* a game controller with its buttons */
+   r3d_begin();
+   bx(-8, -2, -6, 8, 2, 2, 0x1d1d1d);
+   ball(-8, -2, -1, 3, 3, 4, 2, 0x1d1d1d);
+   ball(8, -2, -1, 3, 3, 4, 2, 0x1d1d1d);
+   bx(3, 2, -4, 5, 3, -2, 0xe63946);
+   bx(5, 2, -2, 7, 3, 0, 0x2a9d8f);
+   bx(-6, 2, -4, -3, 3, -2, 0x6c757d);
+   props[ROOM3D_PROP_PAD] = r3d_end();
+   /* the guitar across the body, against the belly: its body under the strumming hand, the neck to the other side (turned up by the pose's roll) */
+   r3d_begin();
+   ball(12, 4, -12, 16, 15, 5, 3, 0x9c5a2b);
+   ball(-6, 8, -12, 12, 11, 5, 3, 0x9c5a2b);
+   ball(4, 6, -17, 4, 4, 1, 2, 0x2b1a10);
+   bx(-50, 7, -14, -14, 11, -10, 0xd9a066);
+   bx(-60, 6, -15, -50, 13, -9, 0x2b1a10);
+   props[ROOM3D_PROP_GUITAR] = r3d_end();
+   /* a watering can, held by its handle */
+   r3d_begin();
+   cyl(0, -18, -4, 7, 7, 14, 10, 0x2a9d8f);
+   bx(-1, -4, -6, 1, 0, 6, 0x2a9d8f);
+   bx(-1, -10, -26, 1, -8, -10, 0x2a9d8f);
+   ball(0, -9, -27, 3, 3, 2, 2, 0x21867a);
+   props[ROOM3D_PROP_WATERING] = r3d_end();
+   /* the delivery's parcel */
+   r3d_begin();
+   bx(-16, -12, -24, 16, 10, 2, 0xc49a6c);
+   bx(-2, 10, -24, 2, 11, 2, 0xe9d8a6);
+   props[ROOM3D_PROP_PARCEL] = r3d_end();
+   /* headphones */
+   r3d_begin();
+   ball(-9, -2, -4, 4, 5, 3, 2, 0x222222);
+   ball(9, -2, -4, 4, 5, 3, 2, 0x222222);
+   bx(-9, 4, -5, 9, 6, -3, 0x333333);
+   props[ROOM3D_PROP_HEADPHONES] = r3d_end();
+   /* the shower's water: see-through streaks in a cone under the head, one every 28 cm down, wider as they fall */
+   r3d_begin();
+   r3d_occlude(0);
+   r3d_glass(190);
+   {
+      int32_t i, j;
+      for (i = 0; i < 16; i++)
+      {
+         int32_t a = i * 4096 / 16 + (i & 1) * 128, rr = 8 + (i % 4) * 3;
+         for (j = 0; j < 6; j++)
+         {
+            int32_t y = -j * 28 - (i * 9) % 28, r = rr + j * 4;
+            int32_t x = r * hd_cos(a) / 16384, z = r * hd_sin(a) / 16384;
+            bx(x, y - 16, z, x + 2, y, z + 2, 0x8ecae6);
+         }
+      }
+   }
+   r3d_glass(0);
+   r3d_occlude(1);
+   props[ROOM3D_PROP_SHOWER] = r3d_end();
+}
+
 static void build_people(void)
 {
    static const actor3d_look worker = { 0xe0ac69, 0x3d2817, 0xf4a261, 0xffffff, 0x2b2d42, 0x1d3557, 0x222222 };
@@ -1417,6 +1507,7 @@ static void build_people(void)
       pet3d_build(&cat, &ginger);
       cat.shadow = shadow;
    }
+   build_props();
 }
 
 void hd_r3d_build(void)
@@ -1547,6 +1638,12 @@ const pet3d_kit *room3d_cat(void)
 {
    hd_r3d_build();
    return &cat;
+}
+
+const r3d_mesh *room3d_prop(int32_t which)
+{
+   hd_r3d_build();
+   return &props[hd_clamp(which, 0, ROOM3D_PROPS - 1)];
 }
 
 const actor3d_kit *room3d_person(int32_t who)

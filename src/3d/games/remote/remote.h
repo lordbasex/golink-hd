@@ -154,9 +154,11 @@ typedef struct
 #define REMOTE_TOAST_FRAMES 180                /* a message stays three seconds */
 #define REMOTE_SUSPICION_MAX 1000              /* the boss's patience: fired at once */
 #define REMOTE_AWAY_GRACE 10                   /* game minutes away before the status says "away" */
-#define REMOTE_AWAY_RISE 1                     /* suspicion a game minute away after that */
+#define REMOTE_AWAY_RISE 2                     /* suspicion a game minute away after that */
 #define REMOTE_ASLEEP_RISE 3                   /* suspicion a game minute asleep on the keyboard */
-#define REMOTE_WORK_CALM 1                     /* suspicion a game minute of real work takes away */
+#define REMOTE_WORK_CALM 1                     /* suspicion real work takes away, */
+#define REMOTE_WORK_CALM_EVERY 3               /* every this many game minutes of it */
+#define REMOTE_ANSWER_CALM 50                  /* how much of an event's "answered" calm counts, % */
 #define REMOTE_NOISE 100                       /* suspicion when the boss hears something on a call */
 #define REMOTE_CAT_LOGOFF (20 * 60)            /* frames on the keyboard until the cat logs the worker off */
 #define REMOTE_OVERTIME 420                    /* work minutes after which each one costs points */

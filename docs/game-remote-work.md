@@ -62,7 +62,7 @@ The boss's suspicion rises in three ways:
 
 | Cause | Rise |
 |---|---|
-| Away from the desk | 1 per game minute after the first 10 minutes away (the chat status turns "away") |
+| Away from the desk | 2 per game minute after the first 10 minutes away (the chat status turns "away") |
 | A boss event missed (section 5) | 150 to 300, by event |
 | Asleep on the keyboard | 3 per game minute |
 | The boss hears the house on a call (section 5) | 100 each thing, once a call |
@@ -72,8 +72,10 @@ It falls in two ways:
 
 | Cause | Fall |
 |---|---|
-| Working | 1 per game minute |
-| A boss event answered in time | 50 to 100 |
+| Working | 1 every 3 game minutes |
+| A boss event answered in time | 25 to 50 (section 5) |
+
+These numbers were set in phase 6 with `make remotebots` (section 13).
 
 ### The end of the day
 
@@ -173,16 +175,18 @@ When the activity ends, the worker is back at the start point.
 
 The boss sends 4 to 6 events a day: the daily meeting at 10:00 and 3 to 5
 more, picked and timed from the day's seed. Each one arrives as a message on
-the phone in the HUD (a sound comes in phase 5), and the player has a time
+the phone in the HUD with its sound (section 8), and the player has a time
 limit to be **awake at the desk**. The phone shows the time left as a
 shrinking red bar.
 
 | Event | Limit | Then on the call | Missed | Answered |
 |---|---|---|---|---|
-| Daily meeting (10:00) | announced at 09:40, at the desk by 10:00 | 15 game minutes ("in a meeting") | +250 | -80 |
-| Surprise video call | 45 real seconds | 10 game minutes | +300 | -100 |
-| Urgent message | 30 real seconds | none: the answer is enough | +150 | -50 |
-| Screen share | 20 real seconds | 5 game minutes | +200 | -80 |
+| Daily meeting (10:00) | announced at 09:40, at the desk by 10:00 | 15 game minutes ("in a meeting") | +250 | -40 |
+| Surprise video call | 45 real seconds | 10 game minutes | +300 | -50 |
+| Urgent message | 30 real seconds | none: the answer is enough | +150 | -25 |
+| Screen share | 20 real seconds | 5 game minutes | +200 | -40 |
+
+The code's table (`boss_events`) keeps the first design's calm (-80, -100, -50, -80); `REMOTE_ANSWER_CALM` (50 %) halves it, which is what the table above shows.
 
 Limits are in real seconds because they are about the player's reaction, not
 the story's clock. The meeting is announced 20 game minutes ahead (about 22
@@ -474,11 +478,56 @@ before the next one.
 | 3 | The day (**done 2026-10-14**) | Clock, suspicion, boss events, random events, the cat, the phone | 1–2 sessions |
 | 4 | Screens and HUD (**done 2026-10-14**) | Title, how to play, morning, pause, end, score, record | 1 session |
 | 5 | Sound (**done 2026-10-14**) | Recorded effects and music (chill-out, lo-fi) in the game's package (`audio`), the alarm, phone, bell, drill; the language in the title's menu | 1 session |
-| 6 | Polish | Texts in 3 languages, balancing with the bots, attract mode, docs (`docs/3d.md`, README, CHANGELOG, a how-to for the next 3D game) | 1 session |
+| 6 | Polish (**done 2026-10-14**) | Balancing with bots that walk the house (`make remotebots`), texts in 3 languages checked to fit, things in the hands, the shower's water, docs (`docs/3d.md`'s steps 12 to 18 for the next 3D game) | 1 session |
 | 7 | go-link | Show it in go-link Console as an HD game (picture, trailer) | later |
 | 8 | Willy Maker | Whatever it needs from this game | last |
 
 ## 13. Progress
+
+**Phase 6, polish (2026-10-14).**
+
+Balance, with `make remotebots` (`tools/remotebots.c`): bots that play a
+day like people do, walking the house along `play3d_route`, reacting to the
+boss after a delay, resting when tired, answering the door, taking the cat
+off the keyboard and putting the headphones on, in four styles, over many
+days (each day half a second without drawing).
+
+Before (the numbers of phases 2 and 3), 200 days each:
+
+| Style | Survived | Missed the hours | Fired | Score (median) | Peak suspicion (median / 90 %) |
+|---|---|---|---|---|---|
+| Careful | 95 % | 2 % | 2 % | 2387 | 29 / 266 |
+| Casual | 76 % | 22 % | 2 % | 2269 | 42 / 449 |
+| Slacker | 0 % | 90 % | 10 % | 1141 | |
+| Workaholic | 0 % | 100 % | 0 % | 78 | |
+
+The styles ended as the design wants (rest and work and you survive; never
+work and you miss the hours; never rest and you fall asleep on the
+keyboard), but the boss was no threat: a careful player's suspicion peaked
+at 29 of 1000, because a minute of work took 1 away and an answered event
+50 to 100. Three variants were played; the middle one was chosen (working
+calms 1 every 3 minutes, `REMOTE_WORK_CALM_EVERY`; an answered event half
+of its table, `REMOTE_ANSWER_CALM`; away 2 a minute, `REMOTE_AWAY_RISE`),
+50 days each:
+
+| Style | Survived | Missed the hours | Fired | Score (median) | Peak suspicion (median / 90 %) |
+|---|---|---|---|---|---|
+| Careful | 94 % | 2 % | 4 % | 2390 | 60 / 554 |
+| Casual | 68 % | 24 % | 8 % | 2267 | 96 / 846 |
+| Slacker | 0 % | 86 % | 14 % | 1149 | 538 / 1000 |
+| Workaholic | 0 % | 96 % | 4 % | 78 | 68 / 401 |
+
+The hardest variant (calm every 5 minutes, 30 %, away 3) fired the slacker
+42 % of the days: too much for a game about getting away with it.
+
+Also:
+
+- Things in the hands (`actor3d_pose.prop`, `room3d_prop`): a mug, a pan, a can, a bowl, a controller, a guitar (its neck up and swaying with the strum), a watering can, the parcel, the headphones.
+- The shower's water: see-through streaks falling around the worker, who now stands under the shower's head inside the tub.
+- Every text, in the three languages, checked to fit the screen at the size it is drawn (a test).
+- `docs/3d.md` steps 12 to 18: bots, measuring on the same load, things in the hands, moving effects, sound from what changed, texts that fit, a video for each phase.
+
+Checks: `make test` (the rule test's numbers now follow the tuning macros), `make NO_3D=1 test`, the CI hashes and ANTÍDOTO unchanged, `make bench` the same as the commit before on the same load.
 
 **Phase 5, the sound (2026-10-14).**
 
