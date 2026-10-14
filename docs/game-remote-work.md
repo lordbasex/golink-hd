@@ -83,20 +83,38 @@ At 18:00 the day ends. The day can end three ways:
 | Missed hours | 18:00 with less than 360 work minutes | half the activity points, no bonus |
 | Day survived | 18:00 with 360 work minutes or more | full score (section 6) |
 
-## 3. The flat
+## 3. The house
 
-The flat reuses `room3d.c` (1200 × 900 cm: bedroom, bathroom and office to
-the north, the hall in the middle, the living room and the kitchen to the
-south, the balcony). Changes for the game:
+The game is played in the demo's house (`room3d.c`): 200 m², 1600 × 1250
+cm, on the top floor of a city block. It replaced the 108 m² flat on
+2026-10-13, at the user's request, so that every room has space and a clear
+use. Its rooms:
+
+| Row | Rooms |
+|---|---|
+| North (z 800..1250) | Bedroom (500 × 450, the double bed, the wardrobe), bathroom (250 × 450, the tub, toilet, sink), office (400 × 450, the desk with two screens, a reading corner), game room (450 × 450, the TV and consoles, a beanbag, an arcade cabinet, the guitar) |
+| Middle (z 650..800) | Laundry (250 × 150, the washing machine and the dryer, a sink), the hall with the front door at its east end |
+| South (z 0..650) | Living room (900 × 650: the dining table by the west window, the lounge with the L sofa facing the TV), kitchen (700 × 650) |
+| Outside | A 9 × 2 m terrace along the living room: a sun lounger, a parasol, chairs, plants, a drying rack |
+
+The kitchen is a family's:
+
+- an L of counters with the washing machine under the counter, the dishwasher, the sink under the window, the hob with its oven and hood, and the coffee corner (the machine, mugs, toaster, kettle, microwave);
+- the wall cupboards, the two-door fridge, the pantry, the tall cupboards with a second oven;
+- an island with three stools, a table for four;
+- the bar to the living room in the opening of their shared wall;
+- the everyday things on the counters: knives, spoons, a cutting board with bread, pans on a rail, herbs, a fruit bowl, spices, the bins.
+
+Changes for the game:
 
 - Every activity object gets a fixed **interaction spot**: where the
   character stands, which way it faces and how far the prompt reaches
   (about 80 cm).
-- The desk gets two screens that light up when the computer is on, with code
+- The desk's two screens light up when the computer is on, with code
   scrolling in the texture.
 - The flatmate goes away (the day is the player's alone). It may come back
-  later as a random event.
-- A cat lives in the flat, built from the same parts idea as `actor3d`:
+  later as a random event, and is the second player of the second version.
+- A cat lives in the house, built from the same parts idea as `actor3d`:
   - it wanders between three spots;
   - it is a random event (section 5).
 
@@ -112,13 +130,13 @@ it during a call:
 | 2 | Coffee | kitchen machine | 3 | +120 | 30 | yes |
 | 3 | Cook lunch | kitchen stove | 25 | +300 | 250 | yes |
 | 4 | Raid the fridge | kitchen | 5 | +80 | 60 | no |
-| 5 | Play the console | living room TV | 20 | -50 | 350 | yes |
+| 5 | Play the console | game room TV | 20 | -50 | 350 | yes |
 | 6 | Watch a series | living room sofa | 25 | +100 | 250 | yes |
-| 7 | Sunbathe | balcony | 15 | +150 | 200 | no |
-| 8 | Water the plants | balcony | 5 | 0 | 80 | no |
+| 7 | Sunbathe | terrace lounger | 15 | +150 | 200 | no |
+| 8 | Water the plants | terrace | 5 | 0 | 80 | no |
 | 9 | Shower | bathroom | 15 | +200 | 150 | yes |
-| 10 | Put on the washing | bathroom | 5 | 0 | 100 | yes |
-| 11 | Play the guitar | bedroom | 15 | +50 | 220 | yes |
+| 10 | Put on the washing | laundry or kitchen | 5 | 0 | 100 | yes |
+| 11 | Play the guitar | game room | 15 | +50 | 220 | yes |
 | 12 | Pet the cat | wherever it is | 3 | +60 | 50 | no |
 
 Each activity:
@@ -343,6 +361,8 @@ before the next one.
 
 ## 12. Progress
 
+**The house (2026-10-13).** The flat became a 200 m² house (section 3). Every room, the laundry and the terrace are reached from the hall (checked with a flood of the walk grid); the bathroom's sink and tiles, a dining table and the game room's pictures were found in the way and moved. 720p: about 11 ms a frame with other work running.
+
 **Phase 1, walking (2026-10-13).**
 
 What was built:
@@ -357,7 +377,7 @@ How it plays:
 - It turns toward where the stick points, slides along walls and finds doorways.
 - The camera follows at 3.8 m, tilted about 55 degrees, and rises over walls.
 
-Changes to the flat for walking:
+Changes to the flat for walking (before the house replaced it):
 
 - The dining table is against the north wall with three chairs, and the sofa and coffee table moved 20 cm south.
 - The bathroom's door moved to 600..690, with the sink beside the toilet and the tiles cut at the door.

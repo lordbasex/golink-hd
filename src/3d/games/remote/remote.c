@@ -30,8 +30,8 @@ static void ready(void)
    if (built)
       return;
    hd_r3d_build();
-   lo.x = ROOM3D_AT(0), lo.y = 0, lo.z = ROOM3D_AT(-170);
-   hi.x = ROOM3D_AT(1200), hi.y = 0, hi.z = ROOM3D_AT(900);
+   lo.x = ROOM3D_AT(0), lo.y = 0, lo.z = ROOM3D_AT(-210);
+   hi.x = ROOM3D_AT(1600), hi.y = 0, hi.z = ROOM3D_AT(1250);
    play3d_grid(lo, hi, 0);
    built = 1;
 }
@@ -62,9 +62,9 @@ void hd_remote_start(hd_state *s)
    memset(&s->show, 0, sizeof s->show);
    s->show.on = 3;
    memset(g, 0, sizeof *g);
-   /* in the hall past the shoe bench, facing east toward the front door, the camera behind */
-   g->x = ROOM3D_AT(300);
-   g->z = ROOM3D_AT(445);
+   /* in the hall, facing east toward the front door, the camera behind */
+   g->x = ROOM3D_AT(450);
+   g->z = ROOM3D_AT(725);
    g->yaw = 3072;
    g->cam_yaw = 1024;
    g->cam_pitch = 620;
@@ -154,8 +154,8 @@ void hd_remote_sanitize(hd_state *s)
    hd_remote *g = HD_GAME3D(s, hd_remote);
    s->show.on = 3;
    g->t = hd_clamp(g->t, 0, 1 << 30);
-   g->x = hd_clamp(g->x, ROOM3D_AT(0), ROOM3D_AT(1200));
-   g->z = hd_clamp(g->z, ROOM3D_AT(-170), ROOM3D_AT(900));
+   g->x = hd_clamp(g->x, ROOM3D_AT(0), ROOM3D_AT(1600));
+   g->z = hd_clamp(g->z, ROOM3D_AT(-210), ROOM3D_AT(1250));
    g->yaw &= ANGLE_FULL - 1;
    g->speed = hd_clamp(g->speed, 0, REMOTE_RUN);
    g->walk = hd_clamp(g->walk, 0, 22000);

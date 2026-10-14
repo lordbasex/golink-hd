@@ -15,6 +15,13 @@
   - the follow camera (`play3d_follow`, `play3d_eye`).
 
   Its pieces underneath are `r3d_solid_at` and `r3d_reach` (the bake's grid for a game's rules). `src/3d/room3d.h` shares the demo's flat, light and people.
+- The demo's flat became a 200 m² house (1600 × 1250 cm). It has a bedroom, a bathroom, an office, a game room, a laundry, a hall, a 9 × 2 m terrace, and a living room with separate dining and lounge areas. The family kitchen has:
+  - an L of counters with the washing machine, dishwasher, sink, hob, oven and hood, and a coffee corner;
+  - the fridge and pantry, an island with stools, and a table for four;
+  - a bar to the living room;
+  - the everyday things on the counters.
+
+  The TV unit is its own piece (`tv_unit`). The demo is about 43,000 triangles, 11 ms a frame at 720p.
 - The demo's flat, laid out for walking: the dining table against the north wall with three chairs; the sofa and coffee table 20 cm south; the bathroom's door at 600..690 with the sink beside the toilet and the tiles cut at the door (the sink and its tiles stood across the old door).
 - Package format 3: `physics` (the players' hitbox, speeds, gravity and jump) and `sprites` (the heroes' own pictures of any size: idle, run, jump, hurt, bored and win animations, a skin per player) and `layers` (painted pictures behind or in front of the level, repeated across it at their own speed), `sounds` and `music` (WAV effects in place of the built-in ones, and a stereo song played over and over, its position in the save state). Save states are version 5 (each player's frames standing still).
 - ANTÍDOTO (`examples/antidoto`), a game whose art and music are made with AI: the heroes' strips, `cut.sh` and `recolor.py` (Azul is Rojo recolored), `build.py` and `make_tracks.py`; `tools/sprites.py` cuts an image AI's strip into an engine sheet; `docs/howto/ai-art-and-audio.md` logs every prompt and command.

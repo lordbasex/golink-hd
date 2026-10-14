@@ -11,12 +11,12 @@
  * Its state is the showcase's (hd_show, `on` 2): kx and ky are the view's
  * center, ka its turn, kv its tilt, rpos its distance in centimeters.
  *
- * The plan, x to the east and z to the north, in centimeters (the flat is
- * 1200 x 900):
- *   north:  bedroom 0..450 | bathroom 450..700 | office 700..1200   (z 500..900)
- *   middle: hall 0..1200, the front door at its east end            (z 400..500)
- *   south:  living and dining 0..750 | kitchen 750..1200             (z 0..400)
- *   outside the living room, a balcony (z -160..0)
+ * The plan, x to the east and z to the north, in centimeters (the house is
+ * 1600 x 1250, 200 square meters):
+ *   north:  bedroom 0..500 | bathroom 500..750 | office 750..1150 | game room 1150..1600   (z 800..1250)
+ *   middle: laundry 0..250 | hall 250..1600, the front door at its east end                (z 650..800)
+ *   south:  living 0..900 (dining by the west window, the lounge facing the TV on the east wall) | kitchen 900..1600 (z 0..650)
+ *   outside the living room, a terrace (x 40..880, z -200..0)
  */
 #include <stdio.h>
 #include <string.h>
@@ -41,9 +41,11 @@ static r3d_light_cfg sunlight;
 /* ---- small helpers ---- */
 
 /* Pieces at (x, y, z) centimeters of the flat, turned yaw. */
+static int32_t shift_x, shift_z; /* a room built where it was planned, moved whole to its place in the house */
+
 static void at(int32_t x, int32_t y, int32_t z, int32_t yaw)
 {
-   r3d_place(BASE + CM(x), CM(y), BASE + CM(z), yaw & (ANGLE_FULL - 1));
+   r3d_place(BASE + CM(x + shift_x), CM(y), BASE + CM(z + shift_z), yaw & (ANGLE_FULL - 1));
 }
 
 static void mat(int32_t tex, int32_t texels_per_m)
@@ -369,11 +371,42 @@ static void frame_pic(int32_t w, int32_t h, int32_t tex)
 
 /* ---- the rooms ---- */
 
+/* A low TV unit 220 wide with the TV, its speakers and a game console, its front toward -z. */
+static void tv_unit(int32_t screen)
+{
+   mat(TEX3D_WOOD, 128);
+   bx(0, 0, 0, 220, 50, 42, 0xc8a27a);
+   plain();
+   bx(4, 6, -1, 70, 44, 0, 0xb08e6c);
+   bx(76, 6, -1, 144, 44, 0, 0xb08e6c);
+   bx(150, 6, -1, 216, 44, 0, 0xb08e6c);
+   bx(60, 50, 8, 160, 54, 30, 0x222226);            /* TV stand */
+   bx(103, 54, 18, 117, 70, 24, 0x222226);
+   bx(40, 64, 16, 180, 146, 20, 0x111114);          /* the TV */
+   r3d_glow(260);
+   pane(screen, 42, 66, 15, 178, 144, 16, 0xffffff);
+   r3d_glow(0);
+   bx(8, 50, 10, 30, 82, 32, 0x2d2d33);             /* speakers */
+   bx(190, 50, 10, 212, 82, 32, 0x2d2d33);
+   cyl(19, 72, 9, 6, 6, 1, 10, 0x555560);
+   cyl(201, 72, 9, 6, 6, 1, 10, 0x555560);
+   bx(70, 50, 4, 100, 55, 34, 0x1b1b1f);            /* a game console */
+   bx(120, 50, 10, 150, 53, 30, 0xf1f1f1);
+}
+
 static void living(void)
 {
    int32_t i;
-   /* the sofa, an L facing the TV wall (west), with cushions and a blanket */
-   at(320, 0, 100, 0);
+   /*
+    * Two areas: to the east the lounge (the TV against the kitchen's wall,
+    * the L sofa facing it, the coffee table and the rug between them, the
+    * armchair to the north), to the west the dining table by the window.
+    * The strip along the balcony's doors and the way in from the hall's
+    * door (the north-east corner) stay clear.
+    *
+    * The sofa, an L facing the TV (east), with cushions and a blanket.
+    */
+   at(560, 0, 60, 3072);
    mat(TEX3D_FABRIC, 96);
    bx(0, 10, 0, 220, 44, 95, 0x51637a);
    bx(0, 44, 75, 220, 92, 95, 0x48586d);
@@ -392,7 +425,7 @@ static void living(void)
    for (i = 0; i < 4; i++)
       cyl(8 + (i & 1) * 204, 0, 8 + (i >> 1) * 80, 3, 2, 10, 6, 0x2c2c2c);
    /* the coffee table and what is on it */
-   at(340, 0, 12, 0);
+   at(710, 0, 90, 3072);
    mat(TEX3D_WOOD, 128);
    bx(0, 36, 0, 110, 40, 55, 0x9b6a3c);
    bx(0, 6, 0, 110, 9, 55, 0x9b6a3c);
@@ -408,60 +441,43 @@ static void living(void)
    cyl(94, 40, 42, 8, 10, 6, 10, 0xd4a373);       /* a bowl of crisps */
    ball(94, 46, 42, 7, 2, 7, 3, 0xf2cc8f);
    bx(10, 9, 10, 60, 14, 40, 0x6d597a);           /* magazines below */
-   /* the TV unit on the west wall */
-   at(48, 0, 90, 3072);
-   mat(TEX3D_WOOD, 128);
-   bx(0, 0, 0, 220, 50, 42, 0xc8a27a);
-   plain();
-   bx(4, 6, -1, 70, 44, 0, 0xb08e6c);
-   bx(76, 6, -1, 144, 44, 0, 0xb08e6c);
-   bx(150, 6, -1, 216, 44, 0, 0xb08e6c);
-   bx(60, 50, 8, 160, 54, 30, 0x222226);            /* TV stand */
-   bx(103, 54, 18, 117, 70, 24, 0x222226);
-   bx(40, 64, 16, 180, 146, 20, 0x111114);          /* the TV */
-   r3d_glow(260);
-   pane(poster[0], 42, 66, 15, 178, 144, 16, 0xffffff);
-   r3d_glow(0);
-   bx(8, 50, 10, 30, 82, 32, 0x2d2d33);             /* speakers */
-   bx(190, 50, 10, 212, 82, 32, 0x2d2d33);
-   cyl(19, 72, 9, 6, 6, 1, 10, 0x555560);
-   cyl(201, 72, 9, 6, 6, 1, 10, 0x555560);
-   bx(70, 50, 4, 100, 55, 34, 0x1b1b1f);            /* a game console */
-   bx(120, 50, 10, 150, 53, 30, 0xf1f1f1);
-   at(26, 50, 104, 0);
+   /* the TV unit against the east wall (the kitchen's), the doorway to the kitchen north of it */
+   at(852, 0, 280, 1024);
+   tv_unit(poster[0]);
+   at(874, 50, 266, 0);
    plant_pot(18, 0xe9e2d0, 3);
    /* shelves on the north wall of the living room, records and plants */
-   at(20, 0, 360, 0);
+   at(250, 0, 610, 0);
    bookshelf(120, 190, 5, 0xe6dccb, 11);
-   at(150, 0, 360, 0);
+   at(380, 0, 610, 0);
    bookshelf(80, 110, 3, 0xe6dccb, 12);
-   at(166, 110, 364, 0);
+   at(396, 110, 614, 0);
    bx(0, 0, 0, 30, 10, 26, 0x2b2b2b);              /* a turntable */
    cyl(15, 10, 13, 11, 11, 1, 16, 0x111111);
-   at(212, 110, 376, 0);
+   at(442, 110, 626, 0);
    plant_pot(14, 0x8d99ae, 7);
-   /* the armchair and a floor lamp */
-   at(560, 0, 70, 3072 + 400);
+   /* the armchair, north of the coffee table, and a floor lamp behind the sofa */
+   at(700, 0, 330, 0);
    mat(TEX3D_FABRIC, 96);
    bx(0, 10, 0, 80, 44, 80, 0xb5654a);
    bx(0, 44, 64, 80, 90, 80, 0xa65a40);
    bx(0, 44, 0, 14, 66, 64, 0xa65a40);
    bx(66, 44, 0, 80, 66, 64, 0xa65a40);
    plain();
-   at(660, 0, 160, 0);
+   at(440, 0, 300, 0);
    floor_lamp(0xf6e7c1);
    r3d_light(0, CM(150), 0, M(4), 0xffd59a, 300);
-   at(40, 0, 360, 0);
+   at(30, 0, 610, 0);
    tall_plant();
    /* the rug */
-   at(300, 0, 10, 0);
+   at(800, 0, 40, 3072);
    mat(TEX3D_RUG, 0);
    r3d_occlude(0);
    bxf(0, 0, 0, 240, 1, 170, 0xffffff, R3D_TOP_ONLY);
    r3d_occlude(1);
    plain();
    /* the dining table and its four chairs, a bowl of fruit, a pendant lamp */
-   at(500, 0, 300, 0);
+   at(130, 0, 210, 0);
    mat(TEX3D_WOOD, 100);
    bx(0, 72, 0, 150, 76, 85, 0xb07a48);
    plain();
@@ -475,138 +491,303 @@ static void living(void)
    ball(75, 86, 36, 4, 4, 4, 3, 0x90be6d);
    bx(20, 76, 20, 50, 77, 60, 0xf8f9fa);       /* a placemat with papers */
    mug(110, 76, 60, 0x264653);
-   /* against the north wall, two chairs on the south side and one at the west end: the way in from the hall and the way between the table and the sofa stay clear */
-   at(510, 0, 258, 0);
+   /* by the west window: two chairs on each side */
+   at(140, 0, 168, 0);
    chair_wood(0x6b4423, 0xd9c7a7);
-   at(600, 0, 258, 0);
+   at(230, 0, 168, 0);
    chair_wood(0x6b4423, 0xd9c7a7);
-   at(498, 0, 322, 3072);
+   at(182, 0, 340, 2048);
    chair_wood(0x6b4423, 0xd9c7a7);
-   at(575, 0, 342, 0);
+   at(272, 0, 340, 2048);
+   chair_wood(0x6b4423, 0xd9c7a7);
+   at(205, 0, 252, 0);
    pendant(80);
    r3d_light(0, CM(160), 0, M(3), 0xffe2b0, 260);
    /* pictures and a clock */
-   at(300, 140, 391, 0);
+   at(386, 140, 641, 0);
    frame_pic(70, 50, poster[1]);
-   at(390, 150, 391, 0);
+   at(472, 150, 641, 0);
    frame_pic(40, 56, poster[2]);
-   at(9, 160, 330, 3072);
+   at(9, 160, 420, 3072);
    frame_pic(60, 44, poster[3]);
-   at(720, 180, 392, 2048);
+   at(160, 200, 642, 2048);
    cyl(0, 0, 0, 14, 14, 3, 16, 0xf8f8f8);
-   /* a guitar on its stand, a pair of trainers, a radiator */
-   at(420, 0, 370, 0);
-   bx(-8, 0, -6, 8, 30, 6, 0x222222);
-   ball(0, 40, 0, 16, 18, 5, 3, 0x9c5a2b);
-   ball(0, 66, 0, 12, 12, 5, 3, 0x9c5a2b);
-   bx(-2, 76, -2, 2, 120, 2, 0x3b2a1a);
-   at(520, 0, 340, 300);
+   /* a pair of trainers, a radiator between the windows */
+   at(620, 0, 600, 300);
    bx(0, 0, 0, 12, 8, 28, 0xf1f1f1);
    bx(14, 0, 4, 26, 8, 32, 0xf1f1f1);
    bx(0, 0, 18, 12, 6, 28, 0xe63946);
-   at(640, 10, 8, 0);
-   for (i = 0; i < 10; i++)
+   at(410, 10, 8, 0);
+   for (i = 0; i < 7; i++)
       bx(i * 9, 0, 0, i * 9 + 6, 60, 8, 0xf2f2f2);
+   /* a sideboard by the dining table, a side table and a pouf by the sofa, a big plant by the TV */
+   at(6, 0, 600, 3072);
+   mat(TEX3D_WOOD, 100);
+   bx(0, 0, 0, 170, 80, 44, 0x6b4423);
+   plain();
+   for (i = 0; i < 3; i++)
+      bx(4 + i * 55, 6, -1, 56 + i * 55, 76, 0, 0x7a5030);
+   at(-30, 80, 520, 0);
+   plant_pot(14, 0xe9edc9, 4);
+   at(-24, 80, 470, 0);
+   bx(0, 0, 0, 14, 30, 10, 0xf4a261);           /* a vase */
+   at(480, 0, 300, 0);
+   cyl(0, 0, 0, 22, 22, 50, 12, 0xd4b48c);
+   cyl(-4, 50, 6, 6, 5, 8, 8, 0x264653);
+   at(640, 0, 300, 0);
+   mat(TEX3D_KNIT, 96);
+   cyl(0, 0, 0, 28, 28, 40, 14, 0xe9c46a);
+   plain();
+   at(870, 0, 30, 0);
+   tall_plant();
 }
 
+/* A run of base cabinets along x (its front toward +z at z1), its doors and handles, and the stone top. */
+static void base_run_x(int32_t x0, int32_t x1, int32_t z0, int32_t z1, uint32_t c, uint32_t door)
+{
+   int32_t x;
+   mat(TEX3D_WOOD, 100);
+   bx(x0, 0, z0, x1, 86, z1, c);
+   plain();
+   for (x = x0; x + 58 <= x1; x += 60)
+   {
+      bx(x + 2, 8, z1, x + 58, 82, z1 + 1, door);
+      bx(x + 24, 72, z1 + 1, x + 36, 74, z1 + 4, 0xc0c0c0);
+   }
+   mat(TEX3D_MARBLE, 100);
+   bx(x0 - 2, 86, z0 - 2, x1 + 2, 90, z1 + 2, 0xffffff);
+   plain();
+}
+
+/* The same along z, its front toward -x at x0. */
+static void base_run_z(int32_t x0, int32_t x1, int32_t z0, int32_t z1, uint32_t c, uint32_t door)
+{
+   int32_t z;
+   mat(TEX3D_WOOD, 100);
+   bx(x0, 0, z0, x1, 86, z1, c);
+   plain();
+   for (z = z0; z + 58 <= z1; z += 60)
+   {
+      bx(x0 - 1, 8, z + 2, x0, 82, z + 58, door);
+      bx(x0 - 4, 72, z + 24, x0 - 1, 74, z + 36, 0xc0c0c0);
+   }
+   mat(TEX3D_MARBLE, 100);
+   bx(x0 - 2, 86, z0 - 2, x1 + 2, 90, z1 + 2, 0xffffff);
+   plain();
+}
+
+static void stool(int32_t x, int32_t z, int32_t h, uint32_t seat)
+{
+   at(x, 0, z, 0);
+   cyl(0, 0, 0, 14, 14, 3, 10, 0x333333);
+   cyl(0, 3, 0, 2, 2, h - 6, 6, 0x333333);
+   cyl(0, h - 30, 0, 12, 12, 2, 10, 0x333333); /* the foot ring */
+   cyl(0, h - 6, 0, 17, 17, 6, 12, seat);
+}
+
+/*
+ * The kitchen (900..1600 x 0..650), a family's: an L of counters (the
+ * south wall: the washing machine under the counter, the dishwasher, the
+ * sink under the window, the hob with the oven and the hood; the east wall:
+ * the coffee corner, the toaster, the kettle, the microwave), wall
+ * cupboards, the two-door fridge and the pantry, an island with three
+ * stools, a table for four, and the bar to the living room in the opening
+ * of the west wall. Everything a kitchen in use has on it.
+ */
 static void kitchen(void)
 {
    int32_t i;
-   /* the counter along the south wall: cupboards, a sink, a hob, a kettle */
-   at(760, 0, 8, 0);
-   mat(TEX3D_WOOD, 100);
-   bx(0, 0, 0, 380, 86, 62, 0x7c9a92);
-   plain();
-   for (i = 0; i < 6; i++)
-   {
-      bx(4 + i * 63, 8, 62, 62 + i * 63, 82, 63, 0x86a59c);
-      bx(28 + i * 63, 60, 63, 38 + i * 63, 62, 66, 0xc0c0c0);
-   }
-   mat(TEX3D_MARBLE, 100);
-   bx(-2, 86, -2, 382, 90, 64, 0xffffff);
-   plain();
-   bx(60, 82, 10, 120, 90, 50, 0xc9ccd1);        /* the sink */
-   bx(64, 84, 14, 116, 90, 46, 0x9fa4ab);
-   cyl(90, 90, 8, 2, 2, 28, 6, 0xd0d0d0);
-   bx(88, 114, 8, 92, 118, 24, 0xd0d0d0);
-   bx(200, 90, 8, 270, 91, 54, 0x1c1c1c);         /* the hob */
-   for (i = 0; i < 4; i++)
-      cyl(215 + (i & 1) * 40, 91, 20 + (i >> 1) * 24, 8, 8, 1, 12, 0x3a3a3a);
-   cyl(215, 91, 20, 12, 12, 14, 12, 0xb0b5bb);    /* a pot */
-   cyl(255, 91, 44, 13, 13, 4, 12, 0x2e2e2e);     /* a pan */
-   bx(268, 93, 42, 290, 95, 46, 0x2e2e2e);
-   cyl(320, 90, 30, 9, 7, 22, 10, 0xd62828);      /* the kettle */
-   bx(150, 90, 10, 190, 91, 40, 0xe0c39a);        /* a cutting board with bread */
-   ball(170, 96, 25, 14, 5, 8, 3, 0xc98b4a);
-   bx(350, 90, 20, 372, 120, 46, 0x2b2b2b);       /* the coffee machine */
-   mug(358, 90, 8, 0xffffff);
-   for (i = 0; i < 3; i++)
-      cyl(20 + i * 12, 90, 50, 4, 4, 14 + i * 4, 6, i == 0 ? 0x6a994e : i == 1 ? 0xbc4749 : 0xf2e8cf); /* bottles and jars */
-   /* tiles behind it and the cupboards above */
-   at(760, 90, 0, 0);
-   mat(TEX3D_SUBWAY, 128);
-   bxf(0, 0, 6, 380, 60, 7, 0xffffff, R3D_PANE);
-   plain();
-   at(760, 150, 0, 0);
-   bx(0, 0, 6, 330, 75, 40, 0xf1eee8);
+   const uint32_t cab = 0x7c9a92, door = 0x86a59c;
+   at(0, 0, 0, 0);
+   /* the south run: 1040..1530 */
+   base_run_x(1040, 1530, 6, 66, cab, door);
+   /* the washing machine under the counter (1040..1100) */
+   bx(1042, 0, 66, 1098, 84, 67, 0xf8f9fa);
+   bx(1050, 24, 67, 1090, 64, 69, 0x9aa7b0);
+   bx(1056, 30, 69, 1084, 58, 70, 0x3b4a57);
+   r3d_glow(300);
+   bx(1080, 74, 67, 1090, 78, 68, 0x38b000);
+   r3d_glow(0);
+   /* the dishwasher (1160..1220) */
+   bx(1162, 4, 66, 1218, 84, 67, 0xd0d4d9);
+   bx(1166, 76, 67, 1214, 79, 69, 0x9aa0a6);
+   /* the sink under the window, its tap, a dish rack, the washing-up liquid */
+   bx(1225, 82, 12, 1295, 90, 56, 0xc9ccd1);
+   bx(1229, 84, 16, 1291, 90, 52, 0x9fa4ab);
+   cyl(1260, 90, 10, 2, 2, 30, 6, 0xd0d0d0);
+   bx(1258, 118, 10, 1262, 122, 30, 0xd0d0d0);
+   bx(1300, 90, 14, 1350, 92, 54, 0xb0b5bb);
    for (i = 0; i < 5; i++)
-      bx(4 + i * 65, 4, 40, 64 + i * 65, 71, 41, 0xf1ede4);
-   r3d_light(CM(160), CM(-20), CM(30), M(2), 0xfff0d0, 200);
-   /* the fridge in the corner */
-   at(1140, 0, 8, 0);
-   bx(0, 0, 0, 52, 195, 62, 0xe8eaec);
-   bx(0, 120, 62, 52, 121, 63, 0xb7bcc2);
-   bx(44, 130, 62, 47, 170, 66, 0xb7bcc2);
-   bx(44, 60, 62, 47, 110, 66, 0xb7bcc2);
-   bx(10, 150, 63, 18, 158, 64, 0xe63946);        /* magnets and a note */
-   bx(22, 140, 63, 34, 155, 64, 0xffe66d);
-   bx(8, 90, 63, 30, 115, 64, 0xf8f9fa);
-   /* the island with two stools and a fruit bowl */
-   at(880, 0, 190, 0);
+      bx(1306 + i * 9, 92, 20, 1308 + i * 9, 116, 48, i & 1 ? 0xf1faee : 0xa8dadc);
+   cyl(1214, 90, 20, 4, 4, 16, 8, 0x2ec4b6);
+   /* herbs on the window sill */
+   for (i = 0; i < 3; i++)
+   {
+      at(1140 + i * 110, 90, 10, 0);
+      plant_pot(10, i == 1 ? 0xbc6c25 : 0xffffff, (uint32_t)(20 + i));
+   }
+   at(0, 0, 0, 0);
+   /* the hob, the oven under it, the hood, a pot and a pan */
+   bx(1410, 90, 10, 1490, 91, 58, 0x1c1c1c);
+   for (i = 0; i < 4; i++)
+      cyl(1428 + (i & 1) * 44, 91, 22 + (i >> 1) * 24, 9, 9, 1, 12, 0x3a3a3a);
+   cyl(1428, 91, 22, 12, 12, 16, 12, 0xb0b5bb);
+   cyl(1472, 91, 46, 13, 13, 4, 12, 0x2e2e2e);
+   bx(1484, 93, 44, 1508, 95, 48, 0x2e2e2e);
+   bx(1412, 10, 66, 1488, 70, 67, 0x1c1c1c);
+   r3d_glow(160);
+   bx(1420, 20, 67, 1480, 52, 68, 0xff9f1c);
+   r3d_glow(0);
+   bx(1415, 60, 67, 1485, 62, 70, 0xc0c0c0);
+   bx(1405, 175, 6, 1495, 185, 56, 0xc0c4c8);
+   bx(1430, 185, 6, 1470, 265, 30, 0xc0c4c8);
+   r3d_light(CM(1450), CM(170), CM(30), M(2), 0xfff0d0, 140);
+   /* a rail of pans and ladles on the wall between the window and the hood */
+   bx(1300, 150, 6, 1400, 152, 9, 0x9a9aa0);
+   for (i = 0; i < 4; i++)
+      bx(1308 + i * 24, 112, 9, 1316 + i * 24, 150, 11, i & 1 ? 0x2e2e2e : 0xb0b5bb);
+   /* a knife block, a jar of spoons, a cutting board with bread, a roll of paper, a fruit bowl */
+   bx(1110, 90, 14, 1124, 112, 30, 0x6b4423);
+   for (i = 0; i < 4; i++)
+      bx(1112 + i * 3, 112, 18, 1113 + i * 3, 122, 26, 0x222222);
+   cyl(1140, 90, 22, 6, 6, 14, 8, 0xe9edc9);
+   for (i = 0; i < 3; i++)
+      bx(1136 + i * 4, 104, 20, 1138 + i * 4, 122, 22, 0x6b4423);
+   bx(1355, 90, 12, 1395, 91, 46, 0xe0c39a);
+   ball(1375, 96, 28, 14, 5, 8, 3, 0xc98b4a);
+   cyl(1060, 90, 40, 6, 6, 26, 10, 0xffffff);
+   /* the wall cupboards: left of the window and over the hob's sides */
+   bx(1040, 150, 6, 1095, 225, 40, 0xf1eee8);
+   bx(1495, 150, 6, 1530, 225, 40, 0xf1eee8);
+   bx(1040, 150, 40, 1095, 225, 41, 0xf1ede4);
+   bx(1495, 150, 40, 1530, 225, 41, 0xf1ede4);
+   /* tiles behind the counters */
+   mat(TEX3D_SUBWAY, 128);
+   bxf(1040, 90, 6, 1100, 150, 7, 0xffffff, R3D_PANE);
+   bxf(1400, 90, 6, 1530, 150, 7, 0xffffff, R3D_PANE);
+   plain();
+   /* the east run: 68..470, the coffee corner */
+   base_run_z(1532, 1594, 66, 470, cab, door);
+   bx(1555, 90, 90, 1585, 130, 116, 0x2b2b2b);     /* the coffee machine */
+   bx(1548, 104, 96, 1555, 108, 110, 0x9a9aa0);
+   for (i = 0; i < 4; i++)
+      mug(1570, 90, 130 + i * 12, i & 1 ? 0xffffff : 0xe76f51);
+   bx(1560, 90, 190, 1588, 108, 222, 0xc0c0c0);    /* the toaster */
+   bx(1566, 108, 196, 1582, 109, 216, 0x222222);
+   cyl(1572, 90, 260, 9, 7, 22, 10, 0xd62828);    /* the kettle */
+   bx(1548, 90, 300, 1590, 120, 360, 0x2b2b2b);   /* the microwave */
+   bx(1546, 96, 306, 1548, 114, 340, 0x111111);
+   for (i = 0; i < 5; i++)
+      cyl(1580, 90, 390 + i * 12, 4, 4, 12 + (i % 3) * 3, 6, i % 3 == 0 ? 0x6a994e : i % 3 == 1 ? 0xbc4749 : 0xf2e8cf); /* spices */
+   cyl(1565, 90, 440, 16, 18, 8, 12, 0x2a2a2a);   /* a fruit bowl */
+   ball(1561, 99, 437, 5, 5, 5, 3, 0xffb703);
+   ball(1570, 99, 444, 5, 5, 5, 3, 0x8ac926);
+   ball(1566, 100, 434, 5, 5, 5, 3, 0xe63946);
+   /* the fridge and the pantry */
+   at(1594, 0, 476, 1024);
+   bx(0, 0, 0, 88, 195, 62, 0xe8eaec);
+   bx(43, 4, -1, 45, 191, 0, 0xb7bcc2);
+   bx(36, 90, -4, 39, 140, -1, 0xb7bcc2);
+   bx(49, 90, -4, 52, 140, -1, 0xb7bcc2);
+   bx(10, 150, -2, 18, 158, -1, 0xe63946);        /* magnets and a drawing */
+   bx(54, 140, -2, 76, 168, -1, 0xffe66d);
+   at(0, 0, 0, 0);
    mat(TEX3D_WOOD, 100);
-   bx(0, 0, 0, 160, 88, 70, 0x3d5a80);
+   bx(1534, 0, 566, 1594, 230, 644, 0xefe9df);
+   plain();
+   bx(1533, 6, 570, 1534, 224, 604, 0xf6f1e8);
+   bx(1533, 6, 606, 1534, 224, 640, 0xf6f1e8);
+   /* the island with three stools and two pendants */
+   mat(TEX3D_WOOD, 100);
+   bx(1180, 0, 250, 1420, 88, 330, 0x3d5a80);
    plain();
    mat(TEX3D_MARBLE, 100);
-   bx(-6, 88, -6, 166, 92, 76, 0xffffff);
+   bx(1172, 88, 244, 1428, 92, 356, 0xffffff);
    plain();
-   cyl(40, 92, 35, 14, 16, 6, 12, 0x2a2a2a);
-   ball(36, 100, 32, 5, 5, 5, 3, 0xffb703);
-   ball(46, 100, 38, 5, 5, 5, 3, 0x8ac926);
-   bx(100, 92, 20, 140, 94, 50, 0xd0d0d0);       /* a laptop open: work from the kitchen */
-   bx(100, 94, 48, 140, 120, 50, 0x2a2a30);
+   bx(1220, 92, 270, 1260, 94, 300, 0xd0d0d0);    /* a laptop open: work from the kitchen */
+   bx(1220, 94, 268, 1260, 120, 270, 0x2a2a30);
+   cyl(1350, 92, 290, 14, 16, 6, 12, 0x2a2a2a);
+   ball(1346, 100, 287, 5, 5, 5, 3, 0xffb703);
+   for (i = 0; i < 3; i++)
+      stool(1220 + i * 80, 385, 70, 0xc0703d);
    for (i = 0; i < 2; i++)
    {
-      at(905 + i * 80, 0, 290, 0);
-      cyl(0, 0, 0, 12, 12, 3, 10, 0x333333);
-      cyl(0, 3, 0, 2, 2, 62, 6, 0x333333);
-      cyl(0, 62, 0, 16, 16, 6, 12, 0xc0703d);
+      at(1240 + i * 120, 0, 300, 0);
+      pendant(80);
    }
-   /* the bins: three colors */
-   at(1150, 0, 330, 1024);
-   bx(0, 0, 0, 30, 60, 36, 0xf2c14e);
-   bx(34, 0, 0, 64, 60, 36, 0x3a86ff);
-   bx(68, 0, 0, 98, 60, 36, 0x8ac926);
-   /* a pendant over the island */
-   at(960, 0, 225, 0);
-   pendant(70);
-   r3d_light(0, CM(170), 0, M(3), 0xffe2b0, 240);
-   /* a calendar */
-   at(1191, 150, 390, 1024);
+   at(0, 0, 0, 0);
+   r3d_light(CM(1300), CM(170), CM(300), M(3), 0xffe2b0, 240);
+   /* the family's table for four */
+   at(940, 0, 120, 0);
+   mat(TEX3D_WOOD, 100);
+   bx(0, 72, 0, 140, 76, 90, 0xd4b48c);
+   plain();
+   bx(6, 0, 6, 12, 72, 12, 0x6b4423);
+   bx(128, 0, 6, 134, 72, 12, 0x6b4423);
+   bx(6, 0, 78, 12, 72, 84, 0x6b4423);
+   bx(128, 0, 78, 134, 72, 84, 0x6b4423);
+   mug(30, 76, 30, 0xe63946);
+   mug(100, 76, 60, 0xffffff);
+   bx(50, 76, 20, 90, 77, 50, 0xf1faee);          /* a newspaper */
+   cyl(70, 76, 70, 10, 10, 2, 12, 0xf8f9fa);      /* a plate with toast */
+   bx(64, 78, 66, 76, 80, 74, 0xe9c46a);
+   at(950, 0, 78, 0);
+   chair_wood(0x3d5a80, 0xe0e1dd);
+   at(1030, 0, 78, 0);
+   chair_wood(0x3d5a80, 0xe0e1dd);
+   at(992, 0, 252, 2048);
+   chair_wood(0x3d5a80, 0xe0e1dd);
+   at(1072, 0, 252, 2048);
+   chair_wood(0x3d5a80, 0xe0e1dd);
+   at(1010, 0, 165, 0);
+   pendant(90);
+   r3d_light(0, CM(150), 0, M(3), 0xffe2b0, 200);
+   /* the tall cupboards with the second oven and the microwave, against the north wall */
+   at(1130, 0, 584, 0);
+   mat(TEX3D_WOOD, 100);
+   bx(0, 0, 0, 240, 220, 60, cab);
+   plain();
+   for (i = 0; i < 4; i++)
+      bx(4 + i * 60, 4, -1, 56 + i * 60, 216, 0, door);
+   bx(66, 80, -2, 114, 130, -1, 0x1c1c1c);
+   bx(66, 140, -2, 114, 170, -1, 0x2b2b2b);
+   for (i = 0; i < 4; i++)
+      bx(28 + i * 60, 100, -4, 32 + i * 60, 130, -1, 0xc0c0c0);
+   /* the bins, a calendar, a clock */
+   at(1400, 0, 610, 0);
+   bx(0, 0, 0, 30, 60, 34, 0xf2c14e);
+   bx(34, 0, 0, 64, 60, 34, 0x3a86ff);
+   bx(68, 0, 0, 98, 60, 34, 0x8ac926);
+   at(1591, 150, 520, 1024);
    frame_pic(36, 46, poster[4]);
+   at(1490, 200, 641, 2048);
+   cyl(0, 0, 0, 14, 14, 3, 16, 0xf8f8f8);
+   /* the bar between the living room and the kitchen, in the west wall's opening, three stools on the living room's side */
+   at(0, 0, 0, 0);
+   mat(TEX3D_WOOD, 100);
+   bx(880, 0, 300, 920, 100, 470, 0x3d5a80);
+   plain();
+   mat(TEX3D_MARBLE, 100);
+   bx(860, 100, 296, 924, 104, 474, 0xffffff);
+   plain();
+   for (i = 0; i < 3; i++)
+      stool(842, 330 + i * 55, 76, 0xc0703d);
+   mug(870, 104, 340, 0x264653);
+   cyl(900, 104, 430, 6, 6, 18, 8, 0xa8dadc);     /* a jug of water */
 }
 
 static void office(void)
 {
    int32_t i;
    /* the desk against the north wall, two screens of code, the work's whole kit */
-   at(870, 0, 818, 0);
+   at(860, 0, 1168, 0);
    mat(TEX3D_WOOD, 100);
    bx(0, 72, 0, 180, 76, 72, 0x2b2b2b);
    plain();
    bx(4, 0, 4, 8, 72, 68, 0x1c1c1c);
    bx(172, 0, 4, 176, 72, 68, 0x1c1c1c);
    bx(4, 66, 64, 176, 72, 68, 0x1c1c1c);
-   at(870, 76, 818, 0);
+   at(860, 76, 1168, 0);
    monitor(30, 60, 34, poster[5]);
    monitor(96, 60, 34, poster[6]);
    bx(50, 0, 14, 110, 2, 30, 0x222226);           /* keyboard, glowing a little */
@@ -632,15 +813,15 @@ static void office(void)
    bx(-9, 2, 39, -7, 30, 41, 0x333333);
    ball(-8, 30, 40, 9, 6, 3, 3, 0x1d1d1d);
    /* the gaming chair on its round mat */
-   at(960, 0, 760, 2048 + 200);
+   at(950, 0, 1110, 2048 + 200);
    desk_chair();
-   at(960, 0, 760, 0);
+   at(950, 0, 1110, 0);
    r3d_occlude(0);
    cyl(0, 0, 0, 70, 70, 1, 24, 0x274c77);
    cyl(0, 1, 0, 55, 55, 1, 24, 0x6096ba);
    r3d_occlude(1);
    /* a ring light with its tripod */
-   at(1110, 0, 830, 0);
+   at(790, 0, 1200, 0);
    cyl(0, 0, 0, 2, 2, 150, 4, 0x222222);
    r3d_glow(330);
    for (i = 0; i < 12; i++)
@@ -651,36 +832,56 @@ static void office(void)
    r3d_glow(0);
    r3d_light(0, CM(160), 0, M(2), 0xf4f7ff, 200);
    /* a whiteboard full of arrows, a cork board, a terminal poster */
-   at(709, 100, 600, 3072);
+   at(759, 100, 950, 3072);
    bx(0, 0, 0, 160, 100, 3, 0xbdbdbd);
    pane(poster[7], 3, 3, -1, 157, 97, 0, 0xffffff);
-   at(1000, 120, 891, 0);
+   at(880, 150, 1241, 0);
    bx(0, 0, 0, 90, 60, 3, 0x5c4033);
    mat(TEX3D_CORK, 128);
    bxf(3, 3, -1, 87, 57, 0, 0xffffff, R3D_PANE);
    plain();
    for (i = 0; i < 6; i++)
       bx(10 + (i % 3) * 26, 10 + (i / 3) * 24, -2, 28 + (i % 3) * 26, 28 + (i / 3) * 24, -1, i & 1 ? 0xffe66d : 0xff8fab);
-   at(1191, 130, 700, 1024);
+   at(1141, 130, 1010, 1024);
    frame_pic(50, 70, poster[5]);
    /* a bookshelf of tech books, boxes from deliveries, plants */
-   at(1156, 0, 640, 1024);
+   at(1112, 0, 960, 1024);
    bookshelf(100, 180, 5, 0x3d3d3d, 31);
-   at(720, 0, 520, 0);
+   at(770, 0, 820, 0);
    cardboard_box(40, 30, 34);
-   at(724, 30, 524, 200);
+   at(774, 30, 824, 200);
    cardboard_box(30, 20, 26);
-   at(1150, 0, 860, 0);
+   at(1110, 0, 1210, 0);
    tall_plant();
-   at(760, 0, 860, 0);
+   at(1120, 0, 830, 0);
    plant_pot(16, 0x264653, 5);
+   /* a reading corner by the west wall: an armchair, a floor lamp, a rug, a side table with a book */
+   at(800, 0, 1010, 1024);
+   mat(TEX3D_FABRIC, 96);
+   bx(0, 10, 0, 80, 44, 80, 0x588157);
+   bx(0, 44, 64, 80, 90, 80, 0x3a5a40);
+   bx(0, 44, 0, 14, 66, 64, 0x3a5a40);
+   bx(66, 44, 0, 80, 66, 64, 0x3a5a40);
+   plain();
+   at(790, 0, 870, 0);
+   floor_lamp(0xf6e7c1);
+   r3d_light(0, CM(150), 0, M(3), 0xffd59a, 220);
+   at(780, 0, 900, 0);
+   mat(TEX3D_RUG, 0);
+   r3d_occlude(0);
+   bxf(0, 0, 0, 160, 1, 140, 0xffffff, R3D_TOP_ONLY);
+   r3d_occlude(1);
+   plain();
+   at(800, 0, 1080, 0);
+   cyl(0, 0, 0, 18, 18, 45, 12, 0x6b4423);
+   bx(-8, 45, -10, 8, 48, 10, 0x9d0208);
 }
 
 static void bedroom(void)
 {
    int32_t i;
    /* the bed against the west wall: a frame, the mattress, a knitted duvet, pillows */
-   at(10, 0, 580, 0);
+   at(10, 0, 930, 0);
    mat(TEX3D_WOOD, 100);
    bx(0, 0, 0, 200, 30, 160, 0x9c6b43);
    bx(0, 30, 0, 8, 100, 160, 0x9c6b43);
@@ -698,7 +899,7 @@ static void bedroom(void)
    /* nightstands with lamps, a book and a phone charging */
    for (i = 0; i < 2; i++)
    {
-      at(10, 0, i ? 745 : 530, 0);
+      at(10, 0, i ? 1095 : 880, 0);
       mat(TEX3D_WOOD, 100);
       bx(0, 0, 0, 45, 50, 40, 0xd4b48c);
       plain();
@@ -709,12 +910,12 @@ static void bedroom(void)
       r3d_glow(0);
       r3d_light(CM(20), CM(76), CM(20), CM(220), 0xffd59a, 200);
    }
-   at(30, 50, 535, 0);
+   at(30, 50, 885, 0);
    bx(0, 0, 0, 7, 1, 14, 0x111111);
-   at(20, 50, 750, 0);
+   at(20, 50, 1100, 0);
    bx(0, 0, 0, 16, 3, 22, 0x6d597a);
    /* the wardrobe on the north wall, a pile of clothes */
-   at(250, 0, 830, 0);
+   at(300, 0, 1180, 0);
    mat(TEX3D_WOOD, 100);
    bx(0, 0, 0, 180, 220, 60, 0xefe9df);
    plain();
@@ -723,35 +924,35 @@ static void bedroom(void)
       bx(i * 60 + 2, 4, -1, i * 60 + 58, 216, 0, 0xf6f1e8);
       bx(i * 60 + 52, 100, -3, i * 60 + 54, 130, -1, 0x999999);
    }
-   at(330, 0, 560, 0);
+   at(300, 0, 900, 0);
    mat(TEX3D_FABRIC, 128);
    for (i = 0; i < 6; i++)
       bx(i * 5, i * 6, i * 3 + (i & 1) * 4, 50 - i * 3, i * 6 + 7, 40 - i * 2, i % 3 == 0 ? 0x3d5a80 : i % 3 == 1 ? 0x98c1d9 : 0xee6c4d);
    plain();
    /* a laundry basket, a mirror, a rug, plants, pictures, shoes */
-   at(400, 0, 680, 0);
+   at(450, 0, 1030, 0);
    cyl(0, 0, 0, 22, 25, 50, 12, 0xd6c3a1);
    mat(TEX3D_FABRIC, 128);
    ball(0, 50, 0, 18, 8, 18, 3, 0xffffff);
    plain();
-   at(441, 0, 800, 1024);
+   at(491, 0, 1150, 1024);
    bx(0, 0, 0, 50, 170, 4, 0xc9a66b);
    r3d_glow(170);
    bxf(4, 4, -1, 46, 166, 0, 0xbcd4e6, R3D_PANE);
    r3d_glow(0);
-   at(230, 0, 600, 0);
+   at(230, 0, 950, 0);
    mat(TEX3D_RUG2, 0);
    r3d_occlude(0);
    bxf(0, 0, 0, 140, 1, 200, 0xffffff, R3D_TOP_ONLY);
    r3d_occlude(1);
    plain();
-   at(410, 0, 860, 0);
+   at(250, 0, 1215, 0);
    plant_pot(20, 0xbc6c25, 9);
-   at(60, 140, 891, 0);
+   at(9, 140, 840, 3072);
    frame_pic(80, 56, poster[1]);
-   at(9, 150, 790, 3072);
+   at(9, 150, 1140, 3072);
    frame_pic(100, 60, poster[3]);
-   at(300, 0, 540, 900);
+   at(220, 0, 880, 900);
    bx(0, 0, 0, 12, 10, 30, 0x2b2d42);
    bx(16, 0, 4, 28, 10, 34, 0x2b2d42);
 }
@@ -759,8 +960,8 @@ static void bedroom(void)
 static void bathroom(void)
 {
    int32_t i;
-   /* the tub with a glass screen, the toilet, the sink with its mirror, towels, the washing machine */
-   at(458, 0, 760, 0);
+   /* the tub with a glass screen, the toilet, the sink with its mirror, towels (planned at 450..700 x 500..950, built moved) */
+   at(458, 0, 810, 0);
    bx(0, 0, 0, 170, 56, 130, 0xf8f9fa);
    bx(8, 30, 8, 162, 56, 122, 0xdfe7ec);
    r3d_occlude(0);
@@ -789,27 +990,35 @@ static void bathroom(void)
    r3d_glow(180);
    bxf(3, 113, 2, 77, 187, 3, 0xd8e6ee, R3D_SKIP_BOTTOM | R3D_SKIP_TOP | R3D_SKIP_X);
    r3d_glow(0);
-   at(690, 0, 660, 3072);
-   bx(0, 0, 0, 60, 85, 60, 0xf8f9fa);             /* the washing machine */
-   cyl(30, 40, -1, 18, 18, 2, 16, 0x9aa7b0);
-   bx(6, 70, -1, 30, 80, 0, 0x3a3a3a);
    at(500, 0, 640, 0);
    cyl(0, 0, 0, 18, 22, 46, 10, 0x8d99ae);        /* the laundry basket */
    for (i = 0; i < 3; i++)
    {
-      at(470 + i * 30, 120, 892, 2048);
+      at(470 + i * 30, 120, 942, 2048);
       bx(0, -50, 0, 24, 0, 6, i == 1 ? 0xffb4a2 : 0x9bc1bc);
    }
+   /* a bath mat, a towel rail by the tub, a plant on the floor */
+   at(560, 0, 760, 0);
+   mat(TEX3D_RUG2, 0);
+   r3d_occlude(0);
+   bxf(0, 0, 0, 70, 1, 45, 0xffffff, R3D_TOP_ONLY);
+   r3d_occlude(1);
+   plain();
+   at(690, 0, 760, 0);
+   cyl(0, 0, 0, 2, 2, 110, 4, 0xc0c0c0);
+   bx(-3, 70, -20, 3, 110, 20, 0x9bc1bc);
+   at(680, 0, 520, 0);
+   plant_pot(16, 0xffffff, 6);
 }
 
 static void hall(void)
 {
    int32_t i;
    /* the front door at the east end, a coat rack, shoes, a console with keys, an umbrella stand, a mirror */
-   at(1192, 0, 410, 3072);
+   at(1592, 0, 690, 3072);
    bx(0, 0, 0, 80, 210, 6, 0x6d4c41);
    bx(64, 100, -4, 70, 104, 0, 0xc0a060);
-   at(1100, 0, 488, 0);
+   at(1480, 0, 788, 0);
    bx(0, 150, 0, 70, 156, 6, 0x5d4037);
    for (i = 0; i < 4; i++)
    {
@@ -821,38 +1030,38 @@ static void hall(void)
          plain();
       }
    }
-   at(1000, 0, 466, 0);
+   at(1390, 0, 750, 0);
    mat(TEX3D_WOOD, 100);
    bx(0, 0, 0, 90, 12, 28, 0x8d6e63);
    bx(0, 30, 0, 90, 34, 28, 0x8d6e63);
    plain();
    for (i = 0; i < 4; i++)
       bx(6 + i * 21, 12, 4, 20 + i * 21, 20, 26, i & 1 ? 0x222222 : 0xe9ecef);
-   at(100, 0, 468, 0);
+   at(270, 0, 768, 0);
    mat(TEX3D_WOOD, 100);
    bx(0, 0, 0, 100, 80, 26, 0x4e342e);
    plain();
    cyl(30, 80, 13, 10, 12, 4, 10, 0xd4a373);
    bx(26, 84, 10, 34, 86, 16, 0xffd166);           /* keys */
-   at(80, 80, 483, 0);
+   at(250, 80, 783, 0);
    plant_pot(12, 0xffffff, 2);
-   at(100, 120, 492, 0);
+   at(270, 120, 792, 0);
    bx(0, 0, 0, 100, 70, 3, 0xc9a66b);
    r3d_glow(170);
    bxf(4, 4, -1, 96, 66, 0, 0xbcd4e6, R3D_PANE);
    r3d_glow(0);
-   at(1160, 0, 425, 0);
+   at(1560, 0, 700, 0);
    cyl(0, 0, 0, 12, 12, 50, 10, 0x2a9d8f);
    cyl(-4, 30, -2, 2, 2, 50, 4, 0x222222);
    cyl(5, 30, 3, 2, 2, 46, 4, 0xe63946);
    /* a parcel nobody opened */
-   at(1060, 0, 415, 300);
+   at(1450, 0, 680, 300);
    cardboard_box(44, 28, 32);
    /* a runner rug along the hall */
-   at(300, 0, 415, 0);
+   at(330, 0, 690, 0);
    mat(TEX3D_RUG2, 128);
    r3d_occlude(0);
-   bxf(0, 0, 0, 500, 1, 70, 0xffffff, R3D_TOP_ONLY);
+   bxf(0, 0, 0, 1000, 1, 70, 0xffffff, R3D_TOP_ONLY);
    r3d_occlude(1);
    plain();
 }
@@ -860,37 +1069,59 @@ static void hall(void)
 static void balcony(void)
 {
    int32_t i;
+   /* the terrace along the living room: 9 m by 2, tiles, a railing */
    at(0, 0, 0, 0);
    mat(TEX3D_TILES, 160);
-   bxf(40, -10, -160, 620, 0, 0, 0xd8cfc4, R3D_SKIP_BOTTOM);
+   bxf(40, -10, -200, 880, 0, 0, 0xd8cfc4, R3D_SKIP_BOTTOM);
    plain();
-   /* the railing */
-   bx(40, 0, -162, 620, 4, -156, 0x2d2d2d);
-   bx(40, 100, -162, 620, 104, -156, 0x2d2d2d);
-   for (i = 0; i <= 58; i++)
-      bx(40 + i * 10, 4, -161, 42 + i * 10, 100, -158, 0x2d2d2d);
-   for (i = 0; i <= 15; i++)
+   bx(40, 0, -202, 880, 4, -196, 0x2d2d2d);
+   bx(40, 100, -202, 880, 104, -196, 0x2d2d2d);
+   for (i = 0; i <= 84; i++)
+      bx(40 + i * 10, 4, -201, 42 + i * 10, 100, -198, 0x2d2d2d);
+   for (i = 0; i <= 19; i++)
    {
-      bx(40, 4, -160 + i * 10, 42, 100, -158 + i * 10, 0x2d2d2d);
-      bx(618, 4, -160 + i * 10, 620, 100, -158 + i * 10, 0x2d2d2d);
+      bx(40, 4, -200 + i * 10, 42, 100, -198 + i * 10, 0x2d2d2d);
+      bx(878, 4, -200 + i * 10, 880, 100, -198 + i * 10, 0x2d2d2d);
    }
-   bx(40, 100, -160, 44, 104, 0, 0x2d2d2d);
-   bx(616, 100, -160, 620, 104, 0, 0x2d2d2d);
-   /* two folding chairs, a small table with a drink, plants in pots, a drying rack, the AC */
-   at(120, 0, -110, 300);
+   bx(40, 100, -200, 44, 104, 0, 0x2d2d2d);
+   bx(876, 100, -200, 880, 104, 0, 0x2d2d2d);
+   /* a sun lounger with a towel, a parasol */
+   at(560, 0, -170, 0);
+   bx(0, 0, 0, 4, 30, 4, 0xdddddd);
+   bx(186, 0, 0, 190, 30, 4, 0xdddddd);
+   bx(0, 0, 60, 4, 30, 64, 0xdddddd);
+   bx(186, 0, 60, 190, 30, 64, 0xdddddd);
+   mat(TEX3D_FABRIC, 96);
+   bx(0, 30, 0, 140, 38, 64, 0x2a9d8f);
+   bx(140, 30, 0, 146, 70, 64, 0x2a9d8f);
+   plain();
+   for (i = 0; i < 6; i++)
+      bx(146 + i * 7, 70 - i * 6, 0, 153 + i * 7, 78 - i * 6, 64, 0x2a9d8f); /* the back, leaning */
+   mat(TEX3D_FABRIC, 128);
+   bx(20, 38, 8, 110, 40, 56, 0xffb703);
+   plain();
+   at(800, 0, -130, 0);
+   cyl(0, 0, 0, 20, 20, 4, 12, 0x555555);
+   cyl(0, 4, 0, 2, 2, 210, 6, 0xeeeeee);
+   cyl(0, 200, 0, 110, 2, 30, 16, 0xe76f51);
+   /* two folding chairs and a small table with a drink */
+   at(150, 0, -150, 300);
    chair_wood(0x2a9d8f, 0x2a9d8f);
-   at(230, 0, -120, 3800);
+   at(260, 0, -160, 3800);
    chair_wood(0x2a9d8f, 0x2a9d8f);
-   at(190, 0, -80, 0);
+   at(220, 0, -110, 0);
    cyl(0, 0, 0, 3, 3, 60, 6, 0x2d2d2d);
    cyl(0, 60, 0, 26, 26, 3, 16, 0x2d2d2d);
    cyl(-6, 63, 4, 4, 3, 12, 8, 0xffb703);
-   for (i = 0; i < 5; i++)
+   /* plants along the railing (the ones to water), a drying rack, the AC */
+   for (i = 0; i < 6; i++)
    {
-      at(60 + i * 22, 0, -140, 0);
-      plant_pot(10 + (i % 3) * 3, i & 1 ? 0xbc6c25 : 0xe9edc9, (uint32_t)i);
+      at(360 + i * 26, 0, -180, 0);
+      plant_pot(12 + (i % 3) * 4, i & 1 ? 0xbc6c25 : 0xe9edc9, (uint32_t)i);
    }
-   at(380, 0, -130, 0);
+   at(60, 0, -190, 0);
+   tall_plant();
+   at(80, 0, -60, 1024);
    for (i = 0; i < 5; i++)
       bx(0, 80 + (i & 1) * 4, i * 18, 140, 82 + (i & 1) * 4, i * 18 + 2, 0xcccccc);
    bx(0, 0, 0, 3, 82, 3, 0xcccccc);
@@ -902,10 +1133,98 @@ static void balcony(void)
    bx(60, 50, 35, 90, 84, 37, 0xffffff);
    bx(100, 30, 53, 130, 84, 55, 0x457b9d);
    plain();
-   at(560, 0, -50, 0);
+   at(820, 0, -45, 0);
    bx(0, 0, 0, 50, 60, 40, 0xf1f1f1);
    cyl(25, 30, -1, 18, 18, 2, 16, 0x9a9a9a);
 }
+
+/* The laundry at the hall's west end (0..250 x 650..800): the washing machine, a dryer on it, a sink, shelves, a basket. */
+static void laundry(void)
+{
+   int32_t i;
+   at(66, 0, 664, 3072);
+   bx(0, 0, 0, 60, 85, 60, 0xf8f9fa);             /* the washing machine, its door toward the room */
+   cyl(30, 40, -1, 18, 18, 2, 16, 0x9aa7b0);
+   bx(6, 70, -1, 30, 80, 0, 0x3a3a3a);
+   r3d_glow(300);
+   bx(40, 74, -1, 44, 78, 0, 0x38b000);
+   r3d_glow(0);
+   at(66, 85, 664, 3072);
+   bx(0, 0, 0, 60, 80, 60, 0xe9ecef);              /* the dryer on top */
+   cyl(30, 38, -1, 16, 16, 2, 16, 0xb8c0c8);
+   at(160, 0, 794, 2048);
+   bx(0, 0, 0, 70, 84, 50, 0xd8d2c4);              /* a deep sink on a cupboard, against the north wall */
+   bx(-2, 84, -2, 72, 88, 52, 0xf1f1f1);
+   bx(8, 84, 8, 62, 88, 44, 0xc9ccd1);
+   cyl(35, 88, 46, 2, 2, 24, 6, 0xc0c0c0);
+   at(6, 140, 790, 2048);
+   for (i = 0; i < 2; i++)
+      bx(-230, i * 40, 0, -10, i * 40 + 3, 30, 0xe6dccb); /* shelves with detergent */
+   for (i = 0; i < 6; i++)
+      bx(-220 + i * 36, 3, 6, -196 + i * 36, 28, 22, i % 3 == 0 ? 0x3a86ff : i % 3 == 1 ? 0xff006e : 0xffbe0b);
+   at(35, 0, 765, 0);
+   cyl(0, 0, 0, 18, 22, 46, 10, 0xd6c3a1);         /* a basket of clothes to wash */
+   mat(TEX3D_FABRIC, 128);
+   ball(0, 46, 0, 16, 8, 16, 3, 0x98c1d9);
+   plain();
+   r3d_light(-CM(75), CM(220), -CM(45), M(2), 0xfff3e0, 180);
+}
+
+/* The game room (1150..1600 x 800..1250): a TV with consoles, a beanbag, an arcade cabinet, the guitar, posters. */
+static void game_room(void)
+{
+   int32_t i;
+   at(1265, 0, 1202, 0);
+   tv_unit(poster[4]);
+   /* a beanbag and a round rug in front of the TV */
+   at(1375, 0, 1030, 0);
+   r3d_occlude(0);
+   mat(TEX3D_RUG2, 0);
+   cyl(0, 0, 0, 110, 110, 1, 24, 0xffffff);
+   plain();
+   r3d_occlude(1);
+   mat(TEX3D_FABRIC, 96);
+   ball(0, 28, 0, 46, 30, 42, 4, 0xe76f51);
+   ball(0, 50, 22, 40, 26, 18, 3, 0xe76f51);
+   plain();
+   bx(40, 0, -60, 70, 4, -40, 0x1d1d1d);          /* a controller left on the floor */
+   /* an arcade cabinet in the corner */
+   at(1160, 0, 1120, 1024);
+   bx(0, 0, 0, 70, 180, 70, 0x1d3557);
+   bx(4, 100, -2, 66, 106, 30, 0x111111);          /* the control panel */
+   for (i = 0; i < 4; i++)
+      cyl(30 + i * 8, 106, 10, 3, 3, 2, 8, i & 1 ? 0xe63946 : 0xffd166);
+   cyl(14, 106, 12, 2, 2, 8, 6, 0x111111);
+   ball(14, 115, 12, 3, 3, 3, 2, 0xe63946);
+   r3d_glow(320);
+   pane(poster[6], 8, 110, -1, 62, 170, 0, 0xffffff);
+   bx(4, 172, -2, 66, 180, 0, 0xffd166);           /* the marquee */
+   r3d_glow(0);
+   /* the guitar on its stand, an amplifier */
+   at(1560, 0, 1150, 0);
+   bx(-8, 0, -6, 8, 30, 6, 0x222222);
+   ball(0, 40, 0, 16, 18, 5, 3, 0x9c5a2b);
+   ball(0, 66, 0, 12, 12, 5, 3, 0x9c5a2b);
+   bx(-2, 76, -2, 2, 120, 2, 0x3b2a1a);
+   at(1530, 0, 1050, 3072);
+   bx(0, 0, 0, 50, 45, 30, 0x222222);
+   bx(4, 8, -1, 46, 40, 0, 0x3a3a3a);
+   /* shelves of games, posters, a neon */
+   at(1590, 0, 880, 1024);
+   bookshelf(100, 120, 3, 0x2b2b2b, 41);
+   at(1480, 150, 809, 2048);
+   frame_pic(60, 80, poster[2]);
+   at(1570, 140, 809, 2048);
+   frame_pic(70, 50, poster[7]);
+   at(1450, 200, 1243, 0);
+   r3d_glow(380);
+   bx(0, 0, 0, 90, 4, 3, 0xff4fd8);
+   bx(0, -20, 0, 4, 4, 3, 0xff4fd8);
+   r3d_glow(0);
+   r3d_light(CM(45), CM(-20), -CM(40), M(3), 0xff9ae8, 160);
+   r3d_light(-CM(75), CM(30), -CM(218), M(3), 0xfff1dc, 160);
+}
+
 
 /* The building under the flat, the street and the city around it. */
 static void city(void)
@@ -913,27 +1232,27 @@ static void city(void)
    int32_t i;
    /* the blocks around: lower than this one, so the view sees over their roofs */
    static const int32_t blocks[][5] = {
-      { 1500, -800, 2600, 1200, 1100 }, { 1500, 1400, 2600, 2900, 1300 }, { -2400, -600, -500, 1600, 1000 },
-      { -400, 1300, 1300, 2800, 1200 }, { -2600, -2600, -1600, -900, 900 }, { 1600, -2800, 3000, -1200, 1400 },
+      { 1900, -800, 3000, 1200, 1100 }, { 1900, 1600, 3000, 3100, 1300 }, { -2400, -600, -500, 1600, 1000 },
+      { -400, 1700, 1600, 3200, 1200 }, { -2600, -2600, -1600, -900, 900 }, { 2000, -2800, 3400, -1200, 1400 },
    };
    r3d_detail(0);
    at(0, 0, 0, 0);
-   /* this building: five floors down to the street */
+   /* this building: five floors down to the street, its roof around the house and the terrace */
    mat(TEX3D_FACADE, 80);
-   bxf(-40, -1500, -240, 1240, -10, 930, 0xffffff, R3D_SKIP_TOP | R3D_SKIP_BOTTOM);
+   bxf(-40, -1500, -280, 1640, -10, 1290, 0xffffff, R3D_SKIP_TOP | R3D_SKIP_BOTTOM);
    plain();
    mat(TEX3D_CONCRETE, 64);
-   bxf(-40, -10, -240, 1240, 0, -160, 0xd9d4cc, R3D_SKIP_BOTTOM);
-   bxf(-40, -10, -160, 40, 0, 0, 0xd9d4cc, R3D_SKIP_BOTTOM);
-   bxf(620, -10, -160, 1240, 0, 0, 0xd9d4cc, R3D_SKIP_BOTTOM);
-   bxf(-40, -10, 900, 1240, 0, 930, 0xd9d4cc, R3D_SKIP_BOTTOM);
-   bxf(-40, -10, 0, 0, 0, 900, 0xd9d4cc, R3D_SKIP_BOTTOM);
-   bxf(1200, -10, 0, 1240, 0, 900, 0xd9d4cc, R3D_SKIP_BOTTOM);
+   bxf(-40, -10, -280, 1640, 0, -200, 0xd9d4cc, R3D_SKIP_BOTTOM);
+   bxf(-40, -10, -200, 40, 0, 0, 0xd9d4cc, R3D_SKIP_BOTTOM);
+   bxf(880, -10, -200, 1640, 0, 0, 0xd9d4cc, R3D_SKIP_BOTTOM);
+   bxf(-40, -10, 1250, 1640, 0, 1290, 0xd9d4cc, R3D_SKIP_BOTTOM);
+   bxf(-40, -10, 0, 0, 0, 1250, 0xd9d4cc, R3D_SKIP_BOTTOM);
+   bxf(1600, -10, 0, 1640, 0, 1250, 0xd9d4cc, R3D_SKIP_BOTTOM);
    plain();
    /* the street, the pavement and a park */
    mat(TEX3D_CONCRETE, 32);
    bxf(-3000, -1520, -3000, 4200, -1500, 4000, 0x6f747a, R3D_TOP_ONLY);
-   bxf(-200, -1500, -700, 1400, -1488, -240, 0xc8c3ba, R3D_TOP_ONLY);
+   bxf(-200, -1500, -700, 1800, -1488, -280, 0xc8c3ba, R3D_TOP_ONLY);
    plain();
    mat(TEX3D_GRASS, 48);
    bxf(-1400, -1500, -2200, -300, -1490, -800, 0xffffff, R3D_TOP_ONLY);
@@ -985,17 +1304,20 @@ static void build_people(void)
 
 void hd_r3d_build(void)
 {
-   static const opening liv_s[] = { { 60, 290, OPEN_BIG }, { 320, 610, OPEN_BIG } };
-   static const opening kit_s[] = { { 900, 1080, OPEN_WINDOW } };
-   static const opening liv_w[] = { { 140, 260, OPEN_WINDOW } };
-   static const opening bed_w[] = { { 640, 820, OPEN_WINDOW } };
-   static const opening north_bed[] = { { 60, 200, OPEN_WINDOW } };
-   static const opening north_off[] = { { 760, 860, OPEN_WINDOW } };
-   static const opening east_off[] = { { 620, 780, OPEN_WINDOW } };
-   static const opening east_hall[] = { { 410, 490, OPEN_DOOR } };
-   static const opening east_kit[] = { { 140, 330, OPEN_WINDOW } };
-   static const opening hall_s[] = { { 620, 720, OPEN_DOOR }, { 900, 990, OPEN_DOOR } };
-   static const opening hall_n[] = { { 340, 430, OPEN_DOOR }, { 600, 690, OPEN_DOOR }, { 760, 850, OPEN_DOOR } };
+   /* the openings of each wall (see the plan at the top) */
+   static const opening liv_s[] = { { 80, 400, OPEN_BIG }, { 480, 820, OPEN_BIG } };
+   static const opening kit_s[] = { { 1100, 1400, OPEN_WINDOW } };
+   static const opening liv_w[] = { { 150, 350, OPEN_WINDOW } };
+   static const opening north_bed[] = { { 40, 200, OPEN_WINDOW } };
+   static const opening north_off[] = { { 1050, 1130, OPEN_WINDOW } };
+   static const opening north_game[] = { { 1440, 1580, OPEN_WINDOW } };
+   static const opening east_kit[] = { { 200, 450, OPEN_WINDOW } };
+   static const opening east_hall[] = { { 685, 775, OPEN_DOOR } };
+   static const opening east_game[] = { { 900, 1100, OPEN_WINDOW } };
+   static const opening hall_s[] = { { 550, 800, OPEN_DOOR }, { 1000, 1100, OPEN_DOOR } };
+   static const opening hall_n[] = { { 380, 470, OPEN_DOOR }, { 650, 740, OPEN_DOOR }, { 850, 940, OPEN_DOOR }, { 1250, 1340, OPEN_DOOR } };
+   static const opening liv_kit[] = { { 300, 640, OPEN_DOOR } };
+   static const opening laundry_e[] = { { 690, 780, OPEN_DOOR } };
    if (ready)
       return;
    T = tex3d_build();
@@ -1011,51 +1333,63 @@ void hd_r3d_build(void)
    r3d_detail(CM(60));
    r3d_begin();
    /* floors */
-   floor_of(0, 0, 750, 400, TEX3D_PARQUET, 160, 0xffffff);
-   floor_of(750, 0, 1200, 400, TEX3D_PATTERN, 128, 0xffffff);
-   floor_of(0, 400, 1200, 500, TEX3D_PLANKS, 96, 0xffffff);
-   floor_of(0, 500, 450, 900, TEX3D_PLANKS, 96, 0xf0e6dc);
-   floor_of(450, 500, 700, 900, TEX3D_TILES, 160, 0xffffff);
-   floor_of(700, 500, 1200, 900, TEX3D_PARQUET, 160, 0xd8cbbd);
+   floor_of(0, 0, 900, 650, TEX3D_PARQUET, 160, 0xffffff);
+   floor_of(900, 0, 1600, 650, TEX3D_TILES, 128, 0xf3ecdf);
+   floor_of(250, 650, 1600, 800, TEX3D_PLANKS, 96, 0xffffff);
+   floor_of(0, 650, 250, 800, TEX3D_TILES, 160, 0xe8e4dc);
+   floor_of(0, 800, 500, 1250, TEX3D_PLANKS, 96, 0xf0e6dc);
+   floor_of(500, 800, 750, 1250, TEX3D_TILES, 160, 0xffffff);
+   floor_of(750, 800, 1150, 1250, TEX3D_PARQUET, 160, 0xd8cbbd);
+   floor_of(1150, 800, 1600, 1250, TEX3D_PLANKS, 96, 0xc9d6e3);
    /* outer walls (light outside, each room's color inside) */
-   wall(0, 0, 0, 750, 0xf2efe9, 0xf3e3d3, liv_s, 2);
-   wall(0, 0, 750, 1200, 0xf2efe9, 0xf6f3ea, kit_s, 1);
-   wall(1, 0, 0, 400, 0xf2efe9, 0xc8553d, liv_w, 1);
-   wall(1, 0, 400, 900, 0xf2efe9, 0xdfe7dc, bed_w, 1);
-   wall(0, 900, 0, 450, 0xdfe7dc, 0xf2efe9, north_bed, 1);
-   wall(0, 900, 450, 700, 0xe9f1f5, 0xf2efe9, NULL, 0);
-   wall(0, 900, 700, 1200, 0x2f3e46, 0xf2efe9, north_off, 1);
-   wall(1, 1200, 0, 400, 0xf6f3ea, 0xf2efe9, east_kit, 1);
-   wall(1, 1200, 400, 500, 0xefe8de, 0xf2efe9, east_hall, 1);
-   wall(1, 1200, 500, 900, 0x2f3e46, 0xf2efe9, east_off, 1);
+   wall(0, 0, 0, 900, 0xf2efe9, 0xf3e3d3, liv_s, 2);
+   wall(0, 0, 900, 1600, 0xf2efe9, 0xf6f3ea, kit_s, 1);
+   wall(1, 0, 0, 650, 0xf2efe9, 0xc8553d, liv_w, 1);
+   wall(1, 0, 650, 800, 0xf2efe9, 0xe8eef2, NULL, 0);
+   wall(1, 0, 800, 1250, 0xf2efe9, 0xdfe7dc, NULL, 0);
+   wall(0, 1250, 0, 500, 0xdfe7dc, 0xf2efe9, north_bed, 1);
+   wall(0, 1250, 500, 750, 0xe9f1f5, 0xf2efe9, NULL, 0);
+   wall(0, 1250, 750, 1150, 0x2f3e46, 0xf2efe9, north_off, 1);
+   wall(0, 1250, 1150, 1600, 0x3d405b, 0xf2efe9, north_game, 1);
+   wall(1, 1600, 0, 650, 0xf6f3ea, 0xf2efe9, east_kit, 1);
+   wall(1, 1600, 650, 800, 0xefe8de, 0xf2efe9, east_hall, 1);
+   wall(1, 1600, 800, 1250, 0x3d405b, 0xf2efe9, east_game, 1);
    /* inner walls */
-   wall(0, 400, 0, 1200, 0xf3e3d3, 0xefe8de, hall_s, 2);
-   wall(0, 500, 0, 1200, 0xefe8de, 0xdfe7dc, hall_n, 3);
-   wall(1, 750, 0, 400, 0xf3e3d3, 0xf6f3ea, NULL, 0);
-   wall(1, 450, 500, 900, 0xdfe7dc, 0xe9f1f5, NULL, 0);
-   wall(1, 700, 500, 900, 0xe9f1f5, 0x2f3e46, NULL, 0);
-   /* tiles in the bathroom */
+   wall(0, 650, 0, 250, 0xf3e3d3, 0xe8eef2, NULL, 0);
+   wall(0, 650, 250, 1600, 0xf3e3d3, 0xefe8de, hall_s, 2);
+   wall(0, 800, 0, 250, 0xe8eef2, 0xdfe7dc, NULL, 0);
+   wall(0, 800, 250, 1600, 0xefe8de, 0xdfe7dc, hall_n, 4);
+   wall(1, 900, 0, 650, 0xf3e3d3, 0xf6f3ea, liv_kit, 1);
+   wall(1, 250, 650, 800, 0xe8eef2, 0xefe8de, laundry_e, 1);
+   wall(1, 500, 800, 1250, 0xdfe7dc, 0xe9f1f5, NULL, 0);
+   wall(1, 750, 800, 1250, 0xe9f1f5, 0x2f3e46, NULL, 0);
+   wall(1, 1150, 800, 1250, 0x2f3e46, 0x3d405b, NULL, 0);
+   /* tiles in the bathroom, cut at its door */
    at(0, 0, 0, 0);
    mat(TEX3D_SUBWAY, 128);
-   bxf(456, 0, 506, 600, 140, 507, 0xffffff, R3D_PANE); /* up to the door */
-   bxf(456, 0, 893, 694, 140, 894, 0xffffff, R3D_PANE);
+   bxf(506, 0, 806, 650, 140, 807, 0xffffff, R3D_PANE);
+   bxf(506, 0, 1243, 744, 140, 1244, 0xffffff, R3D_PANE);
    plain();
-   skirting(0, 400, 0, 750, -1);
-   skirting(0, 500, 0, 1200, 1);
-   skirting(1, 0, 0, 900, 1);
+   skirting(0, 650, 0, 900, -1);
+   skirting(0, 800, 250, 1600, 1);
+   skirting(1, 0, 0, 1250, 1);
    living();
    kitchen();
    office();
    bedroom();
+   shift_x = 50, shift_z = 300;
    bathroom();
+   shift_x = 0, shift_z = 0;
    hall();
+   laundry();
+   game_room();
    balcony();
    city();
    scene = r3d_end();
    memset(&sunlight, 0, sizeof sunlight);
    /* shadows over the flat and its balcony; the city around is lit without them */
-   sunlight.lo.x = BASE - CM(60), sunlight.lo.y = -CM(20), sunlight.lo.z = BASE - CM(260);
-   sunlight.hi.x = BASE + CM(1260), sunlight.hi.y = CM(280), sunlight.hi.z = BASE + CM(950);
+   sunlight.lo.x = BASE - CM(60), sunlight.lo.y = -CM(20), sunlight.lo.z = BASE - CM(300);
+   sunlight.hi.x = BASE + CM(1660), sunlight.hi.y = CM(280), sunlight.hi.z = BASE + CM(1300);
    sunlight.sun.x = -FX(3);
    sunlight.sun.y = FX(6);
    sunlight.sun.z = -FX(4);
@@ -1094,11 +1428,11 @@ void hd_r3d_start(hd_state *s)
 {
    memset(&s->show, 0, sizeof s->show);
    s->show.on = 2;
-   s->show.kx = BASE + CM(620);
-   s->show.ky = BASE + CM(420);
+   s->show.kx = BASE + CM(800);
+   s->show.ky = BASE + CM(600);
    s->show.ka = 3600;
    s->show.kv = 640;
-   s->show.rpos = 1500;
+   s->show.rpos = 2100;
 }
 
 void hd_r3d_step(hd_state *s, const hd_input in[MAX_PLAYERS])
@@ -1159,8 +1493,8 @@ void hd_r3d_draw(const hd_state *s, void *screen)
    v.light = &sunlight;
    /* at the desk: sitting and typing, now and then a look at the other screen */
    memset(&pose, 0, sizeof pose);
-   pose.at.x = BASE + CM(960);
-   pose.at.z = BASE + CM(770);
+   pose.at.x = BASE + CM(950);
+   pose.at.z = BASE + CM(1110);
    pose.yaw = 2048 + 200;
    pose.sit = 1;
    pose.type = 1;
@@ -1171,8 +1505,8 @@ void hd_r3d_draw(const hd_state *s, void *screen)
    /* in the living room: walking up and down between the TV and the sofa, turning at each end */
    memset(&pose, 0, sizeof pose);
    leg = w->t % 600; /* 300 frames each way */
-   pose.at.x = BASE + CM(200);
-   pose.at.z = BASE + CM(70) + (int32_t)((int64_t)CM(250) * (leg < 300 ? leg : 600 - leg) / 300);
+   pose.at.x = BASE + CM(800);
+   pose.at.z = BASE + CM(300) + (int32_t)((int64_t)CM(250) * (leg < 300 ? leg : 600 - leg) / 300);
    pose.yaw = leg < 300 ? 2048 : 0;
    pose.walk = 16384;
    pose.phase = (w->t * 64) & 4095;
