@@ -15,6 +15,10 @@ blended into its start, so it goes round without a click. Every track is
 made stereo at 48 kHz, its loop blended the same way (unless it is
 "seamless" already). Everything is stored as IMA ADPCM (tools/glhd adpcm), a
 quarter of the size. CREDITS.md lists every recording.
+
+The worker's thoughts (audio.json's "voices") are recorded by voices.py
+into source/voices/<lang>/; here they are made to sound thought (softer,
+closer, a little room) and packed as the effects "voice_<lang>_<key>".
 """
 import array
 import json
@@ -36,13 +40,17 @@ LOOP_PEAK = 9000     # what goes on (a drill, a shower) quieter than what happen
 TRACK_PEAK = 20000
 QUIET = 500          # quieter than this at an effect's start or end is silence
 BLEND = 0.25         # seconds of a loop's end blended into its start
+VOICE_PEAK = 15000   # a thought over the music and the house
+THOUGHT = "apad=pad_dur=0.3,highpass=f=120,lowpass=f=5500,aecho=0.8:0.5:40|75:0.25|0.15"  # inside the head
 
 
-def decode(path, channels, start=0.0, length=None):
+def decode(path, channels, start=0.0, length=None, filters=None):
     """A recording as 16-bit samples at 48 kHz (interleaved when stereo), through ffmpeg."""
     cmd = ["ffmpeg", "-v", "error", "-ss", str(start), "-i", path]
     if length:
         cmd += ["-t", str(length)]
+    if filters:
+        cmd += ["-af", filters]
     cmd += ["-f", "s16le", "-acodec", "pcm_s16le", "-ar", str(RATE), "-ac", str(channels), "-"]
     raw = subprocess.run(cmd, check=True, capture_output=True).stdout
     pcm = array.array("h")
@@ -185,6 +193,17 @@ def build(spec):
         if "volume" in e:
             entry["volume"] = e["volume"]
         effects[name] = entry if len(entry) > 1 else out
+    if spec.get("voices"):
+        for lang in ("en", "es", "pt"):
+            folder = os.path.join(SOURCE, "voices", lang)
+            if not os.path.isdir(folder):
+                sys.exit("the thoughts are not recorded: run examples/remote/voices.py (python3 examples/remote/voices.py for its help)")
+            for f in sorted(os.listdir(folder)):
+                if f.endswith(".wav"):
+                    pcm = level(fade_out(trim(decode(os.path.join(folder, f), 1, filters=THOUGHT)), 1), VOICE_PEAK)
+                    name = f"voice_{lang}_{f[:-4]}"
+                    adpcm(pcm, 1, os.path.join(OUT, name + ".wav"))
+                    effects[name] = name + ".wav"
     for name, t in spec["tracks"].items():
         pcm = level(decode(source_path(t), 2, t.get("start", 0), t.get("length")), TRACK_PEAK)
         if not t.get("seamless"):
@@ -228,6 +247,7 @@ HEADINGS = {
     "by": {"en": "by", "es": "por", "pt": "por"},
     "sounds": {"en": "SOUND EFFECTS", "es": "EFECTOS DE SONIDO", "pt": "EFEITOS SONOROS"},
     "models": {"en": "3D MODELS", "es": "MODELOS 3D", "pt": "MODELOS 3D"},
+    "voices": {"en": "THE THOUGHTS' VOICE", "es": "LA VOZ DE LOS PENSAMIENTOS", "pt": "A VOZ DOS PENSAMENTOS"},
     "license": {"en": "models, music and sounds: public domain (CC0)", "es": "modelos, música y sonidos: dominio público (CC0)", "pt": "modelos, música e sons: domínio público (CC0)"},
     "plays": {"en": "PLAYED WITH", "es": "SE JUEGA CON", "pt": "SE JOGA COM"},
     "logo": {"en": "GO-LINK LOGO", "es": "LOGO DE GO-LINK", "pt": "LOGO DO GO-LINK"},
@@ -257,6 +277,9 @@ def game_credits(spec):
             for author in dict.fromkeys(m["author"] for m in spec["models"].values()):
                 lines.append(author)
             lines.append("")
+        if spec.get("voices"):
+            v = spec["voices"]
+            lines += [f"# {h['voices']}", v["title"], f"{h['by']} {v['author']} ({v['license']})", ""]
         lines.append(f"# {h['sounds']}")
         authors = []
         for e in spec["effects"].values():
@@ -287,6 +310,9 @@ def credits(spec):
     for kind in ("tracks", "effects", "models"):
         for name, e in spec[kind].items():
             lines.append(f"| {kind[:-1]} `{name}` | {e.get('title', '')} | {e.get('author', '')} | {e['license']} | {e.get('page', e['url'])} |")
+    if spec.get("voices"):
+        v = spec["voices"]
+        lines.append(f"| voices `voice_*` (en {v['en']}, es {v['es']}, pt {v['pt']}) | {v['title']} | {v['author']} | {v['license']} | {v['page']} |")
     with open(os.path.join(HERE, "CREDITS.md"), "w") as f:
         f.write("\n".join(lines) + "\n")
 

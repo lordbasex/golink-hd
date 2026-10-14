@@ -74,3 +74,4 @@ and, for the music, looped and stored as IMA ADPCM.
 | model `floor_lamp` | Ultimate House Interior Pack: Light_Stand1 | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
 | model `stool` | Ultimate House Interior Pack: Stool | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
 | model `sink` | Ultimate House Interior Pack: Bathroom_Sink | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
+| voices `voice_*` (en am_michael, es em_alex, pt pm_alex) | Kokoro-82M | hexgrad | Apache 2.0 | https://huggingface.co/hexgrad/Kokoro-82M |

@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- TELETRABAJO's thoughts read aloud in the language chosen (English, Spanish, Portuguese): 35 of the worker's lines recorded with Kokoro-82M (Apache 2.0) by `examples/remote/voices.py` from the game's own texts, made to sound thought by `build.py`, played when they show (`voiced`, `think` in remote.c); a package holds up to 256 effects.
 - More of TELETRABAJO's furniture from Quaternius's CC0 house interior when the package brings it: the TV unit, the dining room's sideboard and oval table, the floor lamps (their shades still lit), the kitchen's stools, the bathroom's wall sink.
 - A model types for real (`actor3d_place_model`): it sits forward on the seat, the left hand on the keyboard and the right on the mouse, palms down (a twist along the forearm).
 - TELETRABAJO's desk made by artists when the package brings it: CreativeTrio's desk with its drawers, monitors (the code still glows on them, set back so the keyboard shows), a keyboard with its keys and a mouse on its pad at the front edge, a computer under the desk with its light on, Quaternius's office chair and desk lamp (all CC0, from Poly Pizza); a package holds up to 32 models; the credits' heading is "3D models".

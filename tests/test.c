@@ -1171,7 +1171,8 @@ static void test_remote_sound(void)
    files[0].name = "manifest.json";
    files[0].text = "{\"format\": 3, \"title\": \"Remote\", \"game\": \"remote\", \"audio\": {"
                    "\"effects\": {\"alarm\": {\"file\": \"loop.wav\", \"loop\": true}, \"drill\": {\"file\": \"loop.wav\", \"loop\": true, \"volume\": 128},"
-                   " \"ui_move\": \"shot.wav\", \"step\": \"shot.wav\"},"
+                   " \"ui_move\": \"shot.wav\", \"step\": \"shot.wav\","
+                   " \"voice_en_done_coffee\": \"shot.wav\", \"voice_es_done_coffee\": \"shot.wav\", \"voice_es_cat_moved\": \"shot.wav\"},"
                    " \"tracks\": {\"title\": {\"file\": \"song.wav\"}, \"day\": {\"file\": \"song.wav\", \"volume\": 150}, \"call\": {\"file\": \"song.wav\"}}}}";
    files[1].name = "loop.wav";
    files[1].text = (const char *)loop_wav;
@@ -1243,6 +1244,27 @@ static void test_remote_sound(void)
    i = g->music_resume;
    remote_plays(&a, 130, 0);
    CHECK(a.music_track == day && a.music_pos >= i && a.music_pos < i + HD_SAMPLES_PER_FRAME * 3);
+   /* a thought shown is said in the texts' language, and a new one cuts it short */
+   i = hd_lang;
+   hd_lang = 1;
+   g->toast = RT_DONE + RA_COFFEE + 1;
+   g->toast_t = REMOTE_TOAST_FRAMES + 1;
+   remote_plays(&a, 1, 0);
+   CHECK(channel_of(&a, hd_effect("voice_es_done_coffee")) >= 0 && channel_of(&a, hd_effect("voice_en_done_coffee")) == -1);
+   g->toast = RT_CAT_MOVED + 1;
+   g->toast_t = REMOTE_TOAST_FRAMES + 1;
+   remote_plays(&a, 1, 0);
+   CHECK(channel_of(&a, hd_effect("voice_es_cat_moved")) >= 0 && channel_of(&a, hd_effect("voice_es_done_coffee")) == -1);
+   hd_lang = 0;
+   g->toast = RT_DONE + RA_COFFEE + 1;
+   g->toast_t = REMOTE_TOAST_FRAMES + 1;
+   remote_plays(&a, 1, 0);
+   CHECK(channel_of(&a, hd_effect("voice_en_done_coffee")) >= 0);
+   g->toast = RT_AGAIN + 1; /* a line with no recording: nothing said, nothing cut */
+   g->toast_t = REMOTE_TOAST_FRAMES + 1;
+   remote_plays(&a, 1, 0);
+   CHECK(channel_of(&a, hd_effect("voice_en_done_coffee")) >= 0);
+   hd_lang = i;
    /* the pause silences the loops */
    g->drill_t = 600;
    remote_plays(&a, 2, PAD_START);

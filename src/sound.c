@@ -400,7 +400,7 @@ static const char *load_effects(const hd_zip *zip, const json *effects)
       if (!good_name(it->key))
          return "each of audio's effects needs a name shorter than 32 letters";
       if (named_count >= HD_NAMED_MAX)
-         return "audio has more than 64 effects";
+         return "audio has more than 256 effects";
       if (hd_effect(it->key) >= 0)
          return "two of audio's effects have the same name";
       if (!file || file->type != JSON_STRING || (loop && loop->type != JSON_BOOL) || (vol && (vol->type != JSON_INT || vol->num < 0 || vol->num > 256)))

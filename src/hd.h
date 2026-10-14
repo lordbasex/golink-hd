@@ -146,7 +146,7 @@ enum
 };
 /* A package's named effects (format 3's "audio"), after the built-in ones and the music's two waves. */
 #define HD_SFX_NAMED (SFX_COUNT + 2)
-#define HD_NAMED_MAX 64
+#define HD_NAMED_MAX 256
 /* Every sample the mixer knows: the effects, the music's two waves and the named effects. */
 #define HD_SAMPLES (HD_SFX_NAMED + HD_NAMED_MAX)
 

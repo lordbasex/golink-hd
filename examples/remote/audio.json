@@ -649,5 +649,15 @@
    "zip": "models/ultimate_house_interior_pack_-_june_2020.zip",
    "file": "models/ultimate_house_interior_pack_-_june_2020/Ultimate House Interior Pack - June 2020/OBJ/Bathroom_Sink.obj"
   }
+ },
+ "voices": {
+  "title": "Kokoro-82M",
+  "author": "hexgrad",
+  "license": "Apache 2.0",
+  "page": "https://huggingface.co/hexgrad/Kokoro-82M",
+  "speed": 0.95,
+  "en": "am_michael",
+  "es": "em_alex",
+  "pt": "pm_alex"
  }
 }

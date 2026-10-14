@@ -373,6 +373,23 @@ The recordings, their authors and licenses (only CC0, public domain, or
 CC-BY with credit) are listed in `examples/remote/audio.json`, and
 `examples/remote/build.py` turns them into the package (CREDITS.md).
 
+### The thoughts' voice
+
+The lines the worker thinks are read aloud when they show, in the language
+of the texts (English, Spanish or Portuguese, switched from the title's
+menu): what an activity left ("Another coffee. Who's counting?"), "again?",
+the cat taken off, the hotfix out, the answers to the boss and the
+weekend's "no", and what happens in the house (the bell, the drill, the
+internet, the washing machine). The boss, the flatmate and the cat are not
+voiced. A new thought cuts the one before short.
+
+- The game: the `voiced` table in `remote.c` (35 lines, each a text and a key); `think()` plays `voice_<en|es|pt>_<key>`, a named effect of the package, when a toast or a phone line of "You" or "Home" appears. A line without a recording says nothing.
+- The recordings: `examples/remote/voices.py` reads the `voiced` table and `remote_text.c`, so a text changed in the game is recorded again with its new words. It runs Kokoro-82M (Apache 2.0, by hexgrad; through `kokoro-onnx`, about 90 MB, on the processor of any computer: no server, no account) with audio.json's `"voices"` (one per language, and the speed). They land in `source/voices/<lang>/` (not in git, like the other recordings).
+- The sound: `build.py` makes each one sound thought (a little bass and treble off, a short echo of a small room), levels it over the music and packs it as ADPCM: 105 recordings, about 5 MB.
+- Chosen over VoiceStudio (an AGPL desktop app of about 5 GB whose model has its own terms) and over the public demos of Kokoro (they offer no API, only English, or are paused).
+
+To voice another game: a table like `voiced` in its code, a copy of `voices.py` pointed at its texts, and the effects named the same way.
+
 ## 9. Controls
 
 | Input | Action |
@@ -497,6 +514,12 @@ before the next one.
 | 8 | Willy Maker | Whatever it needs from this game | last |
 
 ## 13. Progress
+
+**The thoughts read aloud (2026-10-14).** The user asked for the lines on
+screen to be read as if the worker were thinking them, in the language
+chosen. Section 8, "The thoughts' voice": 35 lines in three languages
+recorded with Kokoro-82M on this computer, played as named effects; a
+package holds up to 256 effects now.
 
 **More furniture (2026-10-14).** From the same Quaternius pack: the TV unit
 (the long one with a gap in the middle), the sideboard (two drawers on

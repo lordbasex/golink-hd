@@ -1070,6 +1070,34 @@ static const char *const track_names[TRACKS] = { "title", "day", "call", "end" }
 
 static int32_t effect_sample[RF_COUNT], track_value[TRACKS];
 
+/*
+ * The worker's thoughts read aloud: the lines shown on screen that the
+ * worker thinks (what an activity left, the answers to the boss, what
+ * happens in the house), each the package's recording in every language,
+ * named "voice_<en|es|pt>_<key>" (examples/remote/voices.py reads this
+ * table and remote_text.c to make them).
+ */
+static const struct
+{
+   int16_t text;
+   const char *key;
+} voiced[] = {
+   { RT_DONE + RA_WORK, "done_work" }, { RT_DONE + RA_NAP, "done_nap" }, { RT_DONE + RA_COFFEE, "done_coffee" },
+   { RT_DONE + RA_COOK, "done_cook" }, { RT_DONE + RA_FRIDGE, "done_fridge" }, { RT_DONE + RA_EAT, "done_eat" },
+   { RT_DONE + RA_SERIES, "done_series" }, { RT_DONE + RA_CONSOLE, "done_console" }, { RT_DONE + RA_GUITAR, "done_guitar" },
+   { RT_DONE + RA_SUN, "done_sun" }, { RT_DONE + RA_PLANTS, "done_plants" }, { RT_DONE + RA_SHOWER, "done_shower" },
+   { RT_DONE + RA_WASHING, "done_washing" }, { RT_DONE + RA_DOOR, "done_door" }, { RT_DONE + RA_CAT, "done_cat" },
+   { RT_DONE + RA_PHONES, "done_phones" }, { RT_AGAIN, "again" }, { RT_CAT_MOVED, "cat_moved" }, { RT_HOTFIX_DONE, "hotfix_done" },
+   { RT_BOSS_YES + RE_MEETING, "yes_meeting" }, { RT_BOSS_YES + RE_CALL, "yes_call" }, { RT_BOSS_YES + RE_MESSAGE, "yes_message" },
+   { RT_BOSS_YES + RE_SHARE, "yes_share" }, { RT_BOSS_YES + RE_HOTFIX, "yes_hotfix" }, { RT_BOSS_YES + RE_WEEKEND, "yes_weekend" },
+   { RT_BOSS_YES + RE_CAMERA, "yes_camera" }, { RT_WEEKEND_NO, "weekend_no" },
+   { RT_BELL, "bell" }, { RT_BELL_GONE, "bell_gone" }, { RT_CAT_KEYS, "cat_keys" }, { RT_DRILL, "drill" }, { RT_DRILL_END, "drill_end" },
+   { RT_NET, "net" }, { RT_NET_BACK, "net_back" }, { RT_WASHER, "washer" },
+};
+#define VOICED ((int32_t)(sizeof voiced / sizeof voiced[0]))
+static const char *const voice_langs[LANGS] = { "en", "es", "pt" };
+static int32_t voice_sample[LANGS][VOICED];
+
 /* The samples and tracks of the content loaded now (looked up again when it changes). */
 static void sound_names(void)
 {
@@ -1086,6 +1114,28 @@ static void sound_names(void)
    }
    for (i = 0; i < TRACKS; i++)
       track_value[i] = hd_track(track_names[i]);
+   for (i = 0; i < LANGS * VOICED; i++)
+   {
+      char name[48];
+      snprintf(name, sizeof name, "voice_%s_%s", voice_langs[i / VOICED], voiced[i % VOICED].key);
+      voice_sample[i / VOICED][i % VOICED] = hd_effect(name);
+   }
+}
+
+/* A thought said in the language of the texts, cutting short the one before. */
+static void think(hd_state *s, int32_t text)
+{
+   int32_t i, k, c, sample = -1;
+   for (i = 0; i < VOICED && sample < 0; i++)
+      if (voiced[i].text == text)
+         sample = voice_sample[hd_clamp(hd_lang, 0, LANGS - 1)][i];
+   if (sample < 0)
+      return;
+   for (c = 0; c < MAX_CHANNELS; c++)
+      for (k = 0; k < LANGS * VOICED; k++)
+         if (s->ch[c].sample >= 0 && s->ch[c].sample == voice_sample[k / VOICED][k % VOICED])
+            s->ch[c].sample = -1;
+   hd_play_at(s, sample, 240, 0, FX_ONE);
 }
 
 /*
@@ -1201,6 +1251,8 @@ static void sound_day(hd_state *s, const hd_remote *was, const hd_remote *g)
          play_at(s, g, RF_DOORBELL, door_x, door_z, 240, 120); /* the delivery, back during the call */
       else if (who != RW_MATE)
          play(s, who == RW_BOSS ? RF_BOSS_MESSAGE : RF_MESSAGE, 170, 0, FX_ONE);
+      if (who == RW_YOU || who == RW_HOUSE)
+         think(s, text);
    }
    /* an urgent message pings again every two and a half seconds until it is answered */
    if ((g->boss == RE_MESSAGE + 1 || g->boss == RE_WEEKEND + 1) && !g->boss_call && was->boss == g->boss && g->boss_t % 150 == 0)
@@ -1223,6 +1275,8 @@ static void sound_day(hd_state *s, const hd_remote *was, const hd_remote *g)
       play(s, RF_HEADPHONES, 200, 0, FX_ONE);
    if (g->toast_points > 0 && g->toast_t == REMOTE_TOAST_FRAMES)
       play(s, RF_DONE, 170, 0, FX_ONE);
+   if (g->toast && g->toast_t == REMOTE_TOAST_FRAMES)
+      think(s, g->toast - 1);
    /* the cat: a meow when the keyboard calls it, a cross one when it is taken off, now and then one when it arrives somewhere */
    if (g->cat_keys == 1 && was->cat_keys == 0)
       play_at(s, g, RF_MEOW, g->cat_x, g->cat_z, 220, 90);
