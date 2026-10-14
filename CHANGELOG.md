@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- More of TELETRABAJO's furniture from Quaternius's CC0 house interior when the package brings it: the TV unit, the dining room's sideboard and oval table, the floor lamps (their shades still lit), the kitchen's stools, the bathroom's wall sink.
 - A model types for real (`actor3d_place_model`): it sits forward on the seat, the left hand on the keyboard and the right on the mouse, palms down (a twist along the forearm).
 - TELETRABAJO's desk made by artists when the package brings it: CreativeTrio's desk with its drawers, monitors (the code still glows on them, set back so the keyboard shows), a keyboard with its keys and a mouse on its pad at the front edge, a computer under the desk with its light on, Quaternius's office chair and desk lamp (all CC0, from Poly Pizza); a package holds up to 32 models; the credits' heading is "3D models".
 - Furniture made by artists in TELETRABAJO's flat when the package brings it (Quaternius's CC0 house interior: the sofa, the armchair, the chairs, the bed and nightstands, the toilet, the washing machine and dryer, the fridge), fit into the built pieces' places; the flat is built again when a package's models change; `model3d_add`, `model3d_bounds`, `r3d_solid_box`; `hdm.py` reads OBJ furniture; `tools/remotebots --content` checks every place of a package's flat on foot.

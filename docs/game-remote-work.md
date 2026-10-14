@@ -498,6 +498,15 @@ before the next one.
 
 ## 13. Progress
 
+**More furniture (2026-10-14).** From the same Quaternius pack: the TV unit
+(the long one with a gap in the middle), the sideboard (two drawers on
+legs), the oval dining table, the floor lamps (the model's base and pole,
+the game's own lit shade over the model's), the six kitchen stools and the
+bathroom's wall sink (only its pipe is solid, so the floor under the basin
+is not darkened). The bookshelves (their books are the game's own), the
+bathtub with the shower (its box is wider than a tub) and the kitchen's
+counters (full of the game's things) stay built. 27 of 27 places reached.
+
 **The desk made by artists (2026-10-14).** The desk is what the game shows
 most, so it came next, from Poly Pizza (CC0): CreativeTrio's desk (a drawer
 unit on one side), monitors, mouse and computer, Quaternius's office chair
