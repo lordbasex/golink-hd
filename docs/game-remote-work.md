@@ -268,7 +268,7 @@ the title screen when the host passes it in.
 
 | Screen | Contents |
 |---|---|
-| Title | The house from above, turning slowly, the worker typing at the desk and the cat on the bed; the game's name in two lines; a menu (Start the day, How to play) moved with the D-pad or the stick and chosen with A or START; the session's record; "Pulsa START" (press start). After 10 s without input the demo plays (below). |
+| Title | The house from above, turning slowly, the worker typing at the desk and the cat on the bed; the game's name in two lines; a menu (Start the day, How to play, Language) moved with the D-pad or the stick and chosen with A or START; the language (English, Español, Português) changes with left and right or A, starting at the host's (English by default); the session's record; "Pulsa START" (press start). After 10 s without input the demo plays (below). |
 | Demo | A bot plays 50 seconds of a day with the game's own rules: it walks with `play3d_route` to a coffee, the desk, the sofa, the fridge, the console, the guitar, and does a little of each. A "DEMO" banner is shown; any button brings the title back. |
 | How to play | Three pages over the darkened picture: the goal (6 h, do not get fired), the bars, the buttons. A turns the page; the last one (or START) goes back to the title or to the pause. |
 | Morning | 08:59: the alarm rings with the worker in bed (the clock blinks, the text shakes), it sits on the bed's edge, gets up, and the camera flies from the bed to its place behind it (4.5 seconds). A or START skips it. The day starts with the worker by the bed. |
@@ -299,7 +299,63 @@ the host (go-link) to store it and pass it in: that is phase 7.
 The HUD is drawn at the logical screen's scale times `hd_res` with the
 engine's text (`text.h`), over the finished 3D frame.
 
-## 8. Controls
+## 8. Sound
+
+Recorded sound, not synthesized: music and effects are WAV files in the
+game's package (`"game": "remote"`, its `audio` section; README, "game and
+audio"), like ANTÍDOTO's. The engine's built-in game (no package) is
+silent except for a few built-in blips in the menus. What sounds comes from
+what changed in the state from one frame to the next (`remote_sound` at the
+end of `hd_remote_step`), so the rules never wait for the sound and a save
+state or a replay sounds the same.
+
+### Music
+
+| Track | When |
+|---|---|
+| `title` | The title, its demo and how to play |
+| `day` | The day; after a call it goes on where it was (`music_resume`) |
+| `call` | While on a call with the boss (meeting, call, screen share) |
+| `end` | The results, after the end's jingle |
+
+The morning has no music: only the alarm. Chill-out and lo-fi: soft beats,
+calm, music to work to.
+
+### Effects
+
+Names the game asks for (`hd_effect`); loops go on while what makes them
+lasts, each on a channel of its own, fading in and out, placed by where it
+is (full within 2 m of the worker, fading to a floor at 10 m, left or right
+as the camera sees it).
+
+| Name | Loop | When |
+|---|---|---|
+| `alarm` | yes | The morning, until the worker sits up |
+| `phone_ring` | yes | The boss waits for the worker at the desk (a meeting only in its last 15 s); heard from the desk |
+| `message`, `boss_message` | | A message on the phone (the boss's own sound); an urgent message pings again every 2.5 s |
+| `call_answer`, `call_missed` | | The worker answers; the boss gives up |
+| `heard` | | The boss heard the house on a call |
+| `tick` | | Each of the last 5 seconds to answer |
+| `doorbell`, `door` | | The delivery (every 4 s while it waits; again during a call if it was missed); the front door opens |
+| `drill` | yes | The neighbor's drill, on and off; quiet with the headphones |
+| `washer` | yes | The washing machine, from its place |
+| `headphones` | | Put on |
+| `net_down`, `net_up` | | The internet drops and comes back |
+| `meow`, `purr`, `cat_keys` | `purr`, `cat_keys` | The cat goes for the keyboard (and a cross one when taken off, now and then one when it arrives somewhere); petting; the cat walking on the keys |
+| `step` | | The worker's and the flatmate's steps, each half of the walk's cycle, never two alike |
+| `typing`, `snore` | yes | Working at the desk; asleep on it or napping |
+| `coffee`, `cook`, `fridge`, `eat`, `tv`, `console`, `guitar`, `birds`, `water`, `shower` | yes | While doing that activity |
+| `heartbeat` | yes | Suspicion over 800, louder the closer to 1000 |
+| `done` | | An activity paid points |
+| `ui_move`, `ui_select`, `ui_back`, `pause` | | The menus |
+| `typewriter`, `count` | | The end: the boss's last words typed; the rows counting up (higher as they go) |
+| `fired`, `missed_hours`, `survived`, `record` | | The end's verdict, and a new record |
+
+The recordings, their authors and licenses (only CC0, public domain, or
+CC-BY with credit) are listed in `examples/remote/audio.json`, and
+`examples/remote/build.py` turns them into the package (CREDITS.md).
+
+## 9. Controls
 
 | Input | Action |
 |---|---|
@@ -313,7 +369,7 @@ engine's text (`text.h`), over the finished 3D frame.
 The keyboard comes from the host's usual mapping, as for every go-link HD
 game, so nothing in the game knows about keyboards.
 
-## 9. Humor and texts
+## 10. Humor and texts
 
 - **Tone:** dry, office sarcasm in neutral Spanish ("tú", no voseo, no
   regional slang), never cruel and never about real companies, products or
@@ -329,7 +385,7 @@ game, so nothing in the game knows about keyboards.
   source (`remote_text.c`), one row per text with its three languages. This is
   the same layout as ANTÍDOTO's dialogs, so translators touch only that file.
 
-## 10. How it is built on the engine
+## 11. How it is built on the engine
 
 ### Where the code goes
 
@@ -406,7 +462,7 @@ That leaves room in the 16.6 ms frame.
   the test fails.
 - **ANTÍDOTO:** the compatibility hashes, unchanged.
 
-## 11. Phases
+## 12. Phases
 
 Each phase ends with renders or a video for the user, and waits for approval
 before the next one.
@@ -417,12 +473,47 @@ before the next one.
 | 2 | Interact (**done 2026-10-14**) | Spots and prompts, the 12 activities with poses, energy and work, the desk's screens | 1–2 sessions |
 | 3 | The day (**done 2026-10-14**) | Clock, suspicion, boss events, random events, the cat, the phone | 1–2 sessions |
 | 4 | Screens and HUD (**done 2026-10-14**) | Title, how to play, morning, pause, end, score, record | 1 session |
-| 5 | Sound | Effects and music made with the engine's sound (`sound.c`), the alarm, phone, bell, drill | 1 session |
+| 5 | Sound (**done 2026-10-14**) | Recorded effects and music (chill-out, lo-fi) in the game's package (`audio`), the alarm, phone, bell, drill; the language in the title's menu | 1 session |
 | 6 | Polish | Texts in 3 languages, balancing with the bots, attract mode, docs (`docs/3d.md`, README, CHANGELOG, a how-to for the next 3D game) | 1 session |
 | 7 | go-link | Show it in go-link Console as an HD game (picture, trailer) | later |
 | 8 | Willy Maker | Whatever it needs from this game | last |
 
-## 12. Progress
+## 13. Progress
+
+**Phase 5, the sound (2026-10-14).**
+
+What was built (section 8): the game's music and effects come in its
+package (`"game": "remote"` with `"audio"`), recorded, every one in the
+public domain (CC0). The user asked for chill-out and lo-fi music and for
+real sound rather than synthesized; the music was first going to be made
+with ACE-Step as ANTÍDOTO's, but the M1 that runs it was off, so free music
+was looked for instead and the user picked it.
+
+How the sound was found and put together, to do it again for another game:
+
+1. A list of what the game needs to hear, named (section 8), before looking.
+2. Sources whose license lets a free game carry the files in a public repo:
+   CC0 first (OpenGameArt filtered by CC0, BigSoundBank, Kenney's packs,
+   Freesound sounds marked CC0), CC-BY only with credit. Never "non
+   commercial" or "no derivatives" (the loops are cut and re-encoded), never
+   Pixabay (its license forbids passing the files on nearly as they are).
+3. Every chosen recording in `examples/remote/audio.json`: its page, file,
+   author, license, and how to cut it (`start`, `length`, `burst` for one
+   sound of a recording of several, `loop`, `seamless`).
+4. `python3 examples/remote/build.py fetch` downloads them into `source/`
+   (Freesound's originals need a login; its public previews, the same sound
+   as MP3, are used); `python3 examples/remote/build.py` cuts, levels, loops
+   and stores them as ADPCM, writes the manifest with the credits in three
+   languages and `CREDITS.md`; `tools/glhd pack examples/remote/game remote.glhd`.
+5. Nobody listened before choosing: jingles were picked by measuring them
+   (length, major or minor, the melody going up or down), and the video goes
+   to the user to judge by ear.
+
+Checks:
+
+- `make test`: a package with named effects and tracks; the title's track, the alarm looping in the morning and gone when the day starts, a loop no other effect can take the channel of, a call's track and the day's back where it was, the pause silencing the loops, bad packages refused; the language line; the credits (from the menu, cut short, after a day won); credits per language.
+- ANTÍDOTO's frames and sound are the same with the engine before and after (360p, 720p, 1080p); the CI hashes (walk, showcase, API) are unchanged.
+- The video's sound never clips.
 
 **Phase 4, the screens (2026-10-14).**
 
@@ -537,7 +628,7 @@ Controls (the engine's buttons):
 
 The main action (`JUMP`, A/B) is for interacting, from phase 2 on.
 
-## 13. Decisions
+## 14. Decisions
 
 Answered by the user on 2026-10-13:
 

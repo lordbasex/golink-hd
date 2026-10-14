@@ -9,6 +9,14 @@
  *      played over and over instead of the built-in tune; loop_from (in
  *      milliseconds) is where it starts again after the end
  *
+ *   "audio": {"effects": {"doorbell": "bell.wav", "drill": {"file": "drill.wav", "loop": true, "volume": 200}},
+ *             "tracks": {"title": {"file": "title.wav", "volume": 200, "loop_from": 0}, ...}}
+ *      named effects and music tracks for a game coded in the engine (the
+ *      manifest's "game"), which asks for them by name (hd_effect, hd_track):
+ *      up to HD_NAMED_MAX effects of up to 30 seconds ("loop": played over and
+ *      over by hd_loop; "volume" 0..256 scales it as it loads) and
+ *      HD_TRACKS_MAX tracks
+ *
  * WAV files are PCM, 16 bits, or IMA ADPCM (4 bits a sample, a quarter of
  * the size: the music of a whole game), 48000 Hz, mono or stereo: effects are mixed
  * to mono (the game places them left or right), the music keeps stereo.
@@ -25,6 +33,22 @@ int32_t hd_pkg_music_frames, hd_pkg_music_loop, hd_pkg_music_vol;
 
 static int16_t *sfx_data[SFX_COUNT];
 static int16_t *music_data;
+
+#define NAME_LEN 32
+#define NAMED_SECONDS_MAX 30
+static struct
+{
+   char name[NAME_LEN];
+   int16_t *data;
+} named[HD_NAMED_MAX];
+static int32_t named_count;
+static struct
+{
+   char name[NAME_LEN];
+   int16_t *data;
+   int32_t frames, loop, vol;
+} tracks[HD_TRACKS_MAX];
+static int32_t track_count;
 
 #define SFX_SECONDS_MAX 10
 #define MUSIC_SECONDS_MAX 600
@@ -45,6 +69,17 @@ void hd_sounds_free(void)
    hd_pkg_music = NULL;
    hd_pkg_music_frames = hd_pkg_music_loop = 0;
    hd_pkg_music_vol = 200;
+   for (i = 0; i < named_count; i++)
+   {
+      free(named[i].data);
+      hd_audio_named(i, NULL, 0, 0);
+   }
+   memset(named, 0, sizeof named);
+   named_count = 0;
+   for (i = 0; i < track_count; i++)
+      free(tracks[i].data);
+   memset(tracks, 0, sizeof tracks);
+   track_count = 0;
    hd_audio_build(); /* the built-in effects back */
 }
 
@@ -306,4 +341,136 @@ const char *hd_music_load(const hd_zip *zip, const json *music)
       hd_pkg_music_loop = hd_clamp(hd_pkg_music_loop, 0, frames - 1);
    }
    return NULL;
+}
+
+int32_t hd_effect(const char *name)
+{
+   int32_t i;
+   for (i = 0; name && i < named_count; i++)
+      if (!strcmp(named[i].name, name))
+         return HD_SFX_NAMED + i;
+   return -1;
+}
+
+int32_t hd_track(const char *name)
+{
+   int32_t i;
+   for (i = 0; name && i < track_count; i++)
+      if (!strcmp(tracks[i].name, name))
+         return 2 + i;
+   return 0;
+}
+
+const int16_t *hd_track_music(int32_t track, int32_t *frames, int32_t *loop, int32_t *vol)
+{
+   if (track == 0 && hd_pkg_music)
+   {
+      *frames = hd_pkg_music_frames, *loop = hd_pkg_music_loop, *vol = hd_pkg_music_vol;
+      return hd_pkg_music;
+   }
+   if (track == 1 && hd_pkg_boss_music && hd_pkg_music)
+   {
+      *frames = hd_pkg_boss_music_frames, *loop = hd_pkg_boss_music_loop, *vol = hd_pkg_boss_music_vol;
+      return hd_pkg_boss_music;
+   }
+   if (track >= 2 && track - 2 < track_count)
+   {
+      *frames = tracks[track - 2].frames, *loop = tracks[track - 2].loop, *vol = tracks[track - 2].vol;
+      return tracks[track - 2].data;
+   }
+   return NULL;
+}
+
+/* A name of the "audio" section: short, and one a game can ask for. */
+static int good_name(const char *name)
+{
+   return name && name[0] && strlen(name) < NAME_LEN;
+}
+
+static const char *load_effects(const hd_zip *zip, const json *effects)
+{
+   static char msg[200];
+   const json *it;
+   for (it = effects->child; it; it = it->next)
+   {
+      const json *file = it->type == JSON_STRING ? it : hd_json_get(it, "file"), *loop = it->type == JSON_OBJECT ? hd_json_get(it, "loop") : NULL;
+      const json *vol = it->type == JSON_OBJECT ? hd_json_get(it, "volume") : NULL;
+      int16_t *st, *mono;
+      int32_t frames, k, v;
+      if (!good_name(it->key))
+         return "each of audio's effects needs a name shorter than 32 letters";
+      if (named_count >= HD_NAMED_MAX)
+         return "audio has more than 64 effects";
+      if (hd_effect(it->key) >= 0)
+         return "two of audio's effects have the same name";
+      if (!file || file->type != JSON_STRING || (loop && loop->type != JSON_BOOL) || (vol && (vol->type != JSON_INT || vol->num < 0 || vol->num > 256)))
+         return "each of audio's effects is a file name, or {\"file\", \"loop\": true|false, \"volume\": 0..256}";
+      st = load_wav(zip, file->str, NAMED_SECONDS_MAX, &frames, msg, sizeof msg);
+      if (!st)
+         return msg;
+      mono = (int16_t *)malloc((size_t)frames * 2);
+      if (!mono)
+      {
+         free(st);
+         return "not enough memory for the sounds";
+      }
+      v = vol ? (int32_t)vol->num : 256;
+      for (k = 0; k < frames; k++)
+         mono[k] = (int16_t)((((int32_t)st[2 * k] + st[2 * k + 1]) / 2) * v / 256);
+      free(st);
+      snprintf(named[named_count].name, NAME_LEN, "%s", it->key);
+      named[named_count].data = mono;
+      hd_audio_named(named_count, mono, frames, loop && loop->num);
+      named_count++;
+   }
+   return NULL;
+}
+
+static const char *load_tracks(const hd_zip *zip, const json *list)
+{
+   static char msg[200];
+   const json *it;
+   for (it = list->child; it; it = it->next)
+   {
+      const json *f = hd_json_get(it, "file"), *vol = hd_json_get(it, "volume"), *loop = hd_json_get(it, "loop_from");
+      int32_t frames;
+      if (!good_name(it->key))
+         return "each of audio's tracks needs a name shorter than 32 letters";
+      if (track_count >= HD_TRACKS_MAX)
+         return "audio has more than 16 tracks";
+      if (hd_track(it->key))
+         return "two of audio's tracks have the same name";
+      if (it->type != JSON_OBJECT || !f || f->type != JSON_STRING)
+         return "each of audio's tracks needs a \"file\"";
+      if ((vol && (vol->type != JSON_INT || vol->num < 0 || vol->num > 256)) || (loop && (loop->type != JSON_INT || loop->num < 0 || loop->num > (int64_t)MUSIC_SECONDS_MAX * 1000)))
+         return "a track's volume must be 0 to 256 and its loop_from a number of milliseconds";
+      tracks[track_count].data = load_wav(zip, f->str, MUSIC_SECONDS_MAX, &frames, msg, sizeof msg);
+      if (!tracks[track_count].data)
+         return msg;
+      snprintf(tracks[track_count].name, NAME_LEN, "%s", it->key);
+      tracks[track_count].frames = frames;
+      tracks[track_count].vol = vol ? (int32_t)vol->num : 200;
+      tracks[track_count].loop = hd_clamp(loop ? (int32_t)(loop->num * HD_RATE / 1000) : 0, 0, frames - 1);
+      track_count++;
+   }
+   return NULL;
+}
+
+const char *hd_audio_load(const hd_zip *zip, const json *audio)
+{
+   const json *effects, *list;
+   const char *err = NULL;
+   if (!audio)
+      return NULL;
+   effects = hd_json_get(audio, "effects");
+   list = hd_json_get(audio, "tracks");
+   if (audio->type != JSON_OBJECT || (effects && effects->type != JSON_OBJECT) || (list && list->type != JSON_OBJECT))
+      return "manifest.json's audio must be an object with \"effects\" and \"tracks\" objects";
+   if (effects)
+      err = load_effects(zip, effects);
+   if (!err && list)
+      err = load_tracks(zip, list);
+   if (err)
+      hd_sounds_free();
+   return err;
 }

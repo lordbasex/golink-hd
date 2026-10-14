@@ -58,7 +58,7 @@ enum { RW_BOSS = 0, RW_YOU, RW_CAT, RW_MATE, RW_HOUSE, RW_COUNT };
 #define REMOTE_PHONE 8 /* the messages the phone keeps */
 
 /* The screens (section 7 of the design). */
-enum { RSC_TITLE = 0, RSC_HELP, RSC_MORNING, RSC_DAY, RSC_END };
+enum { RSC_TITLE = 0, RSC_HELP, RSC_MORNING, RSC_DAY, RSC_END, RSC_CREDITS };
 #define REMOTE_HELP_PAGES 3
 
 /* What the cat is doing (`cat_mode`). */
@@ -128,6 +128,8 @@ typedef struct
    int32_t best;               /* the best score of this session (the host keeps it between sessions later) */
    int32_t best_new;           /* 1: this day's score beat it */
    int32_t nav;                /* last frame's menu directions (the stick as the D-pad) */
+   /* phase 5: the sound */
+   int32_t music_resume;       /* where the day's music was when a call took over (it goes on from there) */
 } hd_remote;
 
 /* Every number that balances the game, in one place. */
@@ -219,6 +221,8 @@ enum
    RT_RECORD,        /* "Record" */
    RT_MENU_PLAY,     /* the title's menu */
    RT_MENU_HELP,
+   RT_MENU_LANGUAGE, /* "Language" (the language's own name follows) */
+   RT_MENU_CREDITS,
    RT_PRESS_START,
    RT_DEMO,
    RT_HELP_TITLE,    /* REMOTE_HELP_PAGES */

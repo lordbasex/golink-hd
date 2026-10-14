@@ -144,8 +144,11 @@ enum
    SFX_BOSS_DOWN, /* a boss is defeated */
    SFX_COUNT
 };
-/* Every sample the mixer knows: the effects and the music's two waves. */
-#define HD_SAMPLES (SFX_COUNT + 2)
+/* A package's named effects (format 3's "audio"), after the built-in ones and the music's two waves. */
+#define HD_SFX_NAMED (SFX_COUNT + 2)
+#define HD_NAMED_MAX 64
+/* Every sample the mixer knows: the effects, the music's two waves and the named effects. */
+#define HD_SAMPLES (HD_SFX_NAMED + HD_NAMED_MAX)
 
 /*
  * The players' body and movement: the built-in game's by default, a
@@ -400,7 +403,7 @@ typedef struct
    int32_t boss_beaten;  /* the goal is open */
    int32_t boss_form;    /* the boss's form in play: 0 the level's, 1 the one it evolved into */
    int32_t arena;        /* the camera's left edge while the boss fights (pixels), 0: none */
-   int32_t music_boss;   /* the level's boss music plays (format 3's levels) */
+   int32_t music_track;  /* the package's music playing (format 3): 0 the level's, 1 its boss's (once the boss woke up), 2.. a named track ("audio") */
    hd_channel ch[MAX_CHANNELS];
    /* the sound's effects on the whole mix (underwater, caves) */
    int32_t lowpass;              /* 0 off; else 1..256, how much of each new sample passes */
@@ -438,6 +441,9 @@ typedef struct
    char dialog_text[DIALOGS_MAX][LANGS][200];
 } hd_fx_config;
 extern hd_fx_config hd_fx;
+/* What the loaded content plays: levels (the built-in demo or a package's), or a game coded in the engine (a package's "game"). */
+enum { HD_GAME_LEVELS = 0, HD_GAME_REMOTE };
+extern int32_t hd_code_game;
 extern int32_t hd_lang; /* 0 English, 1 Spanish, 2 Portuguese (golinkhd_set_language) */
 
 /* Pictures are 0xAARRGGBB; alpha 0 is not drawn. */
@@ -482,10 +488,17 @@ extern char hd_title[64];
 #define CREDITS_MAX 200
 #define CREDIT_LEN 64
 #define CREDIT_LINE 20 /* logical pixels a line */
-extern char hd_credits[CREDITS_MAX][CREDIT_LEN];
-extern int32_t hd_credit_count;
+/*
+ * The credits in the texts' language (hd_lang): a package's "credits" is one
+ * list for every language, or {"en": [...], "es": [...], "pt": [...]}.
+ * hd_credit_rows is the longest language's, so how long they roll (a rule of
+ * the game) is the same in every language.
+ */
+int32_t hd_credit_lines(void);
+const char *hd_credit_line(int32_t i);
+extern int32_t hd_credit_rows;
 /* frames the credits roll: from below the screen until the last line is gone above it, a pixel each two frames */
-#define CREDITS_FRAMES ((HD_H + hd_credit_count * CREDIT_LINE + 20) * 2)
+#define CREDITS_FRAMES ((HD_H + hd_credit_rows * CREDIT_LINE + 20) * 2)
 extern uint32_t hd_sky_top, hd_sky_bottom; /* 0xRRGGBB */
 extern uint8_t hd_content_id[32];         /* SHA-256 of the package; zeros for the built-in demo */
 extern int32_t hd_content_gen;            /* changes whenever the content does */
@@ -557,8 +570,37 @@ void hd_remote_sanitize(hd_state *s);
 void hd_audio_build(void);
 /* A package's own effect in place of a built-in one (mono, HD_RATE). */
 void hd_audio_sample(int32_t sfx, const int16_t *data, int32_t len);
+/* A package's named effect k (0..HD_NAMED_MAX-1, sample HD_SFX_NAMED + k); NULL removes it. */
+void hd_audio_named(int32_t k, const int16_t *data, int32_t len, int loop);
 void hd_play(hd_state *s, int32_t sfx, int32_t screen_x);
+/*
+ * Any sample (a built-in effect or a named one) at a volume (0..256), placed
+ * left or right (pan -256..256) and played faster or slower (step, 16.16:
+ * FX_ONE as recorded). Returns the channel, -1 when nothing was played.
+ */
+int32_t hd_play_at(hd_state *s, int32_t sample, int32_t vol, int32_t pan, int32_t step);
+/*
+ * A sound that goes on while the game wants it (a drill, a shower, a purr):
+ * called every frame with its volume and place, it starts the sample on a
+ * channel of its own fading in, follows it there (gliding to a new volume
+ * and place), and fades it out at volume 0; call it on every frame while the
+ * game runs, at 0 too, or the sound goes on. Only for
+ * samples that loop (a named effect with "loop"). Its channel is never taken
+ * by other effects while it plays.
+ */
+void hd_loop(hd_state *s, int32_t sample, int32_t vol, int32_t pan);
 void hd_music_step(hd_state *s);
+/*
+ * Format 3's "audio" (sound.c): effects and music tracks by name, for the
+ * games coded in the engine ("game"). hd_effect is the sample to play
+ * (hd_play_at, hd_loop), -1 when the package has none by that name;
+ * hd_track is the value for hd_state's music_track, 0 when there is none.
+ */
+#define HD_TRACKS_MAX 16
+int32_t hd_effect(const char *name);
+int32_t hd_track(const char *name);
+/* The music of a track (0 the level's, 1 its boss's, 2.. named): NULL when it has none. */
+const int16_t *hd_track_music(int32_t track, int32_t *frames, int32_t *loop, int32_t *vol);
 /* Mixes one frame (HD_SAMPLES_PER_FRAME stereo samples) into out. */
 void hd_mix(hd_state *s, int16_t *out, int music_on);
 /* The mix's effects: low pass 0 (off) or 1..256, an echo of echo_ms (0 = off, up to 300) with its feedback and mix (0..256). */

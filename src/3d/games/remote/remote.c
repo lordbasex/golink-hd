@@ -908,8 +908,8 @@ static void day_step(hd_state *s, hd_remote *g, const hd_input *in)
 
 /* ---- the menus ---- */
 
-/* A menu's line moved by the D-pad or the stick; returns 1 when the line was chosen (A or START). */
-static int menu_step(hd_remote *g, const hd_input *in, int32_t lines)
+/* A menu's line moved by the D-pad or the stick; returns 1 when the line was chosen (A or START), and in *side -1 or 1 when left or right was pressed. */
+static int menu_step(hd_remote *g, const hd_input *in, int32_t lines, int32_t *side)
 {
    uint32_t b = in->buttons, nav = 0, fresh;
    int chosen;
@@ -917,13 +917,18 @@ static int menu_step(hd_remote *g, const hd_input *in, int32_t lines)
       nav |= PAD_UP;
    if (in->ly > 16000)
       nav |= PAD_DOWN;
-   nav |= b & (PAD_UP | PAD_DOWN);
+   if (in->lx < -16000)
+      nav |= PAD_LEFT;
+   if (in->lx > 16000)
+      nav |= PAD_RIGHT;
+   nav |= b & (PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT);
    fresh = nav & ~(uint32_t)g->nav;
    g->nav = (int32_t)nav;
    if (fresh & PAD_UP)
       g->menu = (g->menu + lines - 1) % lines;
    if (fresh & PAD_DOWN)
       g->menu = (g->menu + 1) % lines;
+   *side = (fresh & PAD_LEFT) ? -1 : (fresh & PAD_RIGHT) ? 1 : 0;
    chosen = (b & ~g->buttons & (PAD_JUMP | PAD_START)) != 0;
    g->buttons = b;
    return chosen;
@@ -934,19 +939,307 @@ static int any_input(const hd_input *in)
    return in->buttons || hd_abs(in->lx) > 16000 || hd_abs(in->ly) > 16000;
 }
 
+/* ---- the credits: the package's (in the texts' language), or the game's name and its author ---- */
+
+static const char *const credits_builtin[] = { "# TELETRABAJO: CÁMARA APAGADA", "", "Federico Pereira", "", "# go-link HD" };
+#define CREDITS_BUILTIN ((int32_t)(sizeof credits_builtin / sizeof credits_builtin[0]))
+
+static int32_t credits_count(void)
+{
+   return hd_credit_lines() ? hd_credit_lines() : CREDITS_BUILTIN;
+}
+
+static const char *credits_line(int32_t i)
+{
+   return hd_credit_lines() ? hd_credit_line(i) : i < CREDITS_BUILTIN ? credits_builtin[i] : "";
+}
+
+/* Frames they roll: from under the screen until the last line is gone, a logical pixel each two frames (the longest language's, so the same in every one). */
+static int32_t credits_frames(void)
+{
+   return (360 + (hd_credit_rows ? hd_credit_rows : CREDITS_BUILTIN) * CREDIT_LINE + 20) * 2;
+}
+
+/* ---- the sound: what changed this frame, heard (docs/game-remote-work.md, section 8) ---- */
+
+/*
+ * The package's effects by name ("audio" in its manifest). A day without a
+ * package (the built-in demo) is silent but for a few built-in blips.
+ */
+enum
+{
+   RF_ALARM = 0, RF_RING, RF_MESSAGE, RF_BOSS_MESSAGE, RF_ANSWER, RF_MISSED, RF_HEARD, RF_DOORBELL, RF_DOOR,
+   RF_DRILL, RF_WASHER, RF_MEOW, RF_PURR, RF_CAT_KEYS, RF_STEP, RF_TYPING, RF_SNORE,
+   RF_COFFEE, RF_COOK, RF_FRIDGE, RF_EAT, RF_TV, RF_CONSOLE, RF_GUITAR, RF_BIRDS, RF_WATER, RF_SHOWER,
+   RF_NET_DOWN, RF_NET_UP, RF_HEADPHONES, RF_TICK, RF_HEARTBEAT, RF_DONE,
+   RF_UI_MOVE, RF_UI_SELECT, RF_UI_BACK, RF_PAUSE, RF_COUNT_UP, RF_TYPEWRITER, RF_FIRED, RF_MISSED_HOURS, RF_SURVIVED, RF_RECORD,
+   RF_COUNT
+};
+static const char *const effect_names[RF_COUNT] = {
+   "alarm", "phone_ring", "message", "boss_message", "call_answer", "call_missed", "heard", "doorbell", "door",
+   "drill", "washer", "meow", "purr", "cat_keys", "step", "typing", "snore",
+   "coffee", "cook", "fridge", "eat", "tv", "console", "guitar", "birds", "water", "shower",
+   "net_down", "net_up", "headphones", "tick", "heartbeat", "done",
+   "ui_move", "ui_select", "ui_back", "pause", "count", "typewriter", "fired", "missed_hours", "survived", "record"
+};
+/* without the package's own: a built-in blip for what must be heard */
+static const int8_t effect_builtin[RF_COUNT] = {
+   [RF_UI_MOVE] = SFX_PAUSE + 1, [RF_UI_SELECT] = SFX_JOIN + 1, [RF_UI_BACK] = SFX_PAUSE + 1, [RF_PAUSE] = SFX_PAUSE + 1,
+   [RF_MESSAGE] = SFX_CHECK + 1, [RF_BOSS_MESSAGE] = SFX_CHECK + 1, [RF_DONE] = SFX_COIN + 1, [RF_RECORD] = SFX_CLEAR + 1,
+};
+/* the loop each activity makes while it goes on (-1: none) */
+static const int8_t activity_loop[RA_COUNT] = {
+   [RA_WORK] = -1, [RA_NAP] = RF_SNORE, [RA_COFFEE] = RF_COFFEE, [RA_COOK] = RF_COOK, [RA_FRIDGE] = RF_FRIDGE,
+   [RA_EAT] = RF_EAT, [RA_SERIES] = RF_TV, [RA_CONSOLE] = RF_CONSOLE, [RA_GUITAR] = RF_GUITAR, [RA_SUN] = RF_BIRDS,
+   [RA_PLANTS] = RF_WATER, [RA_SHOWER] = RF_SHOWER, [RA_WASHING] = -1, [RA_DOOR] = -1, [RA_CAT] = RF_PURR, [RA_PHONES] = -1,
+};
+/* the loops, each driven on every frame (hd_loop) */
+static const int8_t loops[] = { RF_ALARM, RF_RING, RF_DRILL, RF_WASHER, RF_PURR, RF_CAT_KEYS, RF_TYPING, RF_SNORE, RF_COFFEE, RF_COOK,
+                                RF_FRIDGE, RF_EAT, RF_TV, RF_CONSOLE, RF_GUITAR, RF_BIRDS, RF_WATER, RF_SHOWER, RF_HEARTBEAT };
+#define LOOPS ((int32_t)(sizeof loops / sizeof loops[0]))
+
+enum { TRACK_TITLE = 0, TRACK_DAY, TRACK_CALL, TRACK_END, TRACKS };
+static const char *const track_names[TRACKS] = { "title", "day", "call", "end" };
+
+static int32_t effect_sample[RF_COUNT], track_value[TRACKS];
+
+/* The samples and tracks of the content loaded now (looked up again when it changes). */
+static void sound_names(void)
+{
+   static int32_t gen = -1;
+   int32_t i;
+   if (gen == hd_content_gen)
+      return;
+   gen = hd_content_gen;
+   for (i = 0; i < RF_COUNT; i++)
+   {
+      effect_sample[i] = hd_effect(effect_names[i]);
+      if (effect_sample[i] < 0 && effect_builtin[i])
+         effect_sample[i] = effect_builtin[i] - 1;
+   }
+   for (i = 0; i < TRACKS; i++)
+      track_value[i] = hd_track(track_names[i]);
+}
+
+/*
+ * How loud and where a sound at (x, z) is heard: the worker is the ear (a
+ * listener beside the camera), full within 2 meters and fading to `far` at
+ * 10; left or right as the camera sees it.
+ */
+static void heard_at(const hd_remote *g, int32_t x, int32_t z, int32_t vol, int32_t far, int32_t *out_vol, int32_t *pan)
+{
+   int32_t dx = x - g->x, dz = z - g->z, d = play3d_sqrt((int64_t)dx * dx + (int64_t)dz * dz), k;
+   int32_t right = (int32_t)(((int64_t)dx * hd_cos(g->cam_yaw) - (int64_t)dz * hd_sin(g->cam_yaw)) >> 14);
+   k = 256 - (int32_t)((int64_t)(256 - far) * hd_clamp(d - FX(2), 0, FX(8)) / FX(8));
+   *out_vol = vol * k / 256;
+   *pan = d > FX_FRAC(1, 2) ? hd_clamp((int32_t)((int64_t)right * 200 / d), -200, 200) : 0;
+}
+
+static void play(hd_state *s, int32_t effect, int32_t vol, int32_t pan, int32_t step)
+{
+   hd_play_at(s, effect_sample[effect], vol, pan, step);
+}
+
+static void play_at(hd_state *s, const hd_remote *g, int32_t effect, int32_t x, int32_t z, int32_t vol, int32_t far)
+{
+   int32_t v, pan;
+   heard_at(g, x, z, vol, far, &v, &pan);
+   play(s, effect, v, pan, FX_ONE);
+}
+
+/* The music the screen wants: the title's, the day's (a call's while on one), the end's; the day's goes on where it was after a call. */
+static void sound_music(hd_state *s, hd_remote *g)
+{
+   int32_t want;
+   if (g->screen == RSC_TITLE || (g->screen == RSC_HELP && g->help_back == RSC_TITLE))
+      want = track_value[TRACK_TITLE];
+   else if (g->screen == RSC_MORNING)
+      want = 0; /* only the alarm */
+   else if (g->screen == RSC_END)
+      want = g->over_t < 150 ? 0 : track_value[TRACK_END]; /* after the end's jingle */
+   else if (g->screen == RSC_CREDITS)
+      want = track_value[TRACK_END];
+   else if (g->boss && g->boss_call && track_value[TRACK_CALL])
+      want = track_value[TRACK_CALL];
+   else
+      want = track_value[TRACK_DAY];
+   if (want == s->music_track)
+      return;
+   if (s->music_track && s->music_track == track_value[TRACK_DAY])
+      g->music_resume = s->music_pos;
+   s->music_pos = want && want == track_value[TRACK_DAY] && g->screen == RSC_DAY && g->t > 0 ? g->music_resume : 0;
+   if (want == track_value[TRACK_DAY] && (g->screen != RSC_DAY || g->t == 0))
+      g->music_resume = 0;
+   s->music_track = want;
+}
+
+/* The loops: what goes on for as long as it lasts, each at its place. */
+static void sound_loops(hd_state *s, const hd_remote *g)
+{
+   int32_t want[RF_COUNT], pan[RF_COUNT], i, day = g->screen == RSC_DAY && !g->paused && !g->over;
+   memset(want, 0, sizeof want);
+   memset(pan, 0, sizeof pan);
+   if (g->screen == RSC_MORNING && g->screen_t < 170)
+      want[RF_ALARM] = 220;
+   if (day)
+   {
+      int32_t a = g->act - 1, desk_x = ROOM3D_AT(activities[RA_WORK].ax), desk_z = ROOM3D_AT(activities[RA_WORK].az);
+      /* the computer rings until the worker sits down: heard all over the house */
+      if (g->boss && !g->boss_call && g->boss != RE_MESSAGE + 1 && (g->boss != RE_MEETING + 1 || g->boss_t < 15 * 60))
+         heard_at(g, desk_x, desk_z, 210, 110, &want[RF_RING], &pan[RF_RING]);
+      /* the neighbor's drill comes and goes; the headphones take most of it away */
+      if (g->drill_t > 0 && (g->t / 80) % 4 != 3)
+         want[RF_DRILL] = g->headphones ? 45 : 190;
+      if (g->washer_t > 0)
+         heard_at(g, ROOM3D_AT(activities[RA_WASHING].ax), ROOM3D_AT(activities[RA_WASHING].az), 170, 60, &want[RF_WASHER], &pan[RF_WASHER]);
+      if (g->cat_keys == 2)
+         heard_at(g, desk_x, desk_z, 150, 40, &want[RF_CAT_KEYS], &pan[RF_CAT_KEYS]);
+      if (a == RA_WORK && g->energy >= REMOTE_WORK_ASLEEP && !g->net_t && g->cat_keys != 2)
+         want[RF_TYPING] = 130;
+      if (a == RA_WORK && g->energy < REMOTE_WORK_ASLEEP)
+         want[RF_SNORE] = 170;
+      if (a >= 0 && activity_loop[a] >= 0)
+         want[activity_loop[a]] = 190;
+      /* close to being fired: a heartbeat, louder the closer */
+      if (g->suspicion > 800)
+         want[RF_HEARTBEAT] = 90 + (g->suspicion - 800) * 3 / 4;
+   }
+   for (i = 0; i < LOOPS; i++)
+      hd_loop(s, effect_sample[(int32_t)loops[i]], want[(int32_t)loops[i]], pan[(int32_t)loops[i]]);
+}
+
+/* The newest message on the phone, and who wrote it. */
+static int32_t newest(const hd_remote *g, int32_t *who)
+{
+   int32_t k = (g->phone_n + REMOTE_PHONE - 1) % REMOTE_PHONE;
+   *who = g->phone_who[k];
+   return g->phone_text[k];
+}
+
+/* What happened in the day this frame. */
+static void sound_day(hd_state *s, const hd_remote *was, const hd_remote *g)
+{
+   int32_t who, text;
+   int32_t door_x = ROOM3D_AT(activities[RA_DOOR].ax), door_z = ROOM3D_AT(activities[RA_DOOR].az);
+   if (g->phone_n > was->phone_n)
+   {
+      text = newest(g, &who);
+      if (text >= RT_BOSS_MISS && text < RT_BOSS_MISS + RE_BOSS_KINDS)
+         play(s, RF_MISSED, 220, 0, FX_ONE);
+      else if (who == RW_YOU)
+         play(s, RF_ANSWER, 200, 0, FX_ONE);
+      else if (text >= RT_HEARD && text < RT_HEARD + 5)
+         play(s, RF_HEARD, 230, 0, FX_ONE);
+      else if (text == RT_BELL && was->boss_call)
+         play_at(s, g, RF_DOORBELL, door_x, door_z, 240, 120); /* the delivery, back during the call */
+      else if (who != RW_MATE)
+         play(s, who == RW_BOSS ? RF_BOSS_MESSAGE : RF_MESSAGE, 170, 0, FX_ONE);
+   }
+   /* an urgent message pings again every two and a half seconds until it is answered */
+   if (g->boss == RE_MESSAGE + 1 && !g->boss_call && was->boss == g->boss && g->boss_t % 150 == 0)
+      play(s, RF_BOSS_MESSAGE, 170, 0, FX_ONE);
+   /* the last seconds to answer tick */
+   if (g->boss && !g->boss_call && g->boss_t <= 5 * 60 && g->boss_t > 0 && g->boss_t % 60 == 0)
+      play(s, RF_TICK, 200, 0, FX_ONE);
+   /* the bell: when it starts, and again every four seconds while the delivery waits */
+   if (g->bell_t > 0 && (REMOTE_BELL_FRAMES - g->bell_t) % 240 == 0)
+      play_at(s, g, RF_DOORBELL, door_x, door_z, 240, 120);
+   if (g->act == RA_DOOR + 1 && was->act != g->act)
+      play_at(s, g, RF_DOOR, door_x, door_z, 200, 80);
+   if (g->mate && !was->mate)
+      play_at(s, g, RF_DOOR, door_x, door_z, 200, 80);
+   if (g->net_t && !was->net_t)
+      play(s, RF_NET_DOWN, 200, 0, FX_ONE);
+   if (!g->net_t && was->net_t)
+      play(s, RF_NET_UP, 200, 0, FX_ONE);
+   if (g->headphones && !was->headphones)
+      play(s, RF_HEADPHONES, 200, 0, FX_ONE);
+   if (g->toast_points > 0 && g->toast_t == REMOTE_TOAST_FRAMES)
+      play(s, RF_DONE, 170, 0, FX_ONE);
+   /* the cat: a meow when the keyboard calls it, a cross one when it is taken off, now and then one when it arrives somewhere */
+   if (g->cat_keys == 1 && was->cat_keys == 0)
+      play_at(s, g, RF_MEOW, g->cat_x, g->cat_z, 220, 90);
+   else if (g->cat_keys == 0 && was->cat_keys == 2)
+      play(s, RF_MEOW, 230, 0, FX_FRAC(85, 100));
+   else if (g->cat_mode == CAT_REST && was->cat_mode == CAT_UP && g->cat_spot % 2 == 0)
+      play_at(s, g, RF_MEOW, g->cat_x, g->cat_z, 160, 50);
+   /* footsteps: one each half of the walk's cycle, louder running, never two alike */
+   if (!g->act && g->walk > 3000 && ((was->phase ^ g->phase) & 2048))
+      play(s, RF_STEP, 70 + g->walk / 200, ((g->phase >> 11) & 1) ? -40 : 40, FX_FRAC(92 + (g->t * 7) % 17, 100));
+   if (g->mate && g->mate_walk && ((was->mate_phase ^ g->mate_phase) & 2048))
+   {
+      int32_t v, pan;
+      heard_at(g, g->mate_x, g->mate_z, 110, 20, &v, &pan);
+      play(s, RF_STEP, v, pan, FX_FRAC(80 + (g->t * 5) % 11, 100));
+   }
+}
+
+/* The end: the boss's last words typed, the rows counting, then the verdict and the record (the timing of end_hud). */
+static void sound_end(hd_state *s, const hd_remote *g)
+{
+   int32_t start = g->over == REND_FIRED ? 150 : 30, k = g->over_t - start, rows, total_at;
+   if (g->over == REND_FIRED && k < 0)
+   {
+      if (g->over_t % 4 == 0 && g->over_t / 2 <= text_glyphs(remote_text(RT_END_FIRED_MSG)))
+         play(s, RF_TYPEWRITER, 150, 0, FX_FRAC(90 + (g->over_t * 13) % 21, 100));
+      return;
+   }
+   rows = 1 + (g->over == REND_MISSED) + (g->over == REND_SURVIVED ? 2 + (g->work / REMOTE_WORK_UNIT > REMOTE_OVERTIME) : 0);
+   total_at = rows * 30;
+   if (k >= 0 && k < total_at + 40 && k % 3 == 0)
+      play(s, RF_COUNT_UP, 110, 0, FX_ONE + (k < total_at ? (k % 30) * 600 : (k - total_at) * 500));
+   if (k == total_at + 50)
+      play(s, g->over == REND_FIRED ? RF_FIRED : g->over == REND_MISSED ? RF_MISSED_HOURS : RF_SURVIVED, 230, 0, FX_ONE);
+   if (k == total_at + 70 && g->best_new)
+      play(s, RF_RECORD, 230, 0, FX_ONE);
+}
+
+static void remote_sound(hd_state *s, const hd_remote *was, hd_remote *g, int32_t lang_was)
+{
+   sound_names();
+   sound_music(s, g);
+   sound_loops(s, g);
+   /* the menus */
+   if ((g->screen == RSC_TITLE || g->paused) && g->screen == was->screen && g->paused == was->paused && (g->menu != was->menu || hd_lang != lang_was))
+      play(s, RF_UI_MOVE, 160, 0, FX_ONE);
+   if (g->screen == RSC_HELP && (was->screen != RSC_HELP || g->help_page != was->help_page))
+      play(s, RF_UI_SELECT, 160, 0, FX_ONE);
+   if ((g->screen == RSC_MORNING || g->screen == RSC_CREDITS) && was->screen != g->screen)
+      play(s, RF_UI_SELECT, 180, 0, FX_ONE);
+   if (g->paused && !was->paused)
+      play(s, RF_PAUSE, 180, 0, FX_ONE);
+   else if (!g->paused && was->paused && g->screen == RSC_DAY)
+      play(s, RF_UI_BACK, 160, 0, FX_ONE);
+   if (g->screen == RSC_TITLE && was->screen != RSC_TITLE && was->screen != RSC_HELP)
+      play(s, RF_UI_BACK, 160, 0, FX_ONE);
+   if (g->screen == RSC_DAY && was->screen == RSC_DAY && !g->paused)
+      sound_day(s, was, g);
+   if (g->screen == RSC_END && !g->attract)
+      sound_end(s, g);
+}
+
 void hd_remote_step(hd_state *s, const hd_input in[MAX_PLAYERS])
 {
    hd_remote *g = HD_GAME3D(s, hd_remote);
+   hd_remote was = *g;
    uint32_t b = in[0].buttons;
+   int32_t side, lang = hd_lang;
    ready();
    g->screen_t = hd_min(g->screen_t + 1, 1 << 30);
    switch (g->screen)
    {
    case RSC_TITLE:
-      if (menu_step(g, &in[0], 2))
+      if (menu_step(g, &in[0], 4, &side))
       {
          if (g->menu == 0)
             start_morning(s, g, (uint32_t)g->screen_t);
+         else if (g->menu == 2)
+            hd_lang = (hd_lang + 1) % LANGS; /* the texts' language: the host's by default, the player's from here */
+         else if (g->menu == 3)
+         {
+            g->screen = RSC_CREDITS;
+            g->screen_t = 0;
+         }
          else
          {
             g->screen = RSC_HELP;
@@ -954,7 +1247,11 @@ void hd_remote_step(hd_state *s, const hd_input in[MAX_PLAYERS])
             g->help_back = RSC_TITLE;
          }
       }
-      else if (any_input(&in[0]))
+      else if (g->menu == 2 && side)
+         hd_lang = (hd_lang + LANGS + side) % LANGS;
+      if (g->screen != RSC_TITLE)
+         break;
+      if (any_input(&in[0]))
          g->screen_t = 0;
       else if (g->screen_t > REMOTE_ATTRACT_AFTER)
       {
@@ -975,6 +1272,13 @@ void hd_remote_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       }
       g->buttons = b;
       break;
+   case RSC_CREDITS:
+      /* they roll up to the end, or A or START after two seconds; then the title */
+      if (g->screen_t >= credits_frames() || (g->screen_t > 120 && (b & ~g->buttons & (PAD_JUMP | PAD_START))))
+         to_title(g);
+      else
+         g->buttons = b;
+      break;
    case RSC_MORNING:
       if ((b & ~g->buttons & (PAD_JUMP | PAD_START)) || g->screen_t >= REMOTE_MORNING_FRAMES)
          wake_up(g);
@@ -986,6 +1290,13 @@ void hd_remote_step(hd_state *s, const hd_input in[MAX_PLAYERS])
          to_title(g);
       else if (g->over_t > 90 && (b & ~g->buttons & PAD_START))
          start_morning(s, g, (uint32_t)g->over_t);
+      else if (g->over_t > 90 && (b & ~g->buttons & PAD_JUMP) && g->over == REND_SURVIVED)
+      {
+         /* the day was won: the credits roll, then the title */
+         g->screen = RSC_CREDITS;
+         g->screen_t = 0;
+         g->buttons = b;
+      }
       else if (g->over_t > 90 && (b & ~g->buttons & PAD_JUMP))
          to_title(g);
       else
@@ -1007,7 +1318,7 @@ void hd_remote_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       }
       if (g->paused)
       {
-         if (menu_step(g, &in[0], 4))
+         if (menu_step(g, &in[0], 4, &side))
          {
             if (g->menu == 0)
                g->paused = 0;
@@ -1034,6 +1345,7 @@ void hd_remote_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       day_step(s, g, &in[0]);
       break;
    }
+   remote_sound(s, &was, g, lang);
 }
 
 /* ---- drawing ---- */
@@ -1405,8 +1717,8 @@ static void menu_draw(hd_surface *sf, const int32_t *texts, int32_t lines, int32
       int32_t w = text_width(t, 2 * scale), x = (HD_OUT_W - w) / 2, yy = y + i * 24 * scale;
       if (i == chosen)
       {
-         panel(sf, x - 14 * scale, yy - 5 * scale, w + 28 * scale, 22 * scale, 0xffe66d, 60);
-         text_draw(sf, ">", x - 12 * scale, yy, 2 * scale, 0xffe66d, 1, -1);
+         panel(sf, x - 22 * scale, yy - 5 * scale, w + 44 * scale, 22 * scale, 0xffe66d, 60);
+         text_draw(sf, ">", x - 18 * scale, yy, 2 * scale, 0xffe66d, 1, -1);
       }
       text_draw(sf, t, x, yy, 2 * scale, i == chosen ? 0xffe66d : 0xd8dee9, 1, -1);
    }
@@ -1430,15 +1742,27 @@ static void title_text(hd_surface *sf, int32_t y, int32_t scale)
 
 static void title_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
 {
-   static const int32_t items[2] = { RT_MENU_PLAY, RT_MENU_HELP };
+   static const int32_t items[2] = { RT_MENU_PLAY, RT_MENU_HELP }, last[1] = { RT_MENU_CREDITS };
+   static const char *const names[LANGS] = { "English", "Español", "Português" };
    char line[64];
+   int32_t w, y = 172 * scale + 2 * 24 * scale;
    title_text(sf, 40 * scale, scale);
-   panel(sf, (HD_OUT_W - 300 * scale) / 2, 166 * scale, 300 * scale, (g->best > 0 ? 98 : 74) * scale, 0x0b0d12, 175);
-   menu_draw(sf, items, 2, g->menu, 180 * scale, scale);
+   panel(sf, (HD_OUT_W - 300 * scale) / 2, 158 * scale, 300 * scale, (g->best > 0 ? 146 : 122) * scale, 0x0b0d12, 175);
+   menu_draw(sf, items, 2, g->menu, 172 * scale, scale);
+   menu_draw(sf, last, 1, g->menu == 3 ? 0 : -1, 172 * scale + 3 * 24 * scale, scale);
+   /* the language: its name in itself, between arrows, changed with left and right (or A) */
+   snprintf(line, sizeof line, "%s: < %s >", remote_text(RT_MENU_LANGUAGE), names[hd_clamp(hd_lang, 0, LANGS - 1)]);
+   w = text_width(line, 2 * scale);
+   if (g->menu == 2)
+   {
+      panel(sf, (HD_OUT_W - w) / 2 - 22 * scale, y - 5 * scale, w + 44 * scale, 22 * scale, 0xffe66d, 60);
+      text_draw(sf, ">", (HD_OUT_W - w) / 2 - 18 * scale, y, 2 * scale, 0xffe66d, 1, -1);
+   }
+   text_draw(sf, line, (HD_OUT_W - w) / 2, y, 2 * scale, g->menu == 2 ? 0xffe66d : 0xd8dee9, 1, -1);
    if (g->best > 0)
    {
       snprintf(line, sizeof line, "%s: %d", remote_text(RT_RECORD), (int)g->best);
-      text_center(sf, line, 238 * scale, scale, 0xbfc7d5);
+      text_center(sf, line, 278 * scale, scale, 0xbfc7d5);
    }
    if ((g->screen_t / 30) & 1)
       text_center(sf, remote_text(RT_PRESS_START), HD_OUT_H - 30 * scale, scale, 0xffffff);
@@ -1523,6 +1847,24 @@ static void morning_draw(hd_surface *sf, const hd_remote *g, int32_t scale)
    text_draw(sf, line, HD_OUT_W - text_width(line, scale) - 12 * scale, HD_OUT_H - 18 * scale, scale, 0x8d99ae, 1, -1);
 }
 
+/* The credits rolling up over the house turning, darkened: headings gold and bigger. */
+static void credits_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
+{
+   int32_t i, y0 = HD_OUT_H + 10 * scale - g->screen_t * scale / 2;
+   panel(sf, 0, 0, HD_OUT_W, HD_OUT_H, 0x0b0d12, 200);
+   for (i = 0; i < credits_count(); i++)
+   {
+      const char *t = credits_line(i);
+      int32_t y = y0 + i * CREDIT_LINE * scale;
+      if (y < -CREDIT_LINE * scale || y > HD_OUT_H)
+         continue;
+      if (t[0] == '#' && t[1] == ' ')
+         text_center(sf, t + 2, y, 3 * scale, 0xffe66d);
+      else if (t[0])
+         text_center(sf, t, y + 3 * scale, 2 * scale, 0xffffff);
+   }
+}
+
 static void pause_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
 {
    static const int32_t items[4] = { RT_PAUSE_GO_ON, RT_MENU_HELP, RT_PAUSE_RESTART, RT_PAUSE_QUIT };
@@ -1539,11 +1881,13 @@ void hd_remote_draw(const hd_state *s, void *screen)
    r3d_view v;
    actor3d_pose pose;
    ready();
-   if (g->screen == RSC_TITLE || (g->screen == RSC_HELP && g->help_back == RSC_TITLE))
+   if (g->screen == RSC_TITLE || g->screen == RSC_CREDITS || (g->screen == RSC_HELP && g->help_back == RSC_TITLE))
    {
       title_scene(sf, g);
       if (g->screen == RSC_TITLE)
          title_hud(sf, g, scale);
+      else if (g->screen == RSC_CREDITS)
+         credits_hud(sf, g, scale);
       else
          help_hud(sf, g, scale);
       return;
@@ -1664,7 +2008,7 @@ void hd_remote_sanitize(hd_state *s)
       g->phone_min[i] = hd_clamp(g->phone_min[i], 0, REMOTE_DAY_MINUTES);
    }
    g->phone_new_t = hd_clamp(g->phone_new_t, 0, 240);
-   g->screen = hd_clamp(g->screen, RSC_TITLE, RSC_END);
+   g->screen = hd_clamp(g->screen, RSC_TITLE, RSC_CREDITS);
    if (g->screen == RSC_END && !g->over)
       g->screen = RSC_DAY;
    g->screen_t = hd_clamp(g->screen_t, 0, 1 << 30);
@@ -1677,5 +2021,6 @@ void hd_remote_sanitize(hd_state *s)
    g->attract_t = hd_clamp(g->attract_t, 0, 1 << 20);
    g->best = hd_clamp(g->best, 0, 10000000);
    g->best_new = hd_clamp(g->best_new, 0, 1);
-   g->nav &= PAD_UP | PAD_DOWN;
+   g->nav &= PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
+   g->music_resume = hd_clamp(g->music_resume, 0, 1 << 30);
 }

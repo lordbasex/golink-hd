@@ -177,7 +177,7 @@ static void reset_level(hd_state *s)
    s->bolt_next = 0;
    s->boss = s->boss_max = s->boss_angry = s->boss_beaten = s->arena = s->boss_form = 0;
    hd_boss_form_use(0);
-   s->music_boss = 0;
+   s->music_track = 0;
    s->cam_x = 0;
    s->cam_y = FX(MAP_H * TILE - HD_H);
 }
@@ -1147,9 +1147,9 @@ static void boss_down(hd_state *s, hd_enemy *e)
    memset(s->bolt, 0, sizeof s->bolt);
    for (i = 0; i < 4; i++)
       burst(s, cx + (i - 2) * 20, cy + (i & 1) * 30 - 15, 24, i & 1 ? 0xfff8f0a0u : 0xffffffffu, FX(4), 3);
-   if (s->music_boss)
+   if (s->music_track == 1)
    {
-      s->music_boss = 0; /* the level's music again */
+      s->music_track = 0; /* the level's music again */
       s->music_pos = 0;
    }
    hd_play(s, SFX_BOSS_DOWN, screen_x(s, cx));
@@ -1272,7 +1272,7 @@ static void boss_step(hd_state *s, hd_enemy *e)
       s->shake = 30;
       if (hd_pkg_boss_music)
       {
-         s->music_boss = 1;
+         s->music_track = 1;
          s->music_pos = 0;
       }
       hd_play(s, SFX_ROAR, screen_x(s, FX_INT(e->x)));
@@ -1910,7 +1910,7 @@ void hd_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       }
       if (s->phase_t >= CLEAR_FRAMES)
       {
-         if (hd_credit_count)
+         if (hd_credit_rows)
          {
             /* the game is won: the credits roll */
             s->phase = PH_CREDITS;

@@ -14,7 +14,10 @@
  * Level cells: '.' empty, '#' ground, 'B' brick, '=' one-way platform, 'o' coin,
  * 'C' checkpoint, 'F' goal, 'E' an enemy's start (format 3 also: 'S' a
  * spore's, 'P' a spitter's, 'X' the level's boss's); start is the cell the
- * players stand in. Unknown manifest keys are ignored, so newer packages
+ * players stand in. Format 3's "game": "remote" plays a game coded in the
+ * engine (TELETRABAJO: CÁMARA APAGADA) instead of a level: such a package
+ * needs no level and brings that game's sounds and music ("audio").
+ * Unknown manifest keys are ignored, so newer packages
  * with extra data still load when their format is one this engine reads.
  */
 #include <stdio.h>
@@ -27,8 +30,9 @@
 #include "sprite.h"
 
 char hd_title[64];
-char hd_credits[CREDITS_MAX][CREDIT_LEN];
-int32_t hd_credit_count;
+static char credits[LANGS][CREDITS_MAX][CREDIT_LEN];
+static int32_t credit_count[LANGS];
+int32_t hd_credit_rows;
 hd_fx_config hd_fx;
 int32_t hd_lang;
 hd_image hd_portrait;
@@ -40,6 +44,7 @@ int32_t hd_players = DEFAULT_PLAYERS;
 uint32_t hd_sky_top, hd_sky_bottom;
 uint8_t hd_content_id[32];
 int32_t hd_content_gen;
+int32_t hd_code_game;
 
 void hd_content_builtin(void)
 {
@@ -52,7 +57,8 @@ void hd_content_builtin(void)
    hd_kinds_default();
    hd_boss_free();
    memset(&hd_dash, 0, sizeof hd_dash);
-   hd_credit_count = 0;
+   memset(credit_count, 0, sizeof credit_count);
+   hd_credit_rows = 0;
    hd_level_build();
    strcpy(hd_title, "GO-LINK HD DEMO");
    hd_w = 640;
@@ -66,6 +72,7 @@ void hd_content_builtin(void)
    memset(&hd_portrait, 0, sizeof hd_portrait);
    fx_grade_build(GRADE_NONE, NULL);
    memset(hd_content_id, 0, sizeof hd_content_id);
+   hd_code_game = HD_GAME_LEVELS;
    hd_content_gen++;
 }
 
@@ -743,21 +750,60 @@ static const char *load_stages(const hd_zip *zip, const json *levels)
 }
 
 /* The manifest's "credits": a list of texts, each a line. */
-static const char *load_credits(const json *c)
+int32_t hd_credit_lines(void)
+{
+   return credit_count[hd_clamp(hd_lang, 0, LANGS - 1)];
+}
+
+const char *hd_credit_line(int32_t i)
+{
+   int32_t l = hd_clamp(hd_lang, 0, LANGS - 1);
+   return i >= 0 && i < credit_count[l] ? credits[l][i] : "";
+}
+
+/* One language's list of lines. */
+static const char *load_credit_list(const json *c, int32_t lang)
 {
    const json *it;
-   hd_credit_count = 0;
-   if (!c)
-      return NULL;
+   credit_count[lang] = 0;
    if (c->type != JSON_ARRAY || c->count > CREDITS_MAX)
-      return "manifest.json's credits must be a list of up to 200 lines";
+      return "manifest.json's credits must be a list of up to 200 lines (or one for each of \"en\", \"es\" and \"pt\")";
    for (it = c->child; it; it = it->next)
    {
       if (it->type != JSON_STRING || strlen(it->str) >= CREDIT_LEN)
          return "each line of the credits must be a text of up to 63 bytes";
-      snprintf(hd_credits[hd_credit_count++], CREDIT_LEN, "%s", it->str);
+      snprintf(credits[lang][credit_count[lang]++], CREDIT_LEN, "%s", it->str);
    }
    return NULL;
+}
+
+static const char *load_credits(const json *c)
+{
+   static const char *const codes[LANGS] = { "en", "es", "pt" };
+   const char *err = NULL;
+   int32_t l;
+   memset(credit_count, 0, sizeof credit_count);
+   hd_credit_rows = 0;
+   if (!c)
+      return NULL;
+   for (l = 0; l < LANGS && !err; l++)
+   {
+      /* a language left out shows the first one given */
+      const json *list = c->type == JSON_OBJECT ? hd_json_get(c, codes[l]) : c;
+      if (!list && c->type == JSON_OBJECT)
+         list = c->child;
+      if (!list)
+         err = "manifest.json's credits must be a list of up to 200 lines (or one for each of \"en\", \"es\" and \"pt\")";
+      else
+         err = load_credit_list(list, l);
+      hd_credit_rows = hd_max(hd_credit_rows, credit_count[l]);
+   }
+   if (err)
+   {
+      memset(credit_count, 0, sizeof credit_count);
+      hd_credit_rows = 0;
+   }
+   return err;
 }
 
 static const char *load_package(const uint8_t *data, size_t size)
@@ -768,7 +814,7 @@ static const char *load_package(const uint8_t *data, size_t size)
    uint8_t *text;
    size_t len;
    json *man;
-   const json *format, *title, *level, *pictures, *sky, *players, *screen, *levels, *res, *art;
+   const json *format, *title, *level, *pictures, *sky, *players, *screen, *levels, *res, *art, *game;
    int32_t s;
 
    zip.data = data;
@@ -796,6 +842,7 @@ static const char *load_package(const uint8_t *data, size_t size)
    levels = hd_json_get(man, "levels");
    res = hd_json_get(man, "resolution");
    art = hd_json_get(man, "art_scale");
+   game = hd_json_get(man, "game");
    if (!format || format->type != JSON_INT)
       err = "manifest.json has no format number";
    else if (format->num > HD_PACKAGE_FORMAT)
@@ -804,7 +851,13 @@ static const char *load_package(const uint8_t *data, size_t size)
       err = "manifest.json has an unknown format";
    else if (!title || title->type != JSON_STRING || !title->str[0])
       err = "manifest.json has no title";
-   else if ((!level || level->type != JSON_STRING) && !levels)
+   else if (game && (game->type != JSON_STRING || strcmp(game->str, "remote")))
+      err = "manifest.json's game must be \"remote\"";
+#ifdef HD_NO_3D
+   else if (game)
+      err = "this go-link HD was built without its 3D games";
+#endif
+   else if ((!level || level->type != JSON_STRING) && !levels && !game)
       err = "manifest.json names no level";
    else if (pictures && pictures->type != JSON_OBJECT)
       err = "manifest.json's pictures must be an object";
@@ -846,6 +899,13 @@ static const char *load_package(const uint8_t *data, size_t size)
     */
    hd_res = res && !strcmp(res->str, "720p") ? 2 : res && !strcmp(res->str, "1080p") ? 3 : 1;
    hd_art = art ? (int32_t)art->num : hd_res;
+   if (game)
+   {
+      /* a coded 3D game: 720p unless it says, drawn from its own models (no pictures that limit the size) */
+      hd_code_game = HD_GAME_REMOTE;
+      hd_res = res ? hd_res : 2;
+      hd_art = HD_ART_MAX;
+   }
    if (hd_res_host)
       hd_res = hd_res_host;
    hd_res = hd_min(hd_res, hd_art);
@@ -865,8 +925,8 @@ static const char *load_package(const uint8_t *data, size_t size)
       return err;
    }
    /* a package of several levels loads them last, after what they share */
-   err = levels ? NULL : hd_boss_load(&zip, hd_json_get(man, "boss"));
-   if (!err && !levels)
+   err = levels || game ? NULL : hd_boss_load(&zip, hd_json_get(man, "boss"));
+   if (!err && !levels && !game)
       err = load_level_file(&zip, level->str);
    for (s = 0; !err && s < (int32_t)(sizeof sheets / sizeof sheets[0]); s++)
       err = load_sheet(&zip, pictures, s);
@@ -884,6 +944,8 @@ static const char *load_package(const uint8_t *data, size_t size)
       err = load_credits(hd_json_get(man, "credits"));
    if (!err)
       err = hd_sounds_load(&zip, hd_json_get(man, "sounds"), hd_json_get(man, "music"));
+   if (!err)
+      err = hd_audio_load(&zip, hd_json_get(man, "audio"));
    if (!err && levels)
       err = load_stages(&zip, levels);
    hd_json_free(man);

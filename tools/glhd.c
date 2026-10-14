@@ -310,8 +310,8 @@ static int pack_names(const char *dir, char (*names)[256], int *count)
    strcpy(names[0], "manifest.json");
    *count = 1;
    j = hd_json_get(man, "level");
-   if ((!j || j->type != JSON_STRING) && hd_json_get(man, "levels"))
-      ; /* a package of several levels: each one's files below */
+   if ((!j || j->type != JSON_STRING) && (hd_json_get(man, "levels") || hd_json_get(man, "game")))
+      ; /* a package of several levels (each one's files below), or a game coded in the engine */
    else if (!j || j->type != JSON_STRING)
    {
       fprintf(stderr, "%s names no level\n", path);
@@ -371,6 +371,9 @@ static int pack_names(const char *dir, char (*names)[256], int *count)
    }
    /* format 3: every "file" in the sprites (the heroes', the enemy's, the level's things) and every texture */
    ok = ok && add_files(hd_json_get(man, "sprites"), names, count, path) && add_values(hd_json_get(man, "textures"), names, count, path) && add_values(hd_json_get(man, "screens"), names, count, path);
+   /* format 3's audio: its effects (a file name, or an object with its "file") and its tracks */
+   j = hd_json_get(man, "audio");
+   ok = ok && add_values(hd_json_get(j, "effects"), names, count, path) && add_files(j, names, count, path);
    /* format 3's levels: each one's level file and intro, every "file" inside it (layers, music) and its textures */
    for (j = hd_json_get(man, "levels"), j = j && j->type == JSON_ARRAY ? j->child : NULL; ok && j; j = j->next)
    {
@@ -492,7 +495,9 @@ static int check(const char *path)
       free(data);
       return 0;
    }
-   if (hd_stage_count > 1)
+   if (hd_code_game)
+      printf("%s: \"%s\", a game coded in the engine, sha256 ", path, hd_title);
+   else if (hd_stage_count > 1)
       printf("%s: \"%s\", %d levels (the first %dx%d, %d enemies), sha256 ", path, hd_title, (int)hd_stage_count, (int)MAP_W, (int)MAP_H, (int)hd_enemy_count);
    else
       printf("%s: \"%s\", level %dx%d, %d enemies, sha256 ", path, hd_title, (int)MAP_W, (int)MAP_H, (int)hd_enemy_count);

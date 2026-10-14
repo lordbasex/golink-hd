@@ -876,10 +876,10 @@ static void credits(const hd_state *s)
    }
    else
       rect(0, 0, HD_OUT_W, HD_OUT_H, 0x100810u);
-   for (i = 0; i < hd_credit_count; i++)
+   for (i = 0; i < hd_credit_lines(); i++)
    {
       int32_t y = y0 + S(i * CREDIT_LINE);
-      const char *t = hd_credits[i];
+      const char *t = hd_credit_line(i);
       if (y < -S(CREDIT_LINE) || y > HD_OUT_H)
          continue;
       if (t[0] == '#' && t[1] == ' ')

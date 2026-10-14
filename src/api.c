@@ -97,7 +97,7 @@ void golinkhd_restart(golinkhd_engine *e)
 #ifndef HD_NO_3D
    if (!e->has_package && e->demo == 2)
       hd_r3d_start(&e->state);
-   if (!e->has_package && e->demo == 3)
+   if ((!e->has_package && e->demo == 3) || (e->has_package && hd_code_game == HD_GAME_REMOTE))
       hd_remote_start(&e->state);
 #endif
 }

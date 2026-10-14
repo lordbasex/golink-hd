@@ -5,7 +5,7 @@
 #include "hd.h"
 
 /* 5 x 7 letters, one byte per row, bit 4 is the left column. */
-static const char font_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!-:/.x?,'()+=%\"&";
+static const char font_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!-:/.x?,'()+=%\"&<>";
 static const uint8_t font[][7] = {
    { 0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E }, { 0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E },
    { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F }, { 0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E },
@@ -34,6 +34,8 @@ static const uint8_t font[][7] = {
    { 0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08 }, { 0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00 },
    { 0x00, 0x00, 0x1F, 0x00, 0x1F, 0x00, 0x00 }, { 0x18, 0x19, 0x02, 0x04, 0x08, 0x13, 0x03 },
    { 0x0A, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00 }, { 0x0C, 0x12, 0x14, 0x08, 0x15, 0x12, 0x0D },
+   /* < > (a menu's arrows) */
+   { 0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x02 }, { 0x08, 0x04, 0x02, 0x01, 0x02, 0x04, 0x08 },
 };
 static const uint8_t inverted_question[7] = { 0x04, 0x00, 0x04, 0x08, 0x10, 0x11, 0x0E };
 static const uint8_t inverted_bang[7] = { 0x04, 0x00, 0x04, 0x04, 0x04, 0x04, 0x04 };
@@ -106,6 +108,23 @@ static void bits(hd_surface *s, const uint8_t *rows, int32_t nrows, int32_t x, i
             gfx_fill(s, x + col * scale, y + row * scale, scale, scale, c);
 }
 
+/* A letter (ASCII or Latin-1's accented ones). */
+static int letter(uint32_t cp)
+{
+   return (cp >= 'a' && cp <= 'z') || (cp >= 'A' && cp <= 'Z') || (cp >= 0xC0 && cp <= 0xFF && cp != 0xD7 && cp != 0xF7);
+}
+
+/*
+ * A small x is the times sign of "x3" or "P1 x"; next to a letter ("next",
+ * "conexión") it is the letter. Returns the code point to draw.
+ */
+static uint32_t times_or_x(uint32_t prev, uint32_t cp, const char *rest)
+{
+   if (cp == 'x' && (letter(prev) || letter(next_cp(&rest))))
+      return 'X';
+   return cp;
+}
+
 static void glyph(hd_surface *s, uint32_t cp, int32_t x, int32_t y, int32_t scale, uint32_t c)
 {
    const char *at;
@@ -152,9 +171,12 @@ void text_draw(hd_surface *s, const char *utf8, int32_t x, int32_t y, int32_t sc
    for (pass = shadow ? 0 : 1; pass < 2; pass++)
    {
       const char *p = utf8;
+      uint32_t prev = 0;
       for (i = 0; *p && (max < 0 || i < max); i++)
       {
-         uint32_t cp = next_cp(&p);
+         uint32_t cp = next_cp(&p), was = cp;
+         cp = times_or_x(prev, cp, p);
+         prev = was;
          if (pass == 0)
             glyph(s, cp, x + i * 6 * scale + scale, y + scale, scale, 0x1a1020u);
          else
@@ -198,6 +220,7 @@ int32_t text_dialog(hd_surface *s, const hd_image *portrait, const char *name, c
    {
       const char *word = p, *q = p;
       int32_t len = 0, i;
+      uint32_t prev = ' ';
       while (*q && *q != ' ')
       {
          next_cp(&q);
@@ -212,7 +235,9 @@ int32_t text_dialog(hd_surface *s, const hd_image *portrait, const char *name, c
       }
       for (i = 0; i < len && drawn < shown; i++, drawn++)
       {
-         uint32_t cp = next_cp(&word);
+         uint32_t cp = next_cp(&word), was = cp;
+         cp = times_or_x(prev, cp, word);
+         prev = was;
          glyph(s, cp, tx + (col + i) * 12 * k + 2 * k, by + (30 + line * 16 + 2) * k, 2 * k, 0x1a1020u);
          glyph(s, cp, tx + (col + i) * 12 * k, by + (30 + line * 16) * k, 2 * k, 0xffffffu);
       }

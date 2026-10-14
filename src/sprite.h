@@ -179,6 +179,8 @@ const char *hd_sounds_load(const hd_zip *zip, const json *sounds, const json *mu
 /* Only the music (the effects stay); and handing its samples over (the caller frees them). */
 const char *hd_music_load(const hd_zip *zip, const json *music);
 int16_t *hd_music_take(void);
+/* Format 3's "audio" (hd_effect and hd_track in hd.h). */
+const char *hd_audio_load(const hd_zip *zip, const json *audio);
 
 /*
  * Format 3's "levels": a game of several levels, each with its own level

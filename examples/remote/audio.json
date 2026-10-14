@@ -1,0 +1,457 @@
+{
+ "version": "0.5.0",
+ "tracks": {
+  "title": {
+   "title": "Chill lofi inspired (loop edit)",
+   "author": "omfgdude, qubodup",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/content/chill-lofi-inspired-loop-edit",
+   "url": "https://opengameart.org/sites/default/files/chilllofir-loop.ogg",
+   "file": "music/chilllofir-loop.ogg",
+   "seamless": true
+  },
+  "day": {
+   "title": "Lofi Hip Hop Loop",
+   "author": "omfgdude",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/content/lofi-hip-hop-loop",
+   "url": "https://opengameart.org/sites/default/files/LofiLoop_2.ogg",
+   "file": "music/LofiLoop_2.ogg",
+   "seamless": true,
+   "volume": 170
+  },
+  "call": {
+   "title": "Music loop, strong, downtempo, seamless",
+   "author": "Nostromo",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/content/music-loop-strong-downtempo-seamless",
+   "url": "https://opengameart.org/sites/default/files/space_ranger_seamless_loop.wav",
+   "file": "music/space_ranger_seamless_loop.wav",
+   "seamless": true,
+   "volume": 150
+  },
+  "end": {
+   "title": "A cup of tea (lofi Compilation)",
+   "author": "Tad",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/content/lofi-compilation",
+   "url": "https://opengameart.org/sites/default/files/A%20cup%20of%20tea_0.mp3",
+   "file": "music/A%20cup%20of%20tea_0.mp3",
+   "volume": 170
+  }
+ },
+ "effects": {
+  "alarm": {
+   "title": "Electronic Alarm (Buzzer) #3",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/electronic-alarm-buzzer-3-s0173.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/0173.mp3",
+   "file": "bsb/0173.mp3",
+   "loop": true
+  },
+  "phone_ring": {
+   "title": "Legacy ringtone",
+   "author": "chriswr (freesound.org)",
+   "license": "CC0 1.0",
+   "page": "https://freesound.org/people/chriswr/sounds/271152/",
+   "url": "https://cdn.freesound.org/previews/271/271152_2852351-hq.mp3",
+   "file": "freesound/271152_2852351-hq.mp3",
+   "length": 6,
+   "loop": true
+  },
+  "message": {
+   "title": "Notification LaSoLisa #4",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/notification-lasolisa-4-s2066.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/2066.mp3",
+   "file": "bsb/2066.mp3"
+  },
+  "boss_message": {
+   "title": "Digital Pager",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/digital-pager-s3513.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/3513.mp3",
+   "file": "bsb/3513.mp3",
+   "length": 1.6
+  },
+  "call_answer": {
+   "title": "Interface Sounds: confirmation_001",
+   "author": "Kenney (kenney.nl)",
+   "license": "CC0 1.0",
+   "page": "https://kenney.nl/assets/interface-sounds",
+   "url": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
+   "zip": "kenney/kenney_interface-sounds.zip",
+   "file": "kenney/kenney_interface-sounds/Audio/confirmation_001.ogg"
+  },
+  "call_missed": {
+   "title": "Dial Tone, Call Ends",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/dial-tone-call-ends-s2645.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/2645.mp3",
+   "file": "bsb/2645.mp3"
+  },
+  "heard": {
+   "title": "record_scratch",
+   "author": "simkiott (freesound.org)",
+   "license": "CC0 1.0",
+   "page": "https://freesound.org/people/simkiott/sounds/43404/",
+   "url": "https://cdn.freesound.org/previews/43/43404_465423-hq.mp3",
+   "file": "freesound/43404_465423-hq.mp3"
+  },
+  "doorbell": {
+   "title": "Doorbell #6",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/doorbell-6-s2365.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/2365.mp3",
+   "file": "bsb/2365.mp3",
+   "length": 3.5
+  },
+  "door": {
+   "title": "Apartment Door, Closing #1",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/apartment-door-closing-1-s1704.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/1704.mp3",
+   "file": "bsb/1704.mp3"
+  },
+  "drill": {
+   "title": "Drill",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/drill-s0184.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/0184.mp3",
+   "file": "bsb/0184.mp3",
+   "start": 4,
+   "length": 12,
+   "loop": true
+  },
+  "washer": {
+   "title": "Washing machine in drying mode",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/washing-machine-in-drying-mode-s0106.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/0106.mp3",
+   "file": "bsb/0106.mp3",
+   "start": 60,
+   "length": 16,
+   "loop": true
+  },
+  "meow": {
+   "title": "Meow Cat #2",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/meow-cat-2-s1890.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/1890.mp3",
+   "file": "bsb/1890.mp3"
+  },
+  "purr": {
+   "title": "Cat Purr",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/cat-purr-s0436.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/0436.mp3",
+   "file": "bsb/0436.mp3",
+   "loop": true
+  },
+  "cat_keys": {
+   "title": "Slow Keyboard",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/slow-keyboard-s1733.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/1733.mp3",
+   "file": "bsb/1733.mp3",
+   "start": 2,
+   "length": 10,
+   "loop": true
+  },
+  "step": {
+   "title": "Man Footsteps on the Wooden Floor",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/man-footsteps-on-the-wooden-floor-s0165.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/0165.mp3",
+   "file": "bsb/0165.mp3",
+   "burst": 2
+  },
+  "typing": {
+   "title": "Quick Keyboard",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/quick-keyboard-s1734.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/1734.mp3",
+   "file": "bsb/1734.mp3",
+   "start": 3,
+   "length": 10,
+   "loop": true
+  },
+  "snore": {
+   "title": "Man Snoring",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/man-snoring-s0170.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/0170.mp3",
+   "file": "bsb/0170.mp3",
+   "start": 2,
+   "length": 16,
+   "loop": true
+  },
+  "coffee": {
+   "title": "Espresso machine",
+   "author": "Ohrwurm (freesound.org)",
+   "license": "CC0 1.0",
+   "page": "https://freesound.org/people/Ohrwurm/sounds/96906/",
+   "url": "https://cdn.freesound.org/previews/96/96906_866470-hq.mp3",
+   "file": "freesound/96906_866470-hq.mp3",
+   "start": 10,
+   "length": 16,
+   "loop": true
+  },
+  "cook": {
+   "title": "Frying pan #2",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/frying-pan-2-s0144.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/0144.mp3",
+   "file": "bsb/0144.mp3",
+   "loop": true
+  },
+  "fridge": {
+   "title": "Fridge",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/fridge-s1157.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/1157.mp3",
+   "file": "bsb/1157.mp3",
+   "start": 3,
+   "length": 12,
+   "loop": true
+  },
+  "eat": {
+   "title": "Eating potato chips #1",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/eating-potato-chips-1-s1430.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/1430.mp3",
+   "file": "bsb/1430.mp3",
+   "start": 2,
+   "length": 10,
+   "loop": true
+  },
+  "guitar": {
+   "title": "Nylon Guitar Strumming",
+   "author": "Alex_hears_things (freesound.org)",
+   "license": "CC0 1.0",
+   "page": "https://freesound.org/people/Alex_hears_things/sounds/812617/",
+   "url": "https://cdn.freesound.org/previews/812/812617_2309965-hq.mp3",
+   "file": "freesound/812617_2309965-hq.mp3",
+   "loop": true,
+   "length": 24
+  },
+  "birds": {
+   "title": "Evening Birds",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/evening-birds-s1859.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/1859.mp3",
+   "file": "bsb/1859.mp3",
+   "start": 30,
+   "length": 16,
+   "loop": true
+  },
+  "water": {
+   "title": "Watering tomatoes",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/watering-tomatoes-s0818.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/0818.mp3",
+   "file": "bsb/0818.mp3",
+   "start": 2,
+   "length": 14,
+   "loop": true
+  },
+  "net_down": {
+   "title": "Digital Audio: phaserDown2",
+   "author": "Kenney (kenney.nl)",
+   "license": "CC0 1.0",
+   "page": "https://kenney.nl/assets/digital-audio",
+   "url": "https://kenney.nl/media/pages/assets/digital-audio/216eac4753-1677590265/kenney_digital-audio.zip",
+   "zip": "kenney/kenney_digital-audio.zip",
+   "file": "kenney/kenney_digital-audio/Audio/phaserDown2.ogg"
+  },
+  "net_up": {
+   "title": "Digital Audio: phaserUp2",
+   "author": "Kenney (kenney.nl)",
+   "license": "CC0 1.0",
+   "page": "https://kenney.nl/assets/digital-audio",
+   "url": "https://kenney.nl/media/pages/assets/digital-audio/216eac4753-1677590265/kenney_digital-audio.zip",
+   "zip": "kenney/kenney_digital-audio.zip",
+   "file": "kenney/kenney_digital-audio/Audio/phaserUp2.ogg"
+  },
+  "headphones": {
+   "title": "FOLEY headphones handling",
+   "author": "krnfa (freesound.org)",
+   "license": "CC0 1.0",
+   "page": "https://freesound.org/people/krnfa/sounds/413631/",
+   "url": "https://cdn.freesound.org/previews/413/413631_5812520-hq.mp3",
+   "file": "freesound/413631_5812520-hq.mp3",
+   "length": 0.9,
+   "start": 22.2
+  },
+  "tick": {
+   "title": "Clock",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/clock-s0007.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/0007.mp3",
+   "file": "bsb/0007.mp3",
+   "burst": 1
+  },
+  "heartbeat": {
+   "title": "Heart Beat #4",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/heart-beat-4-s1929.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/1929.mp3",
+   "file": "bsb/1929.mp3",
+   "start": 2,
+   "length": 10,
+   "loop": true
+  },
+  "done": {
+   "title": "Interface Sounds: confirmation_002",
+   "author": "Kenney (kenney.nl)",
+   "license": "CC0 1.0",
+   "page": "https://kenney.nl/assets/interface-sounds",
+   "url": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
+   "zip": "kenney/kenney_interface-sounds.zip",
+   "file": "kenney/kenney_interface-sounds/Audio/confirmation_002.ogg"
+  },
+  "ui_move": {
+   "title": "Interface Sounds: scroll_001",
+   "author": "Kenney (kenney.nl)",
+   "license": "CC0 1.0",
+   "page": "https://kenney.nl/assets/interface-sounds",
+   "url": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
+   "zip": "kenney/kenney_interface-sounds.zip",
+   "file": "kenney/kenney_interface-sounds/Audio/scroll_001.ogg"
+  },
+  "ui_select": {
+   "title": "Interface Sounds: select_001",
+   "author": "Kenney (kenney.nl)",
+   "license": "CC0 1.0",
+   "page": "https://kenney.nl/assets/interface-sounds",
+   "url": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
+   "zip": "kenney/kenney_interface-sounds.zip",
+   "file": "kenney/kenney_interface-sounds/Audio/select_001.ogg"
+  },
+  "ui_back": {
+   "title": "Interface Sounds: back_001",
+   "author": "Kenney (kenney.nl)",
+   "license": "CC0 1.0",
+   "page": "https://kenney.nl/assets/interface-sounds",
+   "url": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
+   "zip": "kenney/kenney_interface-sounds.zip",
+   "file": "kenney/kenney_interface-sounds/Audio/back_001.ogg"
+  },
+  "pause": {
+   "title": "Interface Sounds: toggle_001",
+   "author": "Kenney (kenney.nl)",
+   "license": "CC0 1.0",
+   "page": "https://kenney.nl/assets/interface-sounds",
+   "url": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
+   "zip": "kenney/kenney_interface-sounds.zip",
+   "file": "kenney/kenney_interface-sounds/Audio/toggle_001.ogg"
+  },
+  "count": {
+   "title": "Interface Sounds: tick_001",
+   "author": "Kenney (kenney.nl)",
+   "license": "CC0 1.0",
+   "page": "https://kenney.nl/assets/interface-sounds",
+   "url": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
+   "zip": "kenney/kenney_interface-sounds.zip",
+   "file": "kenney/kenney_interface-sounds/Audio/tick_001.ogg"
+  },
+  "typewriter": {
+   "title": "Typewriter, Key (Hermes Precisa 305)",
+   "author": "Joseph Sardin (BigSoundBank.com)",
+   "license": "CC0 1.0",
+   "page": "https://bigsoundbank.com/typewriter-key-s2842.html",
+   "url": "https://bigsoundbank.com/UPLOAD/mp3/2842.mp3",
+   "file": "bsb/2842.mp3"
+  },
+  "fired": {
+   "title": "Music Jingles: SAX01",
+   "author": "Kenney (kenney.nl)",
+   "license": "CC0 1.0",
+   "page": "https://kenney.nl/assets/music-jingles",
+   "url": "https://kenney.nl/media/pages/assets/music-jingles/f37e530b9e-1677590399/kenney_music-jingles.zip",
+   "zip": "kenney/kenney_music-jingles.zip",
+   "file": "kenney/kenney_music-jingles/Audio/Sax jingles/jingles_SAX01.ogg"
+  },
+  "missed_hours": {
+   "title": "Music Jingles: STEEL07",
+   "author": "Kenney (kenney.nl)",
+   "license": "CC0 1.0",
+   "page": "https://kenney.nl/assets/music-jingles",
+   "url": "https://kenney.nl/media/pages/assets/music-jingles/f37e530b9e-1677590399/kenney_music-jingles.zip",
+   "zip": "kenney/kenney_music-jingles.zip",
+   "file": "kenney/kenney_music-jingles/Audio/Steel jingles/jingles_STEEL07.ogg"
+  },
+  "survived": {
+   "title": "Music Jingles: STEEL02",
+   "author": "Kenney (kenney.nl)",
+   "license": "CC0 1.0",
+   "page": "https://kenney.nl/assets/music-jingles",
+   "url": "https://kenney.nl/media/pages/assets/music-jingles/f37e530b9e-1677590399/kenney_music-jingles.zip",
+   "zip": "kenney/kenney_music-jingles.zip",
+   "file": "kenney/kenney_music-jingles/Audio/Steel jingles/jingles_STEEL02.ogg"
+  },
+  "record": {
+   "title": "Music Jingles: SAX02",
+   "author": "Kenney (kenney.nl)",
+   "license": "CC0 1.0",
+   "page": "https://kenney.nl/assets/music-jingles",
+   "url": "https://kenney.nl/media/pages/assets/music-jingles/f37e530b9e-1677590399/kenney_music-jingles.zip",
+   "zip": "kenney/kenney_music-jingles.zip",
+   "file": "kenney/kenney_music-jingles/Audio/Sax jingles/jingles_SAX02.ogg"
+  },
+  "tv": {
+   "title": "Muffled TV Program #7",
+   "author": "milcahrawr (freesound.org)",
+   "license": "CC0 1.0",
+   "page": "https://freesound.org/people/milcahrawr/sounds/873562/",
+   "url": "https://cdn.freesound.org/previews/873/873562_11995365-hq.mp3",
+   "file": "freesound/873562_11995365-hq.mp3",
+   "start": 20,
+   "length": 16,
+   "loop": true
+  },
+  "console": {
+   "title": "Gaming Controller Playing Sounds 1",
+   "author": "Joao_Janz (freesound.org)",
+   "license": "CC0 1.0",
+   "page": "https://freesound.org/people/Joao_Janz/sounds/477534/",
+   "url": "https://cdn.freesound.org/previews/477/477534_9961300-hq.mp3",
+   "file": "freesound/477534_9961300-hq.mp3",
+   "start": 3,
+   "length": 12,
+   "loop": true
+  },
+  "shower": {
+   "title": "shower.wav",
+   "author": "simosco (freesound.org)",
+   "license": "CC0 1.0",
+   "page": "https://freesound.org/people/simosco/sounds/235574/",
+   "url": "https://cdn.freesound.org/previews/235/235574_4258636-hq.mp3",
+   "file": "freesound/235574_4258636-hq.mp3",
+   "start": 20,
+   "length": 16,
+   "loop": true
+  }
+ }
+}

@@ -42,7 +42,7 @@ L and R (or Select) change scenes, with a pixelate and fade between them:
 
 The engine also draws 3D worlds: low-poly scenes in software with integers only (textures painted in code, light baked with the sun's soft shadows, the sky and lamps, a filmic curve), on the same API and save states. `golinkhd_load_demo(e, 2)` (`tools/hdrun LIB --demo 3d`) is a lived-in 200 m² house seen from above like a scale model: left and right turn the view, up and down tilt it, L and R zoom, A, B, X and Y move it. [docs/3d.md](docs/3d.md) is the reference and a step-by-step guide to make a 3D game; `make NO_3D=1` builds the engine without it.
 
-`golinkhd_load_demo(e, 3)` (`tools/hdrun LIB --demo remote`) is the first 3D game, TELETRABAJO: CÁMARA APAGADA, in the same house. It is being built phase by phase from its design, [docs/game-remote-work.md](docs/game-remote-work.md). Phases 1 to 4 are done: walking, doing things (13 activities with energy and points), the day (09:00 to 18:00, the boss's suspicion and events, the house's events, the cat, the phone, three endings with a score), and the screens (title with a demo, how to play, the morning, the pause, the end with the record):
+`golinkhd_load_demo(e, 3)` (`tools/hdrun LIB --demo remote`) is the first 3D game, TELETRABAJO: CÁMARA APAGADA, in the same house. It is being built phase by phase from its design, [docs/game-remote-work.md](docs/game-remote-work.md). Phases 1 to 5 are done: walking, doing things (13 activities with energy and points), the day (09:00 to 18:00, the boss's suspicion and events, the house's events, the cat, the phone, three endings with a score), the screens (title with a demo, how to play, the language, the credits, the morning, the pause, the end with the record), and the sound (chill-out music and 43 recorded effects, all CC0, in its package: `python3 examples/remote/build.py fetch && python3 examples/remote/build.py && tools/glhd pack examples/remote/game remote.glhd`, then `tools/hdrun LIB --content remote.glhd`; without the package the demo is silent):
 
 | Input | Action |
 |---|---|
@@ -279,6 +279,18 @@ A boss's `evolve` is its second form: beaten the first time, it evolves where it
 ```
 
 `sounds` replaces the built-in effects it names (`jump`, `coin`, `stomp`, `hurt`, `join`, `check`, `clear`, `pause`, `shoot`, `hit` (a shot hits an enemy that does not pop), `knockout`, `super`, `yawn` (a package's hero standing still, when its bored look starts), `spit` (an enemy spits), `dash`, `roar` (a boss wakes up or gets angry), `boss_hit`, `boss_down`; up to 10 seconds each, mixed to mono, placed left or right by the game). `music` plays over and over instead of the built-in tune, in stereo (up to 10 minutes), at `volume` 0 to 256 (200 by default), starting again at `loop_from` milliseconds; its position is in the save state, so a loaded state goes on exactly where it was, and `golinkhd_set_music` turns it off like the built-in tune.
+
+**`game`** and **`audio`**: a package can also hold a game coded in the engine instead of levels. `"game": "remote"` plays TELETRABAJO: CÁMARA APAGADA (the 3D game in `src/3d/games/remote`, [its design](docs/game-remote-work.md)); such a package needs no `level`, is drawn at 720p unless it says another `resolution` (the host's choice first, as always), and brings that game's recorded sound in `audio`: effects and music tracks by name, which the game asks for (`hd_effect`, `hd_track`); a name the game asks for and the package lacks is silent.
+
+```json
+"game": "remote",
+"audio": {
+  "effects": {"doorbell": "sfx_doorbell.wav", "drill": {"file": "sfx_drill.wav", "loop": true, "volume": 200}},
+  "tracks": {"title": {"file": "music_title.wav", "volume": 200, "loop_from": 0}, "day": {"file": "music_day.wav"}}
+}
+```
+
+Up to 64 effects of up to 30 seconds (mixed to mono; `"loop": true` for what goes on while it lasts, a shower or a drill: the game keeps it on a channel of its own and fades it in and out; `volume` 0 to 256 scales it as it loads) and 16 tracks (as `music`: stereo, up to 10 minutes, `volume` 200 by default, `loop_from` in milliseconds). The track playing and its position are in the save state (`music_track`, which also says whether a level's boss music plays). The names TELETRABAJO uses are listed in section 8 of its design; [`examples/remote/build.py`](examples/remote/build.py) makes its package from recordings (cut, leveled, looped and ADPCM).
 
 **`resolution`**: `"360p"` (the default), `"720p"` or `"1080p"`. The game's rules stay on the logical screen (640 x 360 on 16:9, cells of 16 pixels, the same physics and levels), and the picture is drawn 2 or 3 times bigger: 1280 x 720 or 1920 x 1080 (the API's frame and `golinkhd_get_info` say so). The package's pictures are made for that size: sprites, layers and screens as big as they should look at it, and textures whose sides are multiples of 32 (720p) or 48 (1080p), a cell being 32 or 48 pixels of it; a puppet's hose sizes (`limb`, `leg`, `arm`, `lift`, `bob`) are in its pixels too, its `stride` in the game's. The built-in art, the text, the HUD and the effects are drawn bigger by the engine. The big passes (layers, grading) run on up to 4 cores, the same picture pixel for pixel. Measured on an Intel Mac with ANTÍDOTO: 1.1 ms a frame at 360p, 2.4 at 720p and 5.6 at 1080p (the worst frames 1.8, 5.7 and 14.9; 16.6 is 60 frames a second).
 

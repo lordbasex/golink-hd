@@ -845,6 +845,28 @@ static void test_remote_screens(void)
    for (page = 0; page < REMOTE_HELP_PAGES; page++)
       remote_steps(&a, 2, PAD_JUMP);
    CHECK(g->screen == RSC_TITLE);
+   /* the credits: from the menu's last line, they roll by themselves back to the title; A cuts them short after two seconds */
+   remote_steps(&a, 2, PAD_DOWN);
+   remote_steps(&a, 2, PAD_DOWN);
+   remote_steps(&a, 2, PAD_DOWN);
+   CHECK(g->menu == 3);
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(g->screen == RSC_CREDITS);
+   remote_steps(&a, 60, 0);
+   hd_draw(&a, fb);
+   for (page = 0; page < 20000 && g->screen == RSC_CREDITS; page++)
+      remote_steps(&a, 1, 0);
+   CHECK(g->screen == RSC_TITLE && page > 800);
+   g->menu = 3;
+   remote_steps(&a, 2, 0); /* the title takes a held button as held: let go first */
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(g->screen == RSC_CREDITS);
+   remote_steps(&a, 30, 0);
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(g->screen == RSC_CREDITS); /* not before two seconds */
+   remote_steps(&a, 100, 0);
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(g->screen == RSC_TITLE && g->menu == 0);
    /* nobody plays: the demo walks somewhere, and a button brings the title back */
    remote_steps(&a, REMOTE_ATTRACT_AFTER + 2, 0);
    CHECK(g->screen == RSC_DAY && g->attract);
@@ -885,6 +907,13 @@ static void test_remote_screens(void)
    remote_steps(&a, 200, 0);
    CHECK(g->screen == RSC_END);
    hd_draw(&a, fb);
+   /* a day won: A brings the credits, then the title */
+   g->over = REND_SURVIVED;
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(g->screen == RSC_CREDITS);
+   remote_steps(&a, 130, 0);
+   remote_steps(&a, 2, PAD_START);
+   CHECK(g->screen == RSC_TITLE);
 }
 
 /* Every place the day uses is reached on foot from the hall, by the worker's size, along play3d_route. */
@@ -912,6 +941,151 @@ static void test_remote_places(void)
          CHECK(d2 < (int64_t)FX_FRAC(15, 100) * FX_FRAC(15, 100));
       }
    (void)g;
+}
+
+/* A WAV of n samples, 16-bit mono PCM at 48 kHz, a square wave of `amp`; its size. */
+static size_t tiny_wav(uint8_t *out, int32_t n, int32_t amp)
+{
+   uint8_t *p = out;
+   int32_t i;
+   memcpy(p, "RIFF", 4); p += 4; le32(&p, (uint32_t)(36 + 2 * n));
+   memcpy(p, "WAVEfmt ", 8); p += 8; le32(&p, 16);
+   le16(&p, 1); le16(&p, 1); le32(&p, 48000); le32(&p, 96000); le16(&p, 2); le16(&p, 16);
+   memcpy(p, "data", 4); p += 4; le32(&p, (uint32_t)(2 * n));
+   for (i = 0; i < n; i++)
+      le16(&p, (uint32_t)(uint16_t)(int16_t)((i / 50) & 1 ? amp : -amp));
+   return (size_t)(p - out);
+}
+
+/* The channel playing a sample, -1 when none. */
+static int32_t channel_of(const hd_state *s, int32_t sample)
+{
+   int32_t i;
+   for (i = 0; i < MAX_CHANNELS; i++)
+      if (s->ch[i].sample == sample)
+         return i;
+   return -1;
+}
+
+/* remote_steps with the sound mixed after each frame, as a host does. */
+static void remote_plays(hd_state *s, int32_t n, uint32_t buttons)
+{
+   static int16_t out[HD_SAMPLES_PER_FRAME * 2];
+   int32_t f;
+   for (f = 0; f < n; f++)
+   {
+      remote_steps(s, 1, f == 0 ? buttons : 0);
+      hd_mix(s, out, 1);
+   }
+}
+
+/* TELETRABAJO as a package ("game": "remote") with its effects and tracks by name: the title's music, the alarm in the morning, loops that keep their channel, a call's music and back. */
+static void test_remote_sound(void)
+{
+   static uint8_t zip[200000], loop_wav[20000], shot_wav[10000], song[40000];
+   static hd_state a;
+   static int16_t out[HD_SAMPLES_PER_FRAME * 2];
+   hd_remote *g = HD_GAME3D(&a, hd_remote);
+   zfile files[4] = {{0}};
+   const char *err;
+   size_t n;
+   int32_t i, alarm, drill, title, day, call, loud = 0;
+   files[0].name = "manifest.json";
+   files[0].text = "{\"format\": 3, \"title\": \"Remote\", \"game\": \"remote\", \"audio\": {"
+                   "\"effects\": {\"alarm\": {\"file\": \"loop.wav\", \"loop\": true}, \"drill\": {\"file\": \"loop.wav\", \"loop\": true, \"volume\": 128},"
+                   " \"ui_move\": \"shot.wav\", \"step\": \"shot.wav\"},"
+                   " \"tracks\": {\"title\": {\"file\": \"song.wav\"}, \"day\": {\"file\": \"song.wav\", \"volume\": 150}, \"call\": {\"file\": \"song.wav\"}}}}";
+   files[1].name = "loop.wav";
+   files[1].text = (const char *)loop_wav;
+   files[1].len = tiny_wav(loop_wav, 4800, 8000);
+   files[2].name = "shot.wav";
+   files[2].text = (const char *)shot_wav;
+   files[2].len = tiny_wav(shot_wav, 4000, 8000);
+   files[3].name = "song.wav";
+   files[3].text = (const char *)song;
+   files[3].len = tiny_wav(song, 9600, 6000);
+   n = make_zip(zip, files, 4);
+   CHECK(hd_content_load(zip, n, &err) == 1);
+   CHECK(hd_code_game == HD_GAME_REMOTE && hd_res == 2); /* no level needed; 720p by default */
+   alarm = hd_effect("alarm"), drill = hd_effect("drill");
+   title = hd_track("title"), day = hd_track("day"), call = hd_track("call");
+   CHECK(alarm >= HD_SFX_NAMED && drill > alarm && hd_effect("doorbell") == -1);
+   CHECK(title == 2 && day == 3 && call == 4 && hd_track("end") == 0);
+   hd_res = 1;
+   hd_reset(&a);
+   hd_remote_start(&a);
+   /* the title plays its track, and the mix is not silent */
+   remote_plays(&a, 30, 0);
+   CHECK(a.music_track == title && a.music_pos > 0);
+   for (i = 0; i < 10; i++)
+   {
+      int32_t k;
+      hd_mix(&a, out, 1);
+      for (k = 0; k < HD_SAMPLES_PER_FRAME * 2; k++)
+         loud = hd_max(loud, hd_abs(out[k]));
+   }
+   CHECK(loud > 1000);
+   /* the menu moves with a blip; the language line changes the texts' language */
+   remote_plays(&a, 2, PAD_DOWN);
+   CHECK(channel_of(&a, hd_effect("ui_move")) >= 0);
+   remote_plays(&a, 2, PAD_DOWN);
+   CHECK(g->menu == 2);
+   i = hd_lang;
+   remote_plays(&a, 2, PAD_RIGHT);
+   CHECK(hd_lang == (i + 1) % LANGS);
+   remote_plays(&a, 2, PAD_LEFT);
+   CHECK(hd_lang == i);
+   remote_plays(&a, 2, PAD_UP);
+   remote_plays(&a, 2, PAD_UP);
+   CHECK(g->menu == 0);
+   /* the morning: no music, the alarm loops until the worker is up */
+   remote_plays(&a, 2, PAD_START);
+   CHECK(g->screen == RSC_MORNING);
+   remote_plays(&a, 60, 0);
+   CHECK(a.music_track == 0 && channel_of(&a, alarm) >= 0 && a.ch[channel_of(&a, alarm)].vol > 100);
+   remote_plays(&a, REMOTE_MORNING_FRAMES, 0);
+   CHECK(g->screen == RSC_DAY && channel_of(&a, alarm) == -1 && a.music_track == day);
+   /* the drill: a loop no other effect takes the channel of */
+   g->drill_t = 600;
+   remote_plays(&a, 2, 0);
+   i = channel_of(&a, drill);
+   CHECK(i >= 0);
+   {
+      int32_t k;
+      for (k = 0; k < 3 * MAX_CHANNELS; k++)
+         hd_play_at(&a, hd_effect("step"), 200, 0, FX_ONE);
+      CHECK(channel_of(&a, drill) == i);
+   }
+   /* a call: its music, then the day's again from where it was */
+   g->boss = RE_CALL + 1;
+   g->boss_call = 1;
+   g->boss_t = 120;
+   remote_plays(&a, 2, 0);
+   CHECK(a.music_track == call && g->music_resume > 0);
+   i = g->music_resume;
+   remote_plays(&a, 130, 0);
+   CHECK(a.music_track == day && a.music_pos >= i && a.music_pos < i + HD_SAMPLES_PER_FRAME * 3);
+   /* the pause silences the loops */
+   g->drill_t = 600;
+   remote_plays(&a, 2, PAD_START);
+   CHECK(g->paused);
+   remote_plays(&a, 40, 0);
+   CHECK(channel_of(&a, drill) == -1);
+   /* packages the engine refuses */
+   files[0].text = "{\"format\": 3, \"title\": \"Remote\", \"game\": \"tetris\"}";
+   n = make_zip(zip, files, 4);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "game") != NULL);
+   files[0].text = "{\"format\": 3, \"title\": \"Remote\", \"game\": \"remote\", \"audio\": {\"effects\": {\"a\": \"shot.wav\", \"a\": \"shot.wav\"}}}";
+   n = make_zip(zip, files, 4);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "same name") != NULL);
+   files[0].text = "{\"format\": 3, \"title\": \"Remote\", \"game\": \"remote\", \"audio\": {\"effects\": {\"a\": 5}}}";
+   n = make_zip(zip, files, 4);
+   CHECK(hd_content_load(zip, n, &err) == 0);
+   files[0].text = "{\"format\": 3, \"title\": \"Remote\", \"game\": \"remote\", \"audio\": {\"tracks\": {\"t\": {\"file\": \"missing.wav\"}}}}";
+   n = make_zip(zip, files, 4);
+   CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "missing.wav") != NULL);
+   CHECK(hd_effect("alarm") == -1 && hd_code_game == HD_GAME_LEVELS); /* a refused package leaves the built-in game */
+   hd_content_builtin();
 }
 
 /* TELETRABAJO: CÁMARA APAGADA: the same walk twice, through a save state, and never out of the flat. */
@@ -2463,7 +2637,7 @@ static void test_credits(void)
    CHECK(hd_content_load(zip, n, &err) == 1);
    if (err)
       printf("  credits: %s\n", err);
-   CHECK(hd_credit_count == 5 && strcmp(hd_credits[0], "# MADE BY") == 0);
+   CHECK(hd_credit_lines() == 5 && hd_credit_rows == 5 && strcmp(hd_credit_line(0), "# MADE BY") == 0);
    hd_reset(&s);
    memset(in, 0, sizeof in);
    in[0].buttons = PAD_START;
@@ -2478,8 +2652,21 @@ static void test_credits(void)
    files[0].text = "{\"format\": 3, \"title\": \"Credits\", \"levels\": [{\"level\": \"one.json\"}], \"credits\": [1]}";
    n = make_zip(zip, files, 2);
    CHECK(hd_content_load(zip, n, &err) == 0 && strstr(err, "credits") != NULL);
+   /* one list for each language: the longest sets how long they roll */
+   files[0].text = "{\"format\": 3, \"title\": \"Credits\", \"levels\": [{\"level\": \"one.json\"}],"
+                   " \"credits\": {\"en\": [\"# MADE BY\", \"A\"], \"es\": [\"# HECHO POR\", \"A\", \"\", \"# GRACIAS\"]}}";
+   n = make_zip(zip, files, 2);
+   CHECK(hd_content_load(zip, n, &err) == 1 && hd_credit_rows == 4);
+   {
+      int32_t lang = hd_lang;
+      hd_lang = 1;
+      CHECK(hd_credit_lines() == 4 && strcmp(hd_credit_line(0), "# HECHO POR") == 0);
+      hd_lang = 2; /* no "pt": the first list given */
+      CHECK(hd_credit_lines() == 2 && strcmp(hd_credit_line(0), "# MADE BY") == 0 && hd_credit_line(5)[0] == 0);
+      hd_lang = lang;
+   }
    hd_content_builtin();
-   CHECK(hd_credit_count == 0);
+   CHECK(hd_credit_lines() == 0 && hd_credit_rows == 0);
 }
 
 int main(void)
@@ -2515,6 +2702,7 @@ int main(void)
    test_remote_day();
    test_remote_places();
    test_remote_screens();
+   test_remote_sound();
 #endif
    test_effects_package();
    test_goal_height();

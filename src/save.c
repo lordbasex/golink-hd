@@ -77,8 +77,17 @@ static void sanitize(hd_state *s)
    s->skip_hold = hd_clamp(s->skip_hold, 0, 600);
    s->stage = hd_stage_count ? hd_clamp(s->stage, 0, hd_stage_count - 1) : 0;
    hd_stage_select(s->stage); /* its music, for the clamp below */
-   s->music_boss = s->music_boss && hd_pkg_boss_music ? 1 : 0;
-   s->music_pos = hd_clamp(s->music_pos, 0, (s->music_boss ? hd_pkg_boss_music_frames : hd_pkg_music_frames) > 0 ? (s->music_boss ? hd_pkg_boss_music_frames : hd_pkg_music_frames) - 1 : 0);
+   {
+      int32_t frames = 0, loop, vol;
+      s->music_track = hd_clamp(s->music_track, 0, HD_TRACKS_MAX + 1);
+      if (!hd_track_music(s->music_track, &frames, &loop, &vol))
+      {
+         s->music_track = 0;
+         if (!hd_track_music(0, &frames, &loop, &vol))
+            frames = 0;
+      }
+      s->music_pos = hd_clamp(s->music_pos, 0, frames > 0 ? frames - 1 : 0);
+   }
    s->paused = s->paused ? 1 : 0;
    s->zoom = s->zoom ? hd_clamp(s->zoom, 128, 512) : 0;
    s->dlg = hd_clamp(s->dlg, 0, DIALOGS_MAX);

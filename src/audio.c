@@ -167,18 +167,87 @@ void hd_audio_sample(int32_t sfx, const int16_t *data, int32_t len)
    samples[sfx].loop = 0;
 }
 
+void hd_audio_named(int32_t k, const int16_t *data, int32_t len, int loop)
+{
+   if (k < 0 || k >= HD_NAMED_MAX)
+      return;
+   samples[HD_SFX_NAMED + k].data = len > 0 ? data : NULL;
+   samples[HD_SFX_NAMED + k].len = data ? len : 0;
+   samples[HD_SFX_NAMED + k].loop = loop && data;
+}
+
+/* The next effects' channel, past those a loop keeps (hd_loop). */
+static hd_channel *next_channel(hd_state *s, int32_t *index)
+{
+   int32_t tries;
+   for (tries = 0; tries < MAX_CHANNELS - MUSIC_CHANNELS; tries++)
+   {
+      int32_t i = s->sfx_next;
+      hd_channel *c = &s->ch[i];
+      s->sfx_next = s->sfx_next + 1 >= MAX_CHANNELS ? MUSIC_CHANNELS : s->sfx_next + 1;
+      if (c->sample < 0 || !samples[c->sample].loop)
+      {
+         *index = i;
+         return c;
+      }
+   }
+   return NULL; /* every channel holds a loop */
+}
+
 /* Starts a sound effect; screen_x (0..639) places it left or right. */
 void hd_play(hd_state *s, int32_t sfx, int32_t screen_x)
 {
-   hd_channel *c = &s->ch[s->sfx_next];
-   s->sfx_next = s->sfx_next + 1 >= MAX_CHANNELS ? MUSIC_CHANNELS : s->sfx_next + 1;
-   c->sample = sfx;
+   hd_play_at(s, sfx, 256, (hd_clamp(screen_x, 0, HD_W) - HD_W / 2) * 256 / HD_W, FX_ONE);
+}
+
+int32_t hd_play_at(hd_state *s, int32_t sample, int32_t vol, int32_t pan, int32_t step)
+{
+   int32_t i;
+   hd_channel *c;
+   if (sample < 0 || sample >= HD_SAMPLES || !samples[sample].data || vol <= 0)
+      return -1;
+   c = next_channel(s, &i);
+   if (!c)
+      return -1;
+   c->sample = sample;
    c->pos = 0;
    c->frac = 0;
-   c->step = FX_ONE;
-   c->vol = 256;
+   c->step = hd_clamp(step, 1, FX(64));
+   c->vol = hd_min(vol, 256);
    c->decay = 0;
-   c->pan = (hd_clamp(screen_x, 0, HD_W) - HD_W / 2) * 256 / HD_W;
+   c->pan = hd_clamp(pan, -256, 256);
+   return i;
+}
+
+void hd_loop(hd_state *s, int32_t sample, int32_t vol, int32_t pan)
+{
+   int32_t i;
+   if (sample < HD_SFX_NAMED || sample >= HD_SAMPLES || !samples[sample].loop)
+      return;
+   for (i = MUSIC_CHANNELS; i < MAX_CHANNELS; i++)
+      if (s->ch[i].sample == sample)
+      {
+         if (vol <= 0)
+         {
+            /* fades out in a quarter of a second */
+            s->ch[i].vol -= 16;
+            if (s->ch[i].vol <= 0)
+               s->ch[i].sample = -1;
+         }
+         else
+         {
+            /* glides to the new volume and place, so a sound that moves never clicks */
+            s->ch[i].vol += hd_clamp(hd_min(vol, 256) - s->ch[i].vol, -8, 8);
+            s->ch[i].pan += hd_clamp(hd_clamp(pan, -256, 256) - s->ch[i].pan, -16, 16);
+         }
+         return;
+      }
+   if (vol > 0)
+   {
+      i = hd_play_at(s, sample, 1, pan, FX_ONE);
+      if (i >= 0)
+         s->ch[i].pos = 0;
+   }
 }
 
 /* The tune: 64 rows of melody and bass (MIDI notes, 0 = keep the last note sounding). */
@@ -232,6 +301,11 @@ void hd_mix(hd_state *s, int16_t *out, int music_on)
          continue;
       smp = &samples[c->sample];
       len = smp->len;
+      if (!smp->data)
+      {
+         c->sample = -1; /* a named effect of a package no longer loaded */
+         continue;
+      }
       gl = (256 - hd_max(c->pan, 0)) * c->vol >> 8;
       gr = (256 + hd_min(c->pan, 0)) * c->vol >> 8;
       for (n = 0; n < HD_SAMPLES_PER_FRAME; n++)
@@ -266,25 +340,27 @@ void hd_mix(hd_state *s, int16_t *out, int music_on)
          }
       }
    }
-   /* a package's music, stereo, over and over: the level's, or its boss's once the boss woke up */
-   if (hd_pkg_music)
+   /* a package's music, stereo, over and over: the track the state plays (the level's, its boss's, or a named one) */
    {
-      int boss = s->music_boss && hd_pkg_boss_music;
-      const int16_t *m = boss ? hd_pkg_boss_music : hd_pkg_music;
-      int32_t frames = boss ? hd_pkg_boss_music_frames : hd_pkg_music_frames;
-      int32_t loop = boss ? hd_pkg_boss_music_loop : hd_pkg_music_loop, vol = boss ? hd_pkg_boss_music_vol : hd_pkg_music_vol;
-      int32_t pos = hd_clamp(s->music_pos, 0, frames - 1);
-      for (n = 0; n < HD_SAMPLES_PER_FRAME; n++)
+      int32_t frames = 0, loop = 0, vol = 0;
+      const int16_t *m = hd_track_music(s->music_track, &frames, &loop, &vol);
+      if (!m)
+         m = hd_track_music(0, &frames, &loop, &vol);
+      if (m)
       {
-         if (music_on)
+         int32_t pos = hd_clamp(s->music_pos, 0, frames - 1);
+         for (n = 0; n < HD_SAMPLES_PER_FRAME; n++)
          {
-            acc[2 * n] += m[2 * pos] * vol >> 8;
-            acc[2 * n + 1] += m[2 * pos + 1] * vol >> 8;
+            if (music_on)
+            {
+               acc[2 * n] += m[2 * pos] * vol >> 8;
+               acc[2 * n + 1] += m[2 * pos + 1] * vol >> 8;
+            }
+            if (++pos >= frames)
+               pos = hd_clamp(loop, 0, frames - 1);
          }
-         if (++pos >= frames)
-            pos = hd_clamp(loop, 0, frames - 1);
+         s->music_pos = pos;
       }
-      s->music_pos = pos;
    }
    /* the mix's effects: a one pole low pass (muffled, underwater) and an echo (caves) */
    if (s->lowpass > 0 && s->lowpass < 256)

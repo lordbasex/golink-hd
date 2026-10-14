@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Added
+- TELETRABAJO: CÁMARA APAGADA, phase 5 (the sound), recorded and not synthesized, all in the public domain (CC0):
+  - chill-out and lo-fi music for the title, the day, the boss's calls (the day's goes on where it was after a call) and the results;
+  - 43 effects heard from what changes in the game: the alarm, the computer ringing, messages, the bell, the drill and the headphones, the washing machine, the cat (meows, purring, walking on the keys), steps, typing, snoring, every activity's sound (coffee, frying, the TV, the console, the guitar, birds, the shower...), a heartbeat when the boss is close to firing, the menus and the end's jingles;
+  - sounds placed by where they are (louder near the worker, left or right as the camera sees it), loops that fade in and out;
+  - a language line on the title (English, Español, Português) and the credits rolling (from the title's menu and after a day won), in the three languages;
+  - the package is made by `examples/remote/build.py` from `examples/remote/audio.json` (every recording's source, author and license; `CREDITS.md`).
+- Packages: `"game": "remote"` plays a game coded in the engine instead of levels, and `"audio"` brings effects and music tracks by name for it (`hd_effect`, `hd_track`); `hd_play_at` (volume, place, speed) and `hd_loop` (a sound kept on its own channel while it lasts); `music_track` in the state (it was `music_boss`: 0 and 1 mean the same); `"credits"` can be one list for each language.
+- The font has `<` and `>`.
 - **3D** ([docs/3d.md](docs/3d.md)): low-poly worlds drawn in software with integers only, so every computer draws the same pixels. Boxes, cylinders, balls and quads with textures painted in code (parquet, tiles, fabric, rugs, wood, marble, the city's facades, posters); light baked once on a grid of 5 cm cubes (the sun's soft shadows, the sky's light that misses corners, lamps); a filmic curve, softened edges, decals (soft shadows under what moves); drawing on up to 4 cores with runs out of view skipped and the nearest first. Big faces get light maps (a texel every 5 cm: sharp sun shadows and corners, softened once); textures seen bigger than their texels are read between four of them; see-through glass; people (`actor3d.h`): 11 parts posed every frame (walking, sitting, typing, waving). The demo `golinkhd_load_demo(e, 2)` (`hdrun --demo 3d`) is a lived-in flat on the fifth floor of a city block, about 30,000 triangles and two people: 4.8 ms a frame at 360p, 9.4 at 720p, 17.1 at 1080p (`make bench`; 3D games run at 720p). A test plays it twice and through a save state. `make NO_3D=1` builds without it; 2D games are drawn exactly as before (ANTÍDOTO's frames and sound checked the same).
 - **TELETRABAJO: CÁMARA APAGADA** ([docs/game-remote-work.md](docs/game-remote-work.md)), the first 3D game, a remote worker's day in the demo's flat (`golinkhd_load_demo(e, 3)`, `hdrun --demo remote`). Phase 1, walking:
   - the worker walks and runs with the stick relative to the camera, turns toward where it goes, slides along walls and steps into doorways;
@@ -101,6 +109,7 @@
 - `tools/hdrun --check` (the game's info, a state saved halfway and played again, a restart played again) and `--music off`.
 
 ### Fixed
+- A small x inside a word ("next", "conexión") was drawn as the times sign of "x3"; it is the letter now.
 - A save state taken on a level's intro loaded as a stage clear (its phase was cut down).
 - A player walking on flat ground was in the air every other frame (the floor was looked for at the feet's whole pixel, so sinking half a pixel missed it), which drew a jump frame every other frame; and on the ground the speed crept past the top speed by 0.05 pixels a frame (the two bugs hid each other). The floor is looked for with the fraction, and the speed stops at the top speed. Found by measuring a video of ANTÍDOTO frame by frame; the demo's and the API test's hashes changed (identical on macOS and Linux).
 - The goal and checkpoints count when a player passes their column near their height (from 2 rows below to 8 above, so jumping over still counts): a level that climbs on a 9:16 screen no longer clears when the player runs under its goal. Found by the 9:16 API test in a go-link room.

@@ -24,3 +24,6 @@ examples/antidoto/source/sfx/
 examples/antidoto/game_x*/
 examples/antidoto/sprites_x*/
 examples/antidoto/textures_x*/
+# TELETRABAJO: CÁMARA APAGADA: the downloaded recordings and the package folder
+examples/remote/source/
+examples/remote/game/
