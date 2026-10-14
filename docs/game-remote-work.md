@@ -120,9 +120,9 @@ Changes for the game:
 
 ## 4. Activities
 
-The player can do 12 activities. Each one has its place, a length in game
-minutes, energy, points, and a "noise" that tells whether the boss can hear
-it during a call:
+The player can do 13 activities besides working. Each one has its place, a
+length in game minutes, energy, points, and a "noise" that tells whether the
+boss can hear it during a call:
 
 | # | Activity | Room | Minutes | Energy | Points | Noisy |
 |---|---|---|---|---|---|---|
@@ -130,6 +130,7 @@ it during a call:
 | 2 | Coffee | kitchen machine | 3 | +120 | 30 | yes |
 | 3 | Cook lunch | kitchen stove | 25 | +300 | 250 | yes |
 | 4 | Raid the fridge | kitchen | 5 | +80 | 60 | no |
+| 4b | Eat at the table | kitchen table | 20 | +250 | 200 | no |
 | 5 | Play the console | game room TV | 20 | -50 | 350 | yes |
 | 6 | Watch a series | living room sofa | 25 | +100 | 250 | yes |
 | 7 | Sunbathe | terrace lounger | 15 | +150 | 200 | no |
@@ -145,8 +146,19 @@ Each activity:
   so the best day mixes everything;
 - can be cut short with the action button (it gives its share of points and
   energy);
-- shows a short animation: the body poses of `actor3d` (sit, lie, type, wave)
-  plus new ones (lie down, hold, crouch).
+- shows the body in a pose of `actor3d`: sit, lie, type, hold or crouch.
+
+Working at the desk has no length and no points: it adds work while the
+player stays (section 2) and costs energy. Asleep on the keyboard (energy
+under 100), the worker's head rests on the desk and the screens go dark.
+
+Each activity's place (`activities` in `remote.c`) has two points in
+centimeters of the plan:
+
+- **Start:** where the worker stands to start it. The prompt shows within 75 cm, and every start point is checked to be walkable.
+- **Body:** where the body is while doing it (on the bed, on the sofa, in the tub), and where it faces.
+
+When the activity ends, the worker is back at the start point.
 
 ## 5. Events
 
@@ -351,7 +363,7 @@ before the next one.
 | # | Phase | Contents | Rough time |
 |---|---|---|---|
 | 1 | Walk the flat (**done 2026-10-13**) | Follow camera, collision, character control, run, the state in the coin bitmap's words, the compatibility check | 1 session |
-| 2 | Interact | Spots and prompts, the 12 activities with poses, energy and work, the desk's screens | 1–2 sessions |
+| 2 | Interact (**done 2026-10-14**) | Spots and prompts, the 12 activities with poses, energy and work, the desk's screens | 1–2 sessions |
 | 3 | The day | Clock, suspicion, boss events, random events, the cat, the phone | 1–2 sessions |
 | 4 | Screens and HUD | Title, how to play, morning, pause, end, score, record | 1 session |
 | 5 | Sound | Effects and music made with the engine's sound (`sound.c`), the alarm, phone, bell, drill | 1 session |
@@ -360,6 +372,33 @@ before the next one.
 | 8 | Willy Maker | Whatever it needs from this game | last |
 
 ## 12. Progress
+
+**Phase 2, doing things (2026-10-14).**
+
+What plays:
+
+- The 13 activities above, with their prompts (`A: Echarse una siesta`), poses and progress bars.
+- Energy that comes as an activity goes, so stopping early keeps it.
+- Points for each activity, cut to a fifth after the second time.
+- Work at the desk at full or half speed, or nothing when asleep.
+- A closing line with humor for each activity, or "again?" when it is repeated too often.
+
+On screen:
+
+- The HUD: the clock, the work done against the 6 hours, the energy, the points, the prompt or the activity under way, and the messages.
+- The desk's two screens scroll code while working (`tex3d_terminal`, redrawn as the state says) and sleep otherwise.
+
+New poses in `actor3d`: `hold`, `crouch` and `lie` (the whole body turned around the hips).
+
+Fixes to the house found on the way:
+
+- The fridge, the reading armchair, the arcade cabinet, the amplifier, a sideboard and a game-room bookshelf were turned or placed wrong.
+- Every dining chair faced away from its table.
+
+Checks:
+
+- `make test` plays an activity three times (the repeat rule), stops one halfway, and works at three energies.
+- A bot played a stretch of the day with the stick (coffee, fridge, the desk) for the progress video.
 
 **The house (2026-10-13).** The flat became a 200 m² house (section 3). Every room, the laundry and the terrace are reached from the hall (checked with a flood of the walk grid); the bathroom's sink and tiles, a dining table and the game room's pictures were found in the way and moved. 720p: about 11 ms a frame with other work running.
 

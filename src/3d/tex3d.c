@@ -511,3 +511,49 @@ int32_t tex3d_poster(int32_t kind, uint32_t seed)
       }
    return r3d_tex_add(8, 8, poster_px[poster_count++]);
 }
+
+void tex3d_terminal(int32_t id, uint32_t seed, int32_t scroll, int32_t on)
+{
+   uint32_t *p = r3d_tex_pixels(id);
+   int32_t x, y;
+   if (!p)
+      return;
+   for (y = 0; y < POSTER; y++)
+      for (x = 0; x < POSTER; x++)
+      {
+         uint32_t v = 0xff15181d;
+         if (!on)
+         {
+            /* asleep: dark, a slow logo drifting */
+            int32_t cx = 128 + ((hd_sin((scroll * 3 + (int32_t)seed * 500) & 4095) * 60) >> 14), cy = 128 + ((hd_cos((scroll * 2) & 4095) * 50) >> 14);
+            int32_t dx = x - cx, dy = y - cy;
+            v = 0xff0b0d10;
+            if (dx * dx + dy * dy < 14 * 14 && dx * dx + dy * dy > 9 * 9)
+               v = 0xff2e5e8a;
+         }
+         else if (y < 14)
+         {
+            v = 0xff2b2f36; /* the title bar */
+            if (x > 8 && x < 44 && (x - 8) % 12 < 8 && y > 3 && y < 11)
+               v = (x - 8) / 12 == 0 ? 0xffff5f57 : (x - 8) / 12 == 1 ? 0xfffebc2e : 0xff28c840;
+         }
+         else
+         {
+            /* lines of code going up as the work goes on (scroll in pixels) */
+            int32_t yy = y - 14 + scroll, row = yy / 12;
+            if ((yy % 12) < 7 && x > 8 && x < POSTER - 8)
+            {
+               int32_t indent = (int32_t)(hash3(row, 2, seed) % 4) * 12, len = 20 + (int32_t)(hash3(row, 0, seed) % 170);
+               if (x > 8 + indent && x < 8 + indent + len && ((x - indent) / 6) % 9 != 8)
+                  v = (hash3(row, 1, seed) % 3) == 0 ? 0xff7fd18b : (hash3(row, 1, seed) % 3) == 1 ? 0xffe0c070 : 0xff8ab4f8;
+            }
+            /* the cursor at the bottom, blinking */
+            if (y > POSTER - 22 && y < POSTER - 12 && x > 12 && x < 20 && (scroll / 20) % 2 == 0)
+               v = 0xffe8e8e8;
+         }
+         if (x < 4 || y < 4 || x > POSTER - 5 || y > POSTER - 5)
+            v = 0xff2b2f36;
+         p[y * POSTER + x] = v;
+      }
+}
+

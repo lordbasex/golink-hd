@@ -664,6 +664,65 @@ static void test_3d(void)
    CHECK(a.show.on == 2 && memcmp(&a, &b, sizeof a) == 0);
 }
 
+/* TELETRABAJO: CÁMARA APAGADA, phase 2: an activity's points and energy, the repeat rule, and work at the desk. */
+static void test_remote_activities(void)
+{
+   static hd_state a;
+   hd_input in[MAX_PLAYERS];
+   hd_remote *g = HD_GAME3D(&a, hd_remote);
+   int32_t f, round, e0;
+   hd_reset(&a);
+   hd_remote_start(&a);
+   /* coffee three times: 3 game minutes each, +120 energy, 30 points twice then a fifth */
+   for (round = 0; round < 3; round++)
+   {
+      g->x = ROOM3D_AT(1495), g->z = ROOM3D_AT(105), g->energy = 500;
+      memset(in, 0, sizeof in);
+      hd_step(&a, in);
+      CHECK(g->prompt == RA_COFFEE + 1);
+      in[0].buttons = PAD_JUMP;
+      hd_step(&a, in);
+      CHECK(g->act == RA_COFFEE + 1);
+      memset(in, 0, sizeof in);
+      for (f = 0; f < 3 * REMOTE_FRAMES_PER_MINUTE + 5 && g->act; f++)
+         hd_step(&a, in);
+      CHECK(!g->act && g->energy == 620);
+   }
+   CHECK(g->points == 30 + 30 + 6 && g->done[RA_COFFEE] == 3);
+   /* stopped halfway: half the points, the energy had so far */
+   g->x = ROOM3D_AT(1450), g->z = ROOM3D_AT(108), g->energy = 300, g->points = 0;
+   memset(in, 0, sizeof in);
+   in[0].buttons = PAD_JUMP;
+   hd_step(&a, in);
+   CHECK(g->act == RA_COOK + 1);
+   memset(in, 0, sizeof in);
+   for (f = 0; f < 25 * REMOTE_FRAMES_PER_MINUTE / 2 - 1; f++)
+      hd_step(&a, in);
+   in[0].buttons = PAD_JUMP;
+   hd_step(&a, in);
+   CHECK(!g->act && g->points >= 120 && g->points <= 126 && g->energy >= 448 && g->energy <= 452);
+   /* work: full speed with energy, half when tired, nothing asleep; it costs energy */
+   g->x = ROOM3D_AT(950), g->z = ROOM3D_AT(1035), g->energy = 800, g->work = 0;
+   memset(in, 0, sizeof in);
+   hd_step(&a, in);
+   in[0].buttons = PAD_JUMP;
+   hd_step(&a, in);
+   CHECK(g->act == RA_WORK + 1);
+   memset(in, 0, sizeof in);
+   e0 = g->energy;
+   for (f = 0; f < 10 * REMOTE_FRAMES_PER_MINUTE; f++)
+      hd_step(&a, in);
+   CHECK(g->work == 10 * REMOTE_WORK_UNIT && g->energy == e0 - 10 * REMOTE_WORK_DRAIN);
+   g->energy = 200;
+   for (f = 0; f < REMOTE_FRAMES_PER_MINUTE; f++)
+      hd_step(&a, in);
+   CHECK(g->work == 10 * REMOTE_WORK_UNIT + REMOTE_FRAMES_PER_MINUTE);
+   g->energy = 50;
+   for (f = 0; f < REMOTE_FRAMES_PER_MINUTE; f++)
+      hd_step(&a, in);
+   CHECK(g->work == 10 * REMOTE_WORK_UNIT + REMOTE_FRAMES_PER_MINUTE);
+}
+
 /* TELETRABAJO: CÁMARA APAGADA: the same walk twice, through a save state, and never out of the flat. */
 static void test_remote(void)
 {
@@ -697,8 +756,8 @@ static void test_remote(void)
       }
    }
    CHECK(ha == hb);
-   /* it walked, and stayed inside the flat's outer walls (the front door does not let it out) */
-   CHECK(g->t == 400 && g->x > ROOM3D_AT(400) && g->x < ROOM3D_AT(1194) && g->z > ROOM3D_AT(-170) && g->z < ROOM3D_AT(894));
+   /* it walked, and stayed inside the house's outer walls (the front door does not let it out) */
+   CHECK(g->t == 400 && g->x > ROOM3D_AT(500) && g->x < ROOM3D_AT(1600) && g->z > ROOM3D_AT(-210) && g->z < ROOM3D_AT(1250));
    h0 = ha;
    hd_save(&a, save);
    memset(in, 0, sizeof in);
@@ -2261,6 +2320,7 @@ int main(void)
 #ifndef HD_NO_3D
    test_3d();
    test_remote();
+   test_remote_activities();
 #endif
    test_effects_package();
    test_goal_height();

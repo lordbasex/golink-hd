@@ -15,6 +15,15 @@
   - the follow camera (`play3d_follow`, `play3d_eye`).
 
   Its pieces underneath are `r3d_solid_at` and `r3d_reach` (the bake's grid for a game's rules). `src/3d/room3d.h` shares the demo's flat, light and people.
+- TELETRABAJO: CÁMARA APAGADA, phase 2 (doing things):
+  - 13 activities around the house, each with its prompt, pose, length, energy and points, stopped early with the main button; the points are cut to a fifth after the second time;
+  - work at the desk at full or half speed, asleep on the keyboard when out of energy;
+  - closing lines with humor in three languages;
+  - a HUD with the clock, work, energy, points, the prompt or the activity's progress, and messages;
+  - the desk's screens scroll code while working (`tex3d_terminal`);
+  - `actor3d` poses `hold`, `crouch` and `lie`.
+
+  Fixes to the house: the fridge, a reading armchair, the arcade cabinet, the amplifier, a sideboard and a bookshelf were placed or turned wrong, and every dining chair faced away from its table. A test covers the rules.
 - 3D quality:
   - round pieces lit smoothly: a normal at each corner of cylinders and balls, also for people;
   - `r3d_bevel`: furniture and bodies with soft 45-degree edges;

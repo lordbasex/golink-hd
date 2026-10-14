@@ -189,5 +189,7 @@ enum
 const int32_t *tex3d_build(void);
 /* A picture painted in code for a poster or a frame: `kind` picks one of several, `seed` varies it. */
 int32_t tex3d_poster(int32_t kind, uint32_t seed);
+/* Redraws a poster (made with kind 2) as a working terminal: lines of code `scroll` pixels up, a blinking cursor; or asleep (on 0). */
+void tex3d_terminal(int32_t id, uint32_t seed, int32_t scroll, int32_t on);
 
 #endif

@@ -161,6 +161,26 @@ int32_t actor3d_place(const actor3d_kit *k, const actor3d_pose *p, r3d_instance 
       }
       lean = -60; /* a little forward */
    }
+   if (p->crouch)
+   {
+      hip_y = CM(52);
+      for (side = 0; side < 2; side++)
+      {
+         thigh[side] = 1200; /* forward and up */
+         knee[side] = -1900; /* the shins back down */
+      }
+      lean = 260;
+   }
+   if (p->hold)
+   {
+      /* both hands in front of the chest */
+      for (side = 0; side < 2; side++)
+      {
+         upper[side] = 420;
+         elbow[side] = 900;
+         spread[side] = side ? -160 : 160;
+      }
+   }
    if (p->type)
    {
       /* the arms forward to a keyboard, the hands moving a little */
@@ -212,6 +232,30 @@ int32_t actor3d_place(const actor3d_kit *k, const actor3d_pose *p, r3d_instance 
          r3d_rot_mul(tl, f, ft);
          put(out, &n, &k->part[ACT_FORE_L + side], p->at, yawm, elb, ft);
       }
+   }
+   if (p->lie)
+   {
+      /*
+       * Lying on the back: the whole body turned a quarter around the hips
+       * (the face up, the head toward the back), then lowered so the back
+       * rests on at.y.
+       */
+      int32_t t[9], back[9], i, j;
+      r3d_vec hipw = add(p->at, r3d_rot_apply(yawm, hip));
+      r3d_rotation(p->yaw, 1024, 0, t);
+      r3d_rotation(-p->yaw, 0, 0, back);
+      r3d_rot_mul(t, back, t);
+      for (i = 0; i < n; i++)
+      {
+         r3d_vec d = v3(out[i].at.x - hipw.x, out[i].at.y - hipw.y, out[i].at.z - hipw.z);
+         int32_t m[9];
+         d = r3d_rot_apply(t, d);
+         out[i].at = v3(hipw.x + d.x, p->at.y + CM(12) + d.y, hipw.z + d.z);
+         r3d_rot_mul(t, out[i].rot, m);
+         for (j = 0; j < 9; j++)
+            out[i].rot[j] = m[j];
+      }
+      return n; /* no shadow on the floor: it lies on something */
    }
    /* the soft shadow on the floor under the person */
    if (k->shadow.count)

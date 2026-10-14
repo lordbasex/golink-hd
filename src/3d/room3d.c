@@ -35,7 +35,7 @@
 static r3d_mesh scene;
 static actor3d_kit people[ROOM3D_PEOPLE];
 static const int32_t *T;
-static int32_t ready, poster[8];
+static int32_t ready, poster[10];
 static r3d_light_cfg sunlight;
 
 /* ---- small helpers ---- */
@@ -592,13 +592,13 @@ static void living(void)
    bx(20, 76, 20, 50, 77, 60, 0xf8f9fa);       /* a placemat with papers */
    mug(110, 76, 60, 0x264653);
    /* by the west window: two chairs on each side */
-   at(140, 0, 168, 0);
+   at(182, 0, 210, 2048);
    chair_wood(0x6b4423, 0xd9c7a7);
-   at(230, 0, 168, 0);
+   at(272, 0, 210, 2048);
    chair_wood(0x6b4423, 0xd9c7a7);
-   at(182, 0, 340, 2048);
+   at(140, 0, 298, 0);
    chair_wood(0x6b4423, 0xd9c7a7);
-   at(272, 0, 340, 2048);
+   at(230, 0, 298, 0);
    chair_wood(0x6b4423, 0xd9c7a7);
    at(205, 0, 252, 0);
    pendant(80);
@@ -621,15 +621,15 @@ static void living(void)
    for (i = 0; i < 7; i++)
       bx(i * 9, 0, 0, i * 9 + 6, 60, 8, 0xf2f2f2);
    /* a sideboard by the dining table, a side table and a pouf by the sofa, a big plant by the TV */
-   at(6, 0, 600, 3072);
+   at(50, 0, 430, 3072);
    mat(TEX3D_WOOD, 100);
    bx(0, 0, 0, 170, 80, 44, 0x6b4423);
    plain();
    for (i = 0; i < 3; i++)
       bx(4 + i * 55, 6, -1, 56 + i * 55, 76, 0, 0x7a5030);
-   at(-30, 80, 520, 0);
+   at(28, 80, 550, 0);
    plant_pot(14, 0xe9edc9, 4);
-   at(-24, 80, 470, 0);
+   at(22, 80, 470, 0);
    bx(0, 0, 0, 14, 30, 10, 0xf4a261);           /* a vase */
    at(480, 0, 300, 0);
    cyl(0, 0, 0, 22, 22, 50, 12, 0xd4b48c);
@@ -784,7 +784,7 @@ static void kitchen(void)
    ball(1570, 99, 444, 5, 5, 5, 3, 0x8ac926);
    ball(1566, 100, 434, 5, 5, 5, 3, 0xe63946);
    /* the fridge and the pantry */
-   at(1594, 0, 476, 1024);
+   at(1532, 0, 564, 1024);
    bx(0, 0, 0, 88, 195, 62, 0xe8eaec);
    bx(43, 4, -1, 45, 191, 0, 0xb7bcc2);
    bx(36, 90, -4, 39, 140, -1, 0xb7bcc2);
@@ -831,13 +831,13 @@ static void kitchen(void)
    bx(50, 76, 20, 90, 77, 50, 0xf1faee);          /* a newspaper */
    cyl(70, 76, 70, 10, 10, 2, 12, 0xf8f9fa);      /* a plate with toast */
    bx(64, 78, 66, 76, 80, 74, 0xe9c46a);
-   at(950, 0, 78, 0);
+   at(992, 0, 120, 2048);
    chair_wood(0x3d5a80, 0xe0e1dd);
-   at(1030, 0, 78, 0);
+   at(1072, 0, 120, 2048);
    chair_wood(0x3d5a80, 0xe0e1dd);
-   at(992, 0, 252, 2048);
+   at(950, 0, 210, 0);
    chair_wood(0x3d5a80, 0xe0e1dd);
-   at(1072, 0, 252, 2048);
+   at(1030, 0, 210, 0);
    chair_wood(0x3d5a80, 0xe0e1dd);
    at(1010, 0, 165, 0);
    pendant(90);
@@ -888,8 +888,8 @@ static void office(void)
    bx(172, 0, 4, 176, 72, 68, 0x1c1c1c);
    bx(4, 66, 64, 176, 72, 68, 0x1c1c1c);
    at(860, 76, 1168, 0);
-   monitor(30, 60, 34, poster[5]);
-   monitor(96, 60, 34, poster[6]);
+   monitor(30, 60, 34, poster[8]);
+   monitor(96, 60, 34, poster[9]);
    bx(50, 0, 14, 110, 2, 30, 0x222226);           /* keyboard, glowing a little */
    r3d_glow(140);
    bx(52, 2, 16, 108, 3, 28, 0x7b2cbf);
@@ -956,7 +956,7 @@ static void office(void)
    at(1120, 0, 830, 0);
    plant_pot(16, 0x264653, 5);
    /* a reading corner by the west wall: an armchair, a floor lamp, a rug, a side table with a book */
-   at(800, 0, 1010, 1024);
+   at(846, 0, 930, 3072);
    mat(TEX3D_FABRIC, 96);
    bx(0, 10, 0, 80, 44, 80, 0x588157);
    bx(0, 44, 64, 80, 90, 80, 0x3a5a40);
@@ -1289,7 +1289,7 @@ static void game_room(void)
    plain();
    bx(40, 0, -60, 70, 4, -40, 0x1d1d1d);          /* a controller left on the floor */
    /* an arcade cabinet in the corner */
-   at(1160, 0, 1120, 1024);
+   at(1230, 0, 1050, 3072);
    bx(0, 0, 0, 70, 180, 70, 0x1d3557);
    bx(4, 100, -2, 66, 106, 30, 0x111111);          /* the control panel */
    for (i = 0; i < 4; i++)
@@ -1306,11 +1306,11 @@ static void game_room(void)
    ball(0, 40, 0, 16, 18, 5, 3, 0x9c5a2b);
    ball(0, 66, 0, 12, 12, 5, 3, 0x9c5a2b);
    bx(-2, 76, -2, 2, 120, 2, 0x3b2a1a);
-   at(1530, 0, 1050, 3072);
+   at(1500, 0, 1100, 1024);
    bx(0, 0, 0, 50, 45, 30, 0x222222);
    bx(4, 8, -1, 46, 40, 0, 0x3a3a3a);
    /* shelves of games, posters, a neon */
-   at(1590, 0, 880, 1024);
+   at(1558, 0, 980, 1024);
    bookshelf(100, 120, 3, 0x2b2b2b, 41);
    at(1480, 150, 809, 2048);
    frame_pic(60, 80, poster[2]);
@@ -1429,6 +1429,8 @@ void hd_r3d_build(void)
    poster[5] = tex3d_poster(2, 5);
    poster[6] = tex3d_poster(2, 3);
    poster[7] = tex3d_poster(3, 0);
+   poster[8] = tex3d_poster(2, 11); /* the desk's two screens, redrawn as the work goes */
+   poster[9] = tex3d_poster(2, 12);
    r3d_clear();
    r3d_detail(CM(60));
    r3d_begin();
@@ -1504,6 +1506,12 @@ void hd_r3d_build(void)
    r3d_bake(&sunlight);
    build_people();
    ready = 1;
+}
+
+int32_t room3d_desk_screen(int32_t which)
+{
+   hd_r3d_build();
+   return poster[8 + (which & 1)];
 }
 
 const r3d_mesh *room3d_scene(void)

@@ -45,6 +45,9 @@ typedef struct
    int32_t phase;    /* the walk's (and the hands') cycle, 0..4095 */
    int32_t sit, type, wave; /* sitting, typing at a keyboard, waving the right arm */
    int32_t look, nod; /* the head turned and tilted */
+   int32_t hold;      /* the arms forward at the chest: a mug, a watering can, a guitar, a controller */
+   int32_t crouch;    /* the knees bent low: in front of the washing machine */
+   int32_t lie;       /* lying on the back, the head toward where it faces' back; at.y is what it lies on (a bed, a lounger) */
 } actor3d_pose;
 
 /* Builds the parts (with the fabric texture's id for the clothes, -1 none). */

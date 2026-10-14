@@ -42,12 +42,13 @@ L and R (or Select) change scenes, with a pixelate and fade between them:
 
 The engine also draws 3D worlds: low-poly scenes in software with integers only (textures painted in code, light baked with the sun's soft shadows, the sky and lamps, a filmic curve), on the same API and save states. `golinkhd_load_demo(e, 2)` (`tools/hdrun LIB --demo 3d`) is a lived-in 200 m² house seen from above like a scale model: left and right turn the view, up and down tilt it, L and R zoom, A, B, X and Y move it. [docs/3d.md](docs/3d.md) is the reference and a step-by-step guide to make a 3D game; `make NO_3D=1` builds the engine without it.
 
-`golinkhd_load_demo(e, 3)` (`tools/hdrun LIB --demo remote`) is the first 3D game, TELETRABAJO: CÁMARA APAGADA, in the same house. It is being built phase by phase from its design, [docs/game-remote-work.md](docs/game-remote-work.md). Phase 1 is walking:
+`golinkhd_load_demo(e, 3)` (`tools/hdrun LIB --demo remote`) is the first 3D game, TELETRABAJO: CÁMARA APAGADA, in the same house. It is being built phase by phase from its design, [docs/game-remote-work.md](docs/game-remote-work.md). Phases 1 and 2 (walking, doing things) are done:
 
 | Input | Action |
 |---|---|
 | Stick or D-pad | Walk |
 | X/Y | Run |
+| A/B | Do what the prompt says (a nap, a coffee, work), or stop it |
 | L/R or the right stick | Turn the camera |
 
 ## Game packages (.glhd)

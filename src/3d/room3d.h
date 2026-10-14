@@ -20,5 +20,7 @@ enum { ROOM3D_WORKER = 0, ROOM3D_FLATMATE, ROOM3D_PEOPLE };
 const r3d_mesh *room3d_scene(void);
 const r3d_light_cfg *room3d_light(void);
 const actor3d_kit *room3d_person(int32_t who);
+/* The texture of one of the office desk's two screens (0, 1), for tex3d_terminal. */
+int32_t room3d_desk_screen(int32_t which);
 
 #endif
