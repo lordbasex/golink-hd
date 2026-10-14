@@ -498,6 +498,15 @@ before the next one.
 
 ## 13. Progress
 
+**Furniture made by artists (2026-10-14).** From Quaternius's "Ultimate House
+Interior Pack" (the CC0 copy on OpenGameArt, OBJ files): the L sofa (mirrored
+to match the flat's), the armchair, the dining chairs, the double bed and its
+nightstands, the toilet, the washing machine and the dryer, the fridge. Each
+fits the box of the piece it replaces, so the plan and the game's places do
+not move; the tub with its shower, the desk with its screens and the plants
+(already detailed) stay built. `tools/remotebots 20 --content remote.glhd`:
+27 of 27 places reached, the careful player still survives every day.
+
 **Models made by artists (2026-10-14, phase "models").** The user asked for a
 character and things that look much better than the built boxes, from
 open-licensed 3D models. What was searched and why (the same rules as the

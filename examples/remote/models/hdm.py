@@ -188,7 +188,49 @@ def rigid(m):
     return r, m[:3, 3].copy()
 
 
+def obj_model(path):
+    """An OBJ and its MTL: (vertices, normals, triangles with colors), no bones (furniture)."""
+    import os
+
+    mats, cur, kd = {}, None, {}
+    v, vn, verts, norms, tris = [], [], [], [], []
+    for line in open(path, encoding="utf-8", errors="ignore"):
+        w = line.split()
+        if not w:
+            continue
+        if w[0] == "mtllib":
+            for ml in open(os.path.join(os.path.dirname(path), " ".join(w[1:])), encoding="utf-8", errors="ignore"):
+                m = ml.split()
+                if m and m[0] == "newmtl":
+                    name = " ".join(m[1:])
+                elif m and m[0] == "Kd":
+                    kd[name] = [float(x) for x in m[1:4]]
+        elif w[0] == "v":
+            v.append([float(x) for x in w[1:4]])
+        elif w[0] == "vn":
+            vn.append([float(x) for x in w[1:4]])
+        elif w[0] == "usemtl":
+            cur = " ".join(w[1:])
+        elif w[0] == "f":
+            corners = []
+            for c in w[1:]:
+                parts = c.split("/")
+                pi = int(parts[0]) - 1 if int(parts[0]) > 0 else len(v) + int(parts[0])
+                ni = int(parts[2]) - 1 if len(parts) > 2 and parts[2] else None
+                verts.append(v[pi])
+                norms.append(vn[ni] if ni is not None and ni < len(vn) else [0, 1, 0])
+                corners.append(len(verts) - 1)
+            c = kd.get(cur, [0.8, 0.8, 0.8])
+            rgb = [int(round(lin_to_srgb(x) * 255)) for x in c]
+            color = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2]
+            for k in range(1, len(corners) - 1):
+                tris.append((corners[0], corners[k], corners[k + 1], color))
+    return np.array(verts, float), np.array(norms, float), tris
+
+
 def convert(path, out, clips, height, fps):
+    if path.lower().endswith(".obj"):
+        return convert_static(path, out, height)
     g = Glb(path)
     j = g.j
     sc = Scene(g)
@@ -355,6 +397,25 @@ def convert(path, out, clips, height, fps):
     open(out, "wb").write(bytes(blob))
     print(f"{out}: {len(verts)} vertices, {len(tris)} triangles, {nj} bones, clips {[a[0] for a in anims]}, "
           f"{(hi[1] - lo[1]) * scale:.2f} m tall, {len(blob)} bytes")
+
+
+def convert_static(path, out, height):
+    """Furniture: its triangles only, standing on y 0 and centered in x and z."""
+    verts, norms, tris = obj_model(path)
+    lo, hi = verts.min(0), verts.max(0)
+    scale = height / (hi[1] - lo[1]) if height else 1.0
+    shift = np.array([-(lo[0] + hi[0]) / 2, -lo[1], -(lo[2] + hi[2]) / 2])
+    verts = (verts + shift) * scale
+    norms = norms / np.maximum(np.linalg.norm(norms, axis=1, keepdims=True), 1e-9)
+    assert len(verts) <= 65535, "too many vertices"
+    blob = bytearray(struct.pack("<4s5i", b"HDM1", 1, len(verts), len(tris), 0, 0))
+    for p, n in zip(verts, norms):
+        blob += struct.pack("<3i3h4B4B", *[int(round(x * 65536)) for x in p], *[int(round(x * 16384)) for x in n], 0, 0, 0, 0, 255, 0, 0, 0)
+    for a, b, c, color in tris:
+        blob += struct.pack("<3HHI", a, b, c, 0, color)
+    open(out, "wb").write(bytes(blob))
+    size = (hi - lo) * scale
+    print(f"{out}: {len(verts)} vertices, {len(tris)} triangles, {size[0]:.2f} x {size[1]:.2f} x {size[2]:.2f} m, {len(blob)} bytes")
 
 
 if __name__ == "__main__":

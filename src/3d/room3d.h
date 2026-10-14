@@ -19,6 +19,8 @@
 enum { ROOM3D_WORKER = 0, ROOM3D_FLATMATE, ROOM3D_PEOPLE };
 
 const r3d_mesh *room3d_scene(void);
+/* How many times the flat was built: again when a package brings other models (a game's walk grid is built again too). */
+int32_t room3d_builds(void);
 const r3d_light_cfg *room3d_light(void);
 const actor3d_kit *room3d_person(int32_t who);
 /*

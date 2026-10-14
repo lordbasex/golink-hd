@@ -99,6 +99,9 @@ void r3d_triangle(r3d_vec a, r3d_vec b, r3d_vec c, const int32_t na[3], const in
 /* Moves triangle `index` (a mesh's first + i), in the world, with its corners' normals: a skinned model posed every frame (model3d.h). */
 void r3d_tri_pose(int32_t index, r3d_vec a, r3d_vec b, r3d_vec c, const int32_t na[3], const int32_t nb[3], const int32_t nc[3]);
 
+/* A box that stops light and people but is not drawn (what a model made by an artist fills: model3d_add), in the place's axes. */
+void r3d_solid_box(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_t y1, int32_t z1);
+
 /* A lamp: where, how far its light reaches, its color and strength (256 is a desk lamp's). */
 void r3d_light(int32_t x, int32_t y, int32_t z, int32_t radius, uint32_t color, int32_t strength);
 

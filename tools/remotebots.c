@@ -9,7 +9,11 @@
  * suspicion got. See docs/game-remote-work.md, section 13 (phase 6).
  *
  *   make remotebots              four styles, 50 days each
- *   tools/remotebots [DAYS] [STYLE] [-v]
+ *   tools/remotebots [DAYS] [STYLE] [-v] [--content remote.glhd]
+ *
+ * With --content the days are played in the package's flat (its furniture
+ * made by artists), after checking that every place the day uses is still
+ * reached on foot from the hall.
  *
  * Every number comes from the game's own rules (remote.h), so after changing
  * one, run it again: a careful player should survive most days, a lazy one
@@ -22,6 +26,8 @@
 #include "room3d.h"
 #include "play3d.h"
 #include "games/remote/remote.h"
+
+int hd_content_load(const uint8_t *data, size_t size, const char **err);
 
 typedef struct
 {
@@ -152,19 +158,75 @@ static int32_t play_day(const style *sty, uint32_t seed)
    return peak;
 }
 
+/* Every place the day uses walked to from the hall at the worker's size; returns how many are not reached. */
+static int32_t places(void)
+{
+   int32_t kind, i, bad = 0, total = 0;
+   for (kind = REMOTE_PLACE_ACTIVITY; kind <= REMOTE_PLACE_MATE; kind++)
+      for (i = 0;; i++)
+      {
+         int32_t px, pz, x = ROOM3D_AT(450), z = ROOM3D_AT(725), tx, tz, dx, dz, f;
+         int64_t d2 = 0, near = (int64_t)FX_FRAC(15, 100) * FX_FRAC(15, 100);
+         if (!remote_place(kind, i, &px, &pz))
+            break;
+         total++;
+         tx = ROOM3D_AT(px), tz = ROOM3D_AT(pz);
+         for (f = 0; f < 3000; f++)
+         {
+            d2 = (int64_t)(x - tx) * (x - tx) + (int64_t)(z - tz) * (z - tz);
+            if (d2 < near || !play3d_route(3, x, z, tx, tz, &dx, &dz))
+               break;
+            play3d_move(&x, &z, (int32_t)(((int64_t)REMOTE_WALK * dx) >> 14), (int32_t)(((int64_t)REMOTE_WALK * dz) >> 14), REMOTE_RADIUS);
+         }
+         if (d2 >= near)
+         {
+            printf("  place %d of kind %d at (%d, %d) is not reached\n", (int)i, (int)kind, (int)px, (int)pz);
+            bad++;
+         }
+      }
+   printf("%d of %d places reached on foot\n", (int)(total - bad), (int)total);
+   return bad;
+}
+
 int main(int argc, char **argv)
 {
-   int32_t days = 50, only = -1, verbose = 0, i, s;
+   int32_t days = 50, only = -1, verbose = 0, i, s, positional = 0;
+   const char *content = NULL;
+   hd_static_init();
    for (i = 1; i < argc; i++)
    {
       if (!strcmp(argv[i], "-v"))
          verbose = 1;
-      else if (i == 1)
+      else if (!strcmp(argv[i], "--content") && i + 1 < argc)
+         content = argv[++i];
+      else if (positional++ == 0)
          days = hd_clamp(atoi(argv[i]), 1, 1000);
       else
          only = atoi(argv[i]);
    }
-   hd_static_init();
+   if (content)
+   {
+      FILE *f = fopen(content, "rb");
+      long n;
+      uint8_t *data;
+      const char *err;
+      if (!f || fseek(f, 0, SEEK_END) || (n = ftell(f)) <= 0 || fseek(f, 0, SEEK_SET))
+      {
+         fprintf(stderr, "cannot read %s\n", content);
+         return 1;
+      }
+      data = (uint8_t *)malloc((size_t)n);
+      if (!data || fread(data, 1, (size_t)n, f) != (size_t)n || !hd_content_load(data, (size_t)n, &err))
+      {
+         fprintf(stderr, "%s cannot be played\n", content);
+         return 1;
+      }
+      fclose(f);
+      hd_reset(&st);
+      hd_remote_new_day(&st); /* the package's flat built, its walk grid with it */
+      if (places())
+         return 1;
+   }
    printf("%-10s %9s %7s %6s %9s %15s %8s %16s\n", "style", "survived", "missed", "fired", "work", "score p10/50/90", "", "peak suspicion");
    for (s = 0; s < STYLES; s++)
    {

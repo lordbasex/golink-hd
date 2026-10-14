@@ -37,6 +37,7 @@ static actor3d_kit people[ROOM3D_PEOPLE];
 static pet3d_kit cat;
 static r3d_mesh props[ROOM3D_PROPS];
 static model3d_body bodies[ROOM3D_PEOPLE];
+static int32_t built_for = -1, builds;
 static int32_t bodies_gen = -1, bodies_first = -1;
 static r3d_mesh person_shadow;
 static const int32_t *T;
@@ -82,6 +83,46 @@ static void cyl(int32_t x, int32_t y, int32_t z, int32_t r, int32_t rt, int32_t 
 static void ball(int32_t x, int32_t y, int32_t z, int32_t rx, int32_t ry, int32_t rz, int32_t rings, uint32_t c)
 {
    r3d_ball(CM(x), CM(y), CM(z), CM(rx), CM(ry), CM(rz), rings, c);
+}
+
+/*
+ * A piece of furniture made by an artist in place of the built one: the
+ * package's model `name` (its front toward +z) fit into the built one's box
+ * (centimeters, the place's axes), its front turned toward `face` (FACE_*:
+ * the side of the box it looks out of), standing on the box's floor. Under
+ * it a low solid a little inside the box: walking goes round it and it
+ * darkens the floor under it, while the model's own faces (its seat, its
+ * cushions) stay outside every solid, lit (a solid of the whole box made
+ * them black). Returns 0 when the package has no such model: then the
+ * built one is built.
+ */
+enum { FACE_MZ = 2048, FACE_PX = 1024, FACE_MX = 3072, FACE_PZ = 0, MIRROR = 1 /* added to a FACE_*: left and right swapped (an L sofa's other hand) */,
+       NO_SOLID = 2 /* added: the caller gives the solids (an L does not fill its box) */ };
+static int piece(const char *name, int32_t face, int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_t y1, int32_t z1)
+{
+   int32_t solid = !(face & NO_SOLID), mirror = face & MIRROR;
+   const model3d *m = model3d_find(name);
+   r3d_vec lo, hi, scale, center;
+   int32_t mw, md, mh, across, along;
+   face &= ~(MIRROR | NO_SOLID);
+   if (!m || model3d_bones(m))
+      return 0;
+   model3d_bounds(m, &lo, &hi);
+   mw = hd_max(1, hi.x - lo.x), md = hd_max(1, hi.z - lo.z), mh = hd_max(1, hi.y - lo.y);
+   /* a quarter turn swaps the model's width and depth in the box */
+   across = (face == FACE_PX || face == FACE_MX) ? CM(z1 - z0) : CM(x1 - x0);
+   along = (face == FACE_PX || face == FACE_MX) ? CM(x1 - x0) : CM(z1 - z0);
+   scale.x = (int32_t)((int64_t)across * 65536 / mw);
+   scale.y = (int32_t)((int64_t)CM(y1 - y0) * 65536 / mh);
+   scale.z = (int32_t)((int64_t)along * 65536 / md);
+   if (mirror)
+      scale.x = -scale.x;
+   center.x = CM(x0 + x1) / 2, center.y = CM(y0), center.z = CM(z0 + z1) / 2;
+   plain();
+   model3d_add(m, scale, face, center);
+   if (solid)
+      r3d_solid_box(CM(x0 + 4), CM(y0), CM(z0 + 4), CM(x1 - 4), CM(y0 + hd_min(25, y1 - y0)), CM(z1 - 4));
+   return 1;
 }
 
 /* A picture stretched over a box's front (toward -z) and back. */
@@ -389,6 +430,8 @@ static void mug(int32_t x, int32_t y, int32_t z, uint32_t c)
 
 static void chair_wood(uint32_t wood, uint32_t seat)
 {
+   if (piece("chair", FACE_MZ, 0, 0, 0, 42, 92, 42))
+      return;
    bx(0, 44, 0, 42, 48, 42, wood);
    mat(TEX3D_FABRIC, 96);
    bx(2, 48, 2, 40, 51, 40, seat);
@@ -512,23 +555,32 @@ static void living(void)
     * The sofa, an L facing the TV (east), with cushions and a blanket.
     */
    at(560, 0, 60, 3072);
-   mat(TEX3D_FABRIC, 96);
-   bx(0, 10, 0, 220, 44, 95, 0x51637a);
-   bx(0, 44, 75, 220, 92, 95, 0x48586d);
-   bx(0, 44, 0, 18, 64, 75, 0x48586d);
-   bx(202, 10, -90, 220, 64, 0, 0x48586d);
-   bx(140, 10, -90, 202, 44, 0, 0x51637a);
-   for (i = 0; i < 3; i++)
-      bx(22 + i * 58, 44, 6, 76 + i * 58, 52, 72, 0x5e7189);
-   bx(150, 44, -84, 200, 52, 0, 0x5e7189);
-   bx(40, 52, 58, 80, 86, 72, 0xe08e45);
-   bx(150, 52, 60, 186, 82, 72, 0xe9c46a);
-   bx(100, 52, 62, 132, 80, 72, 0x2a9d8f);
-   mat(TEX3D_KNIT, 96);
-   bx(60, 52, 10, 120, 55, 60, 0xd9d2c5);
-   plain();
-   for (i = 0; i < 4; i++)
-      cyl(8 + (i & 1) * 204, 0, 8 + (i >> 1) * 80, 3, 2, 10, 6, 0x2c2c2c);
+   if (piece("sofa", FACE_MZ + MIRROR + NO_SOLID, 0, 0, -90, 220, 92, 95))
+   {
+      /* its two arms' solids, the corner in front of the seat left free */
+      r3d_solid_box(CM(4), 0, CM(4), CM(216), CM(25), CM(91));
+      r3d_solid_box(CM(144), 0, -CM(86), CM(216), CM(25), CM(4));
+   }
+   else
+   {
+      mat(TEX3D_FABRIC, 96);
+      bx(0, 10, 0, 220, 44, 95, 0x51637a);
+      bx(0, 44, 75, 220, 92, 95, 0x48586d);
+      bx(0, 44, 0, 18, 64, 75, 0x48586d);
+      bx(202, 10, -90, 220, 64, 0, 0x48586d);
+      bx(140, 10, -90, 202, 44, 0, 0x51637a);
+      for (i = 0; i < 3; i++)
+         bx(22 + i * 58, 44, 6, 76 + i * 58, 52, 72, 0x5e7189);
+      bx(150, 44, -84, 200, 52, 0, 0x5e7189);
+      bx(40, 52, 58, 80, 86, 72, 0xe08e45);
+      bx(150, 52, 60, 186, 82, 72, 0xe9c46a);
+      bx(100, 52, 62, 132, 80, 72, 0x2a9d8f);
+      mat(TEX3D_KNIT, 96);
+      bx(60, 52, 10, 120, 55, 60, 0xd9d2c5);
+      plain();
+      for (i = 0; i < 4; i++)
+         cyl(8 + (i & 1) * 204, 0, 8 + (i >> 1) * 80, 3, 2, 10, 6, 0x2c2c2c);
+   }
    /* the coffee table and what is on it */
    at(710, 0, 90, 3072);
    mat(TEX3D_WOOD, 128);
@@ -563,12 +615,15 @@ static void living(void)
    plant_pot(14, 0x8d99ae, 7);
    /* the armchair, north of the coffee table, and a floor lamp behind the sofa */
    at(700, 0, 380, 0);
-   mat(TEX3D_FABRIC, 96);
-   bx(0, 10, 0, 80, 44, 80, 0xb5654a);
-   bx(0, 44, 64, 80, 90, 80, 0xa65a40);
-   bx(0, 44, 0, 14, 66, 64, 0xa65a40);
-   bx(66, 44, 0, 80, 66, 64, 0xa65a40);
-   plain();
+   if (!piece("armchair", FACE_MZ, 0, 0, 0, 80, 90, 80))
+   {
+      mat(TEX3D_FABRIC, 96);
+      bx(0, 10, 0, 80, 44, 80, 0xb5654a);
+      bx(0, 44, 64, 80, 90, 80, 0xa65a40);
+      bx(0, 44, 0, 14, 66, 64, 0xa65a40);
+      bx(66, 44, 0, 80, 66, 64, 0xa65a40);
+      plain();
+   }
    at(440, 0, 300, 0);
    floor_lamp(0xf6e7c1);
    r3d_light(0, CM(150), 0, M(4), 0xffd59a, 300);
@@ -790,10 +845,13 @@ static void kitchen(void)
    ball(1566, 100, 434, 5, 5, 5, 3, 0xe63946);
    /* the fridge and the pantry */
    at(1532, 0, 564, 1024);
-   bx(0, 0, 0, 88, 195, 62, 0xe8eaec);
-   bx(43, 4, -1, 45, 191, 0, 0xb7bcc2);
-   bx(36, 90, -4, 39, 140, -1, 0xb7bcc2);
-   bx(49, 90, -4, 52, 140, -1, 0xb7bcc2);
+   if (!piece("fridge", FACE_MZ, 0, 0, 0, 88, 195, 62))
+   {
+      bx(0, 0, 0, 88, 195, 62, 0xe8eaec);
+      bx(43, 4, -1, 45, 191, 0, 0xb7bcc2);
+      bx(36, 90, -4, 39, 140, -1, 0xb7bcc2);
+      bx(49, 90, -4, 52, 140, -1, 0xb7bcc2);
+   }
    bx(10, 150, -2, 18, 158, -1, 0xe63946);        /* magnets and a drawing */
    bx(54, 140, -2, 76, 168, -1, 0xffe66d);
    at(0, 0, 0, 0);
@@ -987,27 +1045,33 @@ static void bedroom(void)
    int32_t i;
    /* the bed against the west wall: a frame, the mattress, a knitted duvet, pillows */
    at(10, 0, 930, 0);
-   mat(TEX3D_WOOD, 100);
-   bx(0, 0, 0, 200, 30, 160, 0x9c6b43);
-   bx(0, 30, 0, 8, 100, 160, 0x9c6b43);
-   plain();
-   bx(8, 30, 4, 196, 52, 156, 0xf4f1ea);
-   mat(TEX3D_KNIT, 80);
-   bx(70, 50, 2, 198, 60, 158, 0x8fb8a8);
-   bx(196, 30, 2, 198, 52, 158, 0x8fb8a8);
-   plain();
-   mat(TEX3D_FABRIC, 128);
-   bx(14, 52, 14, 54, 66, 74, 0xffffff);
-   bx(14, 52, 86, 54, 66, 146, 0xffffff);
-   bx(90, 60, 30, 140, 63, 100, 0xe9c46a);    /* a jumper left on the bed */
-   plain();
+   if (!piece("bed", FACE_PX, 0, 0, 0, 200, 100, 160))
+   {
+      mat(TEX3D_WOOD, 100);
+      bx(0, 0, 0, 200, 30, 160, 0x9c6b43);
+      bx(0, 30, 0, 8, 100, 160, 0x9c6b43);
+      plain();
+      bx(8, 30, 4, 196, 52, 156, 0xf4f1ea);
+      mat(TEX3D_KNIT, 80);
+      bx(70, 50, 2, 198, 60, 158, 0x8fb8a8);
+      bx(196, 30, 2, 198, 52, 158, 0x8fb8a8);
+      plain();
+      mat(TEX3D_FABRIC, 128);
+      bx(14, 52, 14, 54, 66, 74, 0xffffff);
+      bx(14, 52, 86, 54, 66, 146, 0xffffff);
+      bx(90, 60, 30, 140, 63, 100, 0xe9c46a);    /* a jumper left on the bed */
+      plain();
+   }
    /* nightstands with lamps, a book and a phone charging */
    for (i = 0; i < 2; i++)
    {
       at(10, 0, i ? 1095 : 880, 0);
-      mat(TEX3D_WOOD, 100);
-      bx(0, 0, 0, 45, 50, 40, 0xd4b48c);
-      plain();
+      if (!piece("nightstand", FACE_PX, 0, 0, 0, 45, 50, 40))
+      {
+         mat(TEX3D_WOOD, 100);
+         bx(0, 0, 0, 45, 50, 40, 0xd4b48c);
+         plain();
+      }
       cyl(20, 50, 20, 6, 6, 2, 8, 0x333333);
       cyl(20, 52, 20, 1, 1, 24, 4, 0x333333);
       r3d_glow(280);
@@ -1080,9 +1144,12 @@ static void bathroom(void)
    bx(84, 56, 118, 96, 66, 124, 0x4cc9f0);
    rubber_duck(110, 50, 60);
    at(470, 0, 540, 0);
-   bx(0, 0, 0, 40, 40, 50, 0xffffff);            /* the toilet */
-   bx(2, 40, 0, 38, 44, 50, 0xf1f1f1);
-   bx(0, 40, -16, 40, 80, 0, 0xffffff);
+   if (!piece("toilet", FACE_PZ, 0, 0, -16, 40, 80, 50))
+   {
+      bx(0, 0, 0, 40, 40, 50, 0xffffff);            /* the toilet */
+      bx(2, 40, 0, 38, 44, 50, 0xf1f1f1);
+      bx(0, 40, -16, 40, 80, 0, 0xffffff);
+   }
    cyl(52, 0, 30, 6, 6, 30, 8, 0xffffff);        /* a toilet brush */
    at(514, 0, 512, 0);
    bx(0, 0, 0, 80, 80, 45, 0x6c757d);            /* the sink's cupboard, beside the toilet (the door is east of it) */
@@ -1248,15 +1315,21 @@ static void laundry(void)
 {
    int32_t i;
    at(66, 0, 664, 3072);
-   bx(0, 0, 0, 60, 85, 60, 0xf8f9fa);             /* the washing machine, its door toward the room */
-   cyl(30, 40, -1, 18, 18, 2, 16, 0x9aa7b0);
-   bx(6, 70, -1, 30, 80, 0, 0x3a3a3a);
-   r3d_glow(300);
-   bx(40, 74, -1, 44, 78, 0, 0x38b000);
-   r3d_glow(0);
+   if (!piece("washer", FACE_MZ, 0, 0, 0, 60, 85, 60))
+   {
+      bx(0, 0, 0, 60, 85, 60, 0xf8f9fa);             /* the washing machine, its door toward the room */
+      cyl(30, 40, -1, 18, 18, 2, 16, 0x9aa7b0);
+      bx(6, 70, -1, 30, 80, 0, 0x3a3a3a);
+      r3d_glow(300);
+      bx(40, 74, -1, 44, 78, 0, 0x38b000);
+      r3d_glow(0);
+   }
    at(66, 85, 664, 3072);
-   bx(0, 0, 0, 60, 80, 60, 0xe9ecef);              /* the dryer on top */
-   cyl(30, 38, -1, 16, 16, 2, 16, 0xb8c0c8);
+   if (!piece("washer", FACE_MZ, 0, 0, 0, 60, 80, 60))
+   {
+      bx(0, 0, 0, 60, 80, 60, 0xe9ecef);              /* the dryer on top */
+      cyl(30, 38, -1, 16, 16, 2, 16, 0xb8c0c8);
+   }
    at(160, 0, 794, 2048);
    bx(0, 0, 0, 70, 84, 50, 0xd8d2c4);              /* a deep sink on a cupboard, against the north wall */
    bx(-2, 84, -2, 72, 88, 52, 0xf1f1f1);
@@ -1530,19 +1603,27 @@ void hd_r3d_build(void)
    static const opening hall_n[] = { { 380, 470, OPEN_DOOR, DOOR_UP_BEFORE }, { 650, 740, OPEN_DOOR, DOOR_DOWN_AFTER }, { 850, 940, OPEN_DOOR, DOOR_UP_AFTER }, { 1250, 1340, OPEN_DOOR, DOOR_UP_BEFORE } };
    static const opening liv_kit[] = { { 300, 640, OPEN_DOOR, 0 } };
    static const opening laundry_e[] = { { 690, 780, OPEN_DOOR, 0 } };
-   if (ready)
+   if (ready && built_for == model3d_gen)
       return;
    T = tex3d_build();
-   poster[0] = tex3d_poster(0, 4);
-   poster[1] = tex3d_poster(0, 1);
-   poster[2] = tex3d_poster(1, 2);
-   poster[3] = tex3d_poster(3, 3);
-   poster[4] = tex3d_poster(1, 5);
-   poster[5] = tex3d_poster(2, 5);
-   poster[6] = tex3d_poster(2, 3);
-   poster[7] = tex3d_poster(3, 0);
-   poster[8] = tex3d_poster(2, 11); /* the desk's two screens, redrawn as the work goes */
-   poster[9] = tex3d_poster(2, 12);
+   if (!ready)
+   {
+      poster[0] = tex3d_poster(0, 4);
+      poster[1] = tex3d_poster(0, 1);
+      poster[2] = tex3d_poster(1, 2);
+      poster[3] = tex3d_poster(3, 3);
+      poster[4] = tex3d_poster(1, 5);
+      poster[5] = tex3d_poster(2, 5);
+      poster[6] = tex3d_poster(2, 3);
+      poster[7] = tex3d_poster(3, 0);
+      poster[8] = tex3d_poster(2, 11); /* the desk's two screens, redrawn as the work goes */
+      poster[9] = tex3d_poster(2, 12);
+   }
+   /* built again when a package brings other models (its furniture goes in before the light is baked) */
+   built_for = model3d_gen;
+   builds++;
+   bodies_gen = -1;
+   bodies_first = -1;
    r3d_clear();
    r3d_detail(CM(60));
    r3d_begin();
@@ -1648,6 +1729,12 @@ const r3d_mesh *room3d_prop(int32_t which)
 {
    hd_r3d_build();
    return &props[hd_clamp(which, 0, ROOM3D_PROPS - 1)];
+}
+
+int32_t room3d_builds(void)
+{
+   hd_r3d_build();
+   return builds;
 }
 
 const r3d_mesh *room3d_shadow(void)

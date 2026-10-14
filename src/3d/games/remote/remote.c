@@ -133,15 +133,14 @@ int32_t remote_place(int32_t kind, int32_t a, int32_t *x, int32_t *z)
 /* Where the worker can walk: the house and its terrace, never out of the front door (the grid ends at the outer walls). */
 static void ready(void)
 {
-   static int built;
+   static int32_t built = -1;
    r3d_vec lo, hi;
-   if (built)
-      return;
-   hd_r3d_build();
+   if (built == room3d_builds())
+      return; /* the flat as it was (a package's furniture builds it again) */
    lo.x = ROOM3D_AT(0), lo.y = 0, lo.z = ROOM3D_AT(-210);
    hi.x = ROOM3D_AT(1600), hi.y = 0, hi.z = ROOM3D_AT(1250);
    play3d_grid(lo, hi, 0);
-   built = 1;
+   built = room3d_builds();
 }
 
 /* The point the camera follows: the worker's chest. */

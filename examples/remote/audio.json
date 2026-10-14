@@ -474,6 +474,78 @@
    "file": "models/hoodie.glb",
    "height": 1.72,
    "clips": "Idle,Walk,Run,Wave,Interact"
+  },
+  "sofa": {
+   "title": "Ultimate House Interior Pack: Couch_L",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/node/126986",
+   "url": "https://opengameart.org/sites/default/files/ultimate_house_interior_pack_-_june_2020.zip",
+   "zip": "models/ultimate_house_interior_pack_-_june_2020.zip",
+   "file": "models/ultimate_house_interior_pack_-_june_2020/Ultimate House Interior Pack - June 2020/OBJ/Couch_L.obj"
+  },
+  "armchair": {
+   "title": "Ultimate House Interior Pack: Couch_Small1",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/node/126986",
+   "url": "https://opengameart.org/sites/default/files/ultimate_house_interior_pack_-_june_2020.zip",
+   "zip": "models/ultimate_house_interior_pack_-_june_2020.zip",
+   "file": "models/ultimate_house_interior_pack_-_june_2020/Ultimate House Interior Pack - June 2020/OBJ/Couch_Small1.obj"
+  },
+  "chair": {
+   "title": "Ultimate House Interior Pack: Chair_1",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/node/126986",
+   "url": "https://opengameart.org/sites/default/files/ultimate_house_interior_pack_-_june_2020.zip",
+   "zip": "models/ultimate_house_interior_pack_-_june_2020.zip",
+   "file": "models/ultimate_house_interior_pack_-_june_2020/Ultimate House Interior Pack - June 2020/OBJ/Chair_1.obj"
+  },
+  "bed": {
+   "title": "Ultimate House Interior Pack: Bed_King",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/node/126986",
+   "url": "https://opengameart.org/sites/default/files/ultimate_house_interior_pack_-_june_2020.zip",
+   "zip": "models/ultimate_house_interior_pack_-_june_2020.zip",
+   "file": "models/ultimate_house_interior_pack_-_june_2020/Ultimate House Interior Pack - June 2020/OBJ/Bed_King.obj"
+  },
+  "nightstand": {
+   "title": "Ultimate House Interior Pack: NightStand_1",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/node/126986",
+   "url": "https://opengameart.org/sites/default/files/ultimate_house_interior_pack_-_june_2020.zip",
+   "zip": "models/ultimate_house_interior_pack_-_june_2020.zip",
+   "file": "models/ultimate_house_interior_pack_-_june_2020/Ultimate House Interior Pack - June 2020/OBJ/NightStand_1.obj"
+  },
+  "toilet": {
+   "title": "Ultimate House Interior Pack: Bathroom_Toilet",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/node/126986",
+   "url": "https://opengameart.org/sites/default/files/ultimate_house_interior_pack_-_june_2020.zip",
+   "zip": "models/ultimate_house_interior_pack_-_june_2020.zip",
+   "file": "models/ultimate_house_interior_pack_-_june_2020/Ultimate House Interior Pack - June 2020/OBJ/Bathroom_Toilet.obj"
+  },
+  "washer": {
+   "title": "Ultimate House Interior Pack: Bathroom_WashingMachine",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/node/126986",
+   "url": "https://opengameart.org/sites/default/files/ultimate_house_interior_pack_-_june_2020.zip",
+   "zip": "models/ultimate_house_interior_pack_-_june_2020.zip",
+   "file": "models/ultimate_house_interior_pack_-_june_2020/Ultimate House Interior Pack - June 2020/OBJ/Bathroom_WashingMachine.obj"
+  },
+  "fridge": {
+   "title": "Ultimate House Interior Pack: Kitchen_Fridge",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://opengameart.org/node/126986",
+   "url": "https://opengameart.org/sites/default/files/ultimate_house_interior_pack_-_june_2020.zip",
+   "zip": "models/ultimate_house_interior_pack_-_june_2020.zip",
+   "file": "models/ultimate_house_interior_pack_-_june_2020/Ultimate House Interior Pack - June 2020/OBJ/Kitchen_Fridge.obj"
   }
  }
 }

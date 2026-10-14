@@ -38,6 +38,16 @@ const model3d *model3d_find(const char *name);
 /* Bumped whenever the models change: what was built from them is built again. */
 extern int32_t model3d_gen;
 
+/* What a model fills at rest: its box (16.16 m; it stands on y 0, centered in x and z). */
+void model3d_bounds(const model3d *m, r3d_vec *lo, r3d_vec *hi);
+/*
+ * A model's triangles into the mesh being built (between r3d_begin and
+ * r3d_end), as built at the place r3d_place set: scaled by `scale` (16.16
+ * along the model's x, y and z), turned by `yaw` and moved to `center` in the
+ * place's axes; a negative scale mirrors it. For furniture.
+ */
+void model3d_add(const model3d *m, r3d_vec scale, int32_t yaw, r3d_vec center);
+
 int32_t model3d_bones(const model3d *m);
 /* A bone by name (-1: none), its parent (-1: the root). */
 int32_t model3d_bone(const model3d *m, const char *name);

@@ -54,3 +54,11 @@ and, for the music, looped and stored as IMA ADPCM.
 | effect `shower` | shower.wav | simosco (freesound.org) | CC0 1.0 | https://freesound.org/people/simosco/sounds/235574/ |
 | model `worker` | Casual Character | Quaternius | CC0 1.0 | https://poly.pizza/m/kZ3DmIoGip |
 | model `flatmate` | Hoodie Character | Quaternius | CC0 1.0 | https://poly.pizza/m/gKLBoRsyKe |
+| model `sofa` | Ultimate House Interior Pack: Couch_L | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
+| model `armchair` | Ultimate House Interior Pack: Couch_Small1 | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
+| model `chair` | Ultimate House Interior Pack: Chair_1 | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
+| model `bed` | Ultimate House Interior Pack: Bed_King | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
+| model `nightstand` | Ultimate House Interior Pack: NightStand_1 | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
+| model `toilet` | Ultimate House Interior Pack: Bathroom_Toilet | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
+| model `washer` | Ultimate House Interior Pack: Bathroom_WashingMachine | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
+| model `fridge` | Ultimate House Interior Pack: Kitchen_Fridge | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |

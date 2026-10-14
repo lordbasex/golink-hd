@@ -42,6 +42,7 @@ struct model3d
 {
    char name[32];
    int32_t nv, nt, nb, nc;
+   r3d_vec lo, hi;
    m3_vert *v;
    m3_tri *t;
    int32_t parent[MODEL3D_BONES];
@@ -222,6 +223,13 @@ const char *model3d_load(const char *name, const uint8_t *data, size_t size)
       if (!sum)
          v->w[0] = 255;
    }
+   m->lo = m->hi = m->v[0].p;
+   for (i = 1; i < m->nv; i++)
+   {
+      m->lo.x = hd_min(m->lo.x, m->v[i].p.x), m->hi.x = hd_max(m->hi.x, m->v[i].p.x);
+      m->lo.y = hd_min(m->lo.y, m->v[i].p.y), m->hi.y = hd_max(m->hi.y, m->v[i].p.y);
+      m->lo.z = hd_min(m->lo.z, m->v[i].p.z), m->hi.z = hd_max(m->hi.z, m->v[i].p.z);
+   }
    for (i = 0; i < m->nt; i++, p += 12)
    {
       for (k = 0; k < 3; k++)
@@ -279,6 +287,40 @@ const model3d *model3d_find(const char *name)
       if (!strcmp(models[i].name, name))
          return &models[i];
    return NULL;
+}
+
+void model3d_bounds(const model3d *m, r3d_vec *lo, r3d_vec *hi)
+{
+   *lo = m->lo;
+   *hi = m->hi;
+}
+
+void model3d_add(const model3d *m, r3d_vec scale, int32_t yaw, r3d_vec center)
+{
+   int32_t r[9], i, k;
+   r3d_rotation(yaw, 0, 0, r);
+   for (i = 0; i < m->nt; i++)
+   {
+      r3d_vec p[3];
+      int32_t n[3][3];
+      for (k = 0; k < 3; k++)
+      {
+         const m3_vert *v = &m->v[m->t[i].v[k]];
+         r3d_vec q, vn;
+         q.x = (int32_t)((int64_t)v->p.x * scale.x >> 16);
+         q.y = (int32_t)((int64_t)v->p.y * scale.y >> 16);
+         q.z = (int32_t)((int64_t)v->p.z * scale.z >> 16);
+         q = model3d_apply(r, q);
+         p[k].x = q.x + center.x, p[k].y = q.y + center.y, p[k].z = q.z + center.z;
+         vn.x = scale.x < 0 ? -v->n[0] : v->n[0], vn.y = scale.y < 0 ? -v->n[1] : v->n[1], vn.z = scale.z < 0 ? -v->n[2] : v->n[2];
+         vn = model3d_apply(r, vn);
+         n[k][0] = vn.x, n[k][1] = vn.y, n[k][2] = vn.z;
+      }
+      if (((int64_t)scale.x < 0) ^ ((int64_t)scale.y < 0) ^ ((int64_t)scale.z < 0))
+         r3d_triangle(p[0], p[2], p[1], n[0], n[2], n[1], m->t[i].color); /* mirrored: its corners the other way round, its front still out */
+      else
+         r3d_triangle(p[0], p[1], p[2], n[0], n[1], n[2], m->t[i].color);
+   }
 }
 
 int32_t model3d_bones(const model3d *m)

@@ -568,6 +568,11 @@ static void add_solid(int32_t kind, r3d_vec lo, r3d_vec hi, int32_t r0, int32_t 
    s->r1 = r1;
 }
 
+void r3d_solid_box(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_t y1, int32_t z1)
+{
+   add_solid(SOLID_BOX, vec(hd_min(x0, x1), hd_min(y0, y1), hd_min(z0, z1)), vec(hd_max(x0, x1), hd_max(y0, y1), hd_max(z0, z1)), 0, 0);
+}
+
 void r3d_bevel(int32_t size)
 {
    cur_bevel = hd_max(0, size);
