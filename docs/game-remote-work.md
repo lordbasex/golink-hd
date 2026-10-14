@@ -506,7 +506,12 @@ own glowing pictures of code, put just in front of the model's screen; the
 bulb still glows inside the lamp's shade; the computer stands under the desk
 with a blue light, only with the package (the built flat stays as it was, so
 its pictures do not change). The keyboard stays built: its glow is better
-than the models found. `tools/remotebots --content`: 27 of 27 places
+than the models found. The user saw the worker sitting with no keyboard or
+mouse: the models' monitor stands covered them. The screens moved to the back
+of the desk, the keyboard (now with its keys) and the mouse on its pad to the
+front edge, and the model got its own typing pose: it sits 14 cm forward on
+the seat, the left hand on the keys and the right on the mouse, palms down
+(found by rendering it from the sides and from above). `tools/remotebots --content`: 27 of 27 places
 reached, the careful player survives every day.
 
 **Furniture made by artists (2026-10-14).** From Quaternius's "Ultimate House

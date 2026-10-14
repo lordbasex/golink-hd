@@ -465,11 +465,11 @@ static void desk_chair(void)
 }
 
 /* A screen at its place, its picture a texture that glows. */
-static void monitor(int32_t x, int32_t w, int32_t h, int32_t tex)
+static void monitor(int32_t x, int32_t z, int32_t w, int32_t h, int32_t tex)
 {
    int32_t front = 9;
-   if (piece("monitor", FACE_MZ | NO_SOLID, x, 0, 8, x + w, 12 + h, 20))
-      front = 12; /* the package's monitor: its screen's face is a little in front of its box's middle */
+   if (piece("monitor", FACE_MZ | NO_SOLID, x, 0, z + 8, x + w, 12 + h, z + 20))
+      front = z + 12; /* the package's monitor: its screen's face is a little in front of its box's middle */
    else
    {
       bx(x + w / 2 - 10, 0, 6, x + w / 2 + 10, 2, 22, 0x2a2a2e);
@@ -969,15 +969,35 @@ static void office(void)
       r3d_glow(0);
    }
    at(860, 76, 1168, 0);
-   monitor(30, 60, 34, poster[8]);
-   monitor(96, 60, 34, poster[9]);
-   bx(50, 0, 14, 110, 2, 30, 0x222226);           /* keyboard, glowing a little */
-   r3d_glow(140);
-   bx(52, 2, 16, 108, 3, 28, 0x7b2cbf);
-   r3d_glow(0);
-   if (!piece("mouse", FACE_MZ | NO_SOLID, 118, 0, 16, 126, 3, 27)) /* mouse */
-      bx(118, 0, 16, 126, 3, 26, 0x222226);
-   bx(112, 0, 10, 140, 1, 32, 0x3c3c46);
+   if (model3d_find("monitor"))
+   {
+      /* the package's screens to the back, the keyboard and the mouse at the front edge, under the hands */
+      int32_t row, col;
+      monitor(30, 26, 60, 34, poster[8]);
+      monitor(96, 26, 60, 34, poster[9]);
+      bx(54, 0, 3, 116, 2, 21, 0x1d1d22);
+      r3d_glow(160);
+      bx(53, 0, 2, 117, 1, 22, 0x7b2cbf); /* its light underneath */
+      r3d_glow(0);
+      for (row = 0; row < 4; row++)
+         for (col = 0; col < 14; col++)
+            bx(57 + col * 4, 2, 5 + row * 4, 60 + col * 4, 3, 8 + row * 4, row == 0 && col > 3 && col < 10 ? 0x9a9aa6 : 0xd6d6de);
+      bx(73, 2, 5, 97, 3, 8, 0xd6d6de); /* the space bar */
+      bx(120, 0, 2, 148, 1, 24, 0x3c3c46);
+      if (!piece("mouse", FACE_MZ | NO_SOLID, 129, 1, 7, 137, 5, 18))
+         bx(129, 1, 7, 137, 4, 17, 0x222226);
+   }
+   else
+   {
+      monitor(30, 0, 60, 34, poster[8]);
+      monitor(96, 0, 60, 34, poster[9]);
+      bx(50, 0, 14, 110, 2, 30, 0x222226);        /* keyboard, glowing a little */
+      r3d_glow(140);
+      bx(52, 2, 16, 108, 3, 28, 0x7b2cbf);
+      r3d_glow(0);
+      bx(118, 0, 16, 126, 3, 26, 0x222226);       /* mouse */
+      bx(112, 0, 10, 140, 1, 32, 0x3c3c46);
+   }
    mug(14, 0, 20, 0xe9c46a);
    can(150, 0, 18, 0x06d6a0);
    can(160, 0, 26, 0xef476f);

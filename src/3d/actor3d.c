@@ -329,6 +329,26 @@ int32_t actor3d_place(const actor3d_kit *k, const actor3d_pose *p, r3d_instance 
 
 /* ---- a person made by an artist (model3d.h) ---- */
 
+/*
+ * Typing, for a model: its arms are longer and its shoulders wider than the
+ * built person's, so the forearms reach forward and in to the keyboard, the
+ * hands turned palm down (a twist along the forearm); the right hand (side
+ * 0) rests on the mouse beside it. Found by rendering it at the desk.
+ */
+#ifndef TYPE_UPPER
+#define TYPE_UPPER 800
+#define TYPE_ELBOW 300
+#define TYPE_SPREAD 250
+#define TYPE_TWIST 1024
+#define TYPE_LEAN -150
+#define MOUSE_UPPER 800
+#define MOUSE_ELBOW 300
+#define MOUSE_SPREAD 200
+#endif
+#ifndef TYPE_REACH
+#define TYPE_REACH 14 /* cm: it sits forward on the seat, closer to the desk */
+#endif
+
 /* The bones the pose turns, found by name once per model. */
 enum { MB_HIPS = 0, MB_SPINE, MB_HEAD, MB_UPPER, MB_FORE = MB_UPPER + 2, MB_WRIST = MB_FORE + 2, MB_THIGH = MB_WRIST + 2, MB_SHIN = MB_THIGH + 2, MB_COUNT = MB_SHIN + 2 };
 /* side 0 of a pose is the person's right: the model's ".R" */
@@ -417,6 +437,14 @@ int32_t actor3d_place_model(model3d_body *body, const actor3d_pose *p, const r3d
    if (!m || !model3d_bones(m))
       return 0;
    angles(p, &a);
+   if (p->type)
+   {
+      a.upper[0] = MOUSE_UPPER, a.elbow[0] = MOUSE_ELBOW, a.spread[0] = MOUSE_SPREAD;
+      a.upper[1] = TYPE_UPPER;
+      a.elbow[1] = TYPE_ELBOW + (int32_t)(((int64_t)hd_sin((p->phase * 3) & 4095) * 40) >> 14);
+      a.spread[1] = -TYPE_SPREAD;
+      a.lean = TYPE_LEAN;
+   }
    for (i = 0; i < MB_COUNT; i++)
       bone[i] = model3d_bone(m, bone_names[i]);
    /* each limb made to hang first: from its joint toward the next one at rest (the foot: the shin's first child) */
@@ -487,6 +515,12 @@ int32_t actor3d_place_model(model3d_body *body, const actor3d_pose *p, const r3d
          r3d_rot_mul(lean_a, r, u);
          to_model(u, turns[MB_UPPER + side]);
          r3d_rotation(0, a.upper[side] + a.elbow[side], a.spread[side] / 3, r);
+         if (p->type)
+         {
+            int32_t tw[9];
+            r3d_rotation(side ? -TYPE_TWIST : TYPE_TWIST, 0, 0, tw); /* palm down */
+            r3d_rot_mul(r, tw, r);
+         }
          r3d_rot_mul(lean_a, r, u);
          to_model(u, turns[MB_FORE + side]);
          if (bone[MB_THIGH + side] >= 0)
@@ -542,6 +576,11 @@ int32_t actor3d_place_model(model3d_body *body, const actor3d_pose *p, const r3d
          r3d_rot_mul(lie, place, place);
          r3d_rot_mul(lie, yawm, yawm);
       }
+   }
+   if (p->type && !p->lie)
+   {
+      r3d_vec f = r3d_rot_apply(yawm, v3(0, 0, -CM(TYPE_REACH)));
+      at.x += f.x, at.z += f.z;
    }
    model3d_body_pose(body, global, place, at);
    memset(&out[n], 0, sizeof out[n]);
