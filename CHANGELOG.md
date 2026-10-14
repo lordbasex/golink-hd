@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- TELETRABAJO: CÁMARA APAGADA, more of the boss: production down (a hotfix deployed at the desk, with its progress), "can you work this weekend?" (answered at the desk: yes calms the boss and sells the weekend, no costs a little suspicion, no answer counts as yes), a video call with the camera on (the boss sees the cat, the flatmate, the worker asleep), a window that shows every call, the boss's chatter between events; the guitar held with one hand on the neck and the other strumming (`actor3d_pose.strum`).
 - TELETRABAJO: CÁMARA APAGADA, phase 6 (polish): balanced with bots that play like people (`make remotebots`, `tools/remotebots.c`): the boss's suspicion moves now (working calms 1 every 3 minutes, answering half as much, being away weighs 2 a minute); things in the hands (a mug, a pan, a controller, a guitar, a watering can, the parcel, headphones); water in the shower; every text checked to fit in its three languages; `docs/3d.md` guide for the next 3D game, steps 12 to 18.
 - People can hold things: `actor3d_pose.prop` (between both hands or in the right one, turned by `prop_pitch` and `prop_roll`); `room3d_prop`.
 - TELETRABAJO: CÁMARA APAGADA, phase 5 (the sound), recorded and not synthesized, all in the public domain (CC0):

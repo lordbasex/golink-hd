@@ -130,11 +130,28 @@ static r3d_vec add(r3d_vec a, r3d_vec b)
    return v3(a.x + b.x, a.y + b.y, a.z + b.z);
 }
 
+/*
+ * Playing a guitar: the arms' angles (found by rendering it from the front
+ * and the side until the hands met the guitar) and where the guitar sits,
+ * in centimeters from the hips: a little to the strumming side, at the
+ * belly, in front of it.
+ */
+#define STRUM_UPPER0 300
+#define STRUM_ELBOW0 650
+#define STRUM_SPREAD0 -700
+#define STRUM_UPPER1 520
+#define STRUM_ELBOW1 250
+#define STRUM_SPREAD1 -1500
+#define STRUM_GX 4
+#define STRUM_GY 22
+#define STRUM_GZ 20
+
 int32_t actor3d_place(const actor3d_kit *k, const actor3d_pose *p, r3d_instance *out)
 {
    int32_t n = 0, side, yawm[9], id[9], sw = 0, bob = 0;
    int32_t thigh[2], knee[2], upper[2], elbow[2], spread[2], lean = 0, hip_y = CM(94), head_turn = p->look;
    r3d_vec hip, chest, shoulder[2], hipj[2], hand[2];
+   int32_t lean_m[9];
    r3d_rotation(p->yaw, 0, 0, yawm);
    r3d_rotation(0, 0, 0, id);
    /* the pose's angles, in the engine's units (4096 a turn); a positive pitch swings a limb's end forward (toward the face) */
@@ -181,6 +198,16 @@ int32_t actor3d_place(const actor3d_kit *k, const actor3d_pose *p, r3d_instance 
          spread[side] = side ? -160 : 160;
       }
    }
+   if (p->strum)
+   {
+      /* side 0 strums over the guitar's body at the hip, side 1 reaches out along its neck */
+      upper[0] = STRUM_UPPER0;
+      elbow[0] = STRUM_ELBOW0 + (int32_t)(((int64_t)hd_sin((p->phase * 3) & 4095) * 90) >> 14);
+      spread[0] = STRUM_SPREAD0;
+      upper[1] = STRUM_UPPER1;
+      elbow[1] = STRUM_ELBOW1;
+      spread[1] = STRUM_SPREAD1;
+   }
    if (p->type)
    {
       /* the arms forward to a keyboard, the hands moving a little */
@@ -215,6 +242,7 @@ int32_t actor3d_place(const actor3d_kit *k, const actor3d_pose *p, r3d_instance 
    {
       int32_t tl[9], ht[9];
       r3d_rotation(0, lean, 0, tl);
+      memcpy(lean_m, tl, sizeof lean_m);
       chest = add(hip, v3(0, CM(6), 0));
       put(out, &n, &k->part[ACT_TORSO], p->at, yawm, chest, tl);
       r3d_rotation(head_turn, lean + p->nod, 0, ht);
@@ -237,7 +265,7 @@ int32_t actor3d_place(const actor3d_kit *k, const actor3d_pose *p, r3d_instance 
       if (p->prop && p->prop->count)
       {
          int32_t pt[9];
-         r3d_vec grip = p->hold ? v3((hand[0].x + hand[1].x) / 2, (hand[0].y + hand[1].y) / 2, (hand[0].z + hand[1].z) / 2) : hand[1];
+         r3d_vec grip = p->strum ? add(hip, r3d_rot_apply(lean_m, v3(CM(STRUM_GX), CM(STRUM_GY), -CM(STRUM_GZ)))) : p->hold ? v3((hand[0].x + hand[1].x) / 2, (hand[0].y + hand[1].y) / 2, (hand[0].z + hand[1].z) / 2) : hand[1];
          r3d_rotation(0, lean + p->prop_pitch, p->prop_roll, pt);
          put(out, &n, p->prop, p->at, yawm, grip, pt);
       }

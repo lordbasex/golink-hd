@@ -185,8 +185,22 @@ shrinking red bar.
 | Surprise video call | 45 real seconds | 10 game minutes | +300 | -50 |
 | Urgent message | 30 real seconds | none: the answer is enough | +150 | -25 |
 | Screen share | 20 real seconds | 5 game minutes | +200 | -40 |
+| Production down, a hotfix | 40 real seconds | 20 game minutes deploying ("deploying"); then +150 points | +350 | -30 |
+| "Can you work this weekend?" | 30 real seconds, then an answer at the desk: A "of course" (-60, the weekend sold: -250 points at the end) or X "I have plans" (+60) | none | +150, and it counts as a yes | see the limit |
+| Video call with the camera on | 30 real seconds | 8 game minutes: the boss also sees the cat on the desk, the flatmate in the office, the worker asleep (+100 each, once) | +300 | -40 |
 
 The code's table (`boss_events`) keeps the first design's calm (-80, -100, -50, -80); `REMOTE_ANSWER_CALM` (50 %) halves it, which is what the table above shows.
+
+A day has at most one weekend question and one hotfix. Between events the
+boss also writes things that need no answer (log your hours, a meeting to
+plan meetings, can the AI do your ticket), every 40 to 80 game minutes, so
+something is always going on.
+
+During any call a window at the top shows it: the boss talking in a little
+video and the time left; with the camera on, the worker's own picture with
+a red dot (the cat in it when it is on the desk); else "your camera: off". A
+hotfix shows the deploy instead: a bar, the step it is on (`git push -f`,
+`npm run build`, `kubectl apply`, `pray.sh`) and the percent.
 
 Limits are in real seconds because they are about the player's reaction, not
 the story's clock. The meeting is announced 20 game minutes ahead (about 22
@@ -483,6 +497,17 @@ before the next one.
 | 8 | Willy Maker | Whatever it needs from this game | last |
 
 ## 13. Progress
+
+**More of the boss (2026-10-14, after phase 6).** The user asked for a video
+call that shows, and for events like "production is down, deploy a fix",
+"can you work this weekend?" and "share your screen". Added (section 5): the
+hotfix, the weekend question with its two answers, the camera call that sees
+the house, the call's window, and the boss's chatter. The guitar is held
+for real now (`actor3d_pose.strum`: one hand along the neck, the other over
+the body; the angles were found by rendering it from the front and the side
+until the hands met it). `make remotebots` after the change: careful 98 %
+survived, casual 68 %, slacker fired 18 %, workaholic short of the hours
+(and its weekend sold).
 
 **Phase 6, polish (2026-10-14).**
 

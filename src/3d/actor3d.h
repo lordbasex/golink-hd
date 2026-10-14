@@ -49,13 +49,14 @@ typedef struct
    int32_t crouch;    /* the knees bent low: in front of the washing machine */
    int32_t lie;       /* lying on the back, the head toward where it faces' back; at.y is what it lies on (a bed, a lounger) */
    /*
-    * What the hands hold (NULL: nothing): between both hands with `hold`, else
-    * in the right one. Built around where it is gripped, its front toward -z
+    * What the hands hold (NULL: nothing): between both hands with `hold`, in
+    * front of the belly with `strum`, else in the right one. Built around where it is gripped, its front toward -z
     * like the person's face; prop_pitch tilts it (a positive pitch raises its
     * front) and prop_roll turns it around its front (a guitar's neck up).
     */
    const r3d_mesh *prop;
    int32_t prop_pitch, prop_roll;
+   int32_t strum;     /* playing a guitar (the prop, in front of the belly): one hand along its neck, the other strumming over its body */
 } actor3d_pose;
 
 /* Builds the parts (with the fabric texture's id for the clothes, -1 none). */

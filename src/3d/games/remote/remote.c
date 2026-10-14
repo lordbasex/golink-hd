@@ -84,6 +84,9 @@ static const struct
    [RE_CALL] = { 45, 10, 300, 100 },
    [RE_MESSAGE] = { 30, 0, 150, 50 },
    [RE_SHARE] = { 20, 5, 200, 80 },
+   [RE_HOTFIX] = { 40, 20, 350, 60 },  /* then deploying at the desk; done, it pays REMOTE_HOTFIX_POINTS */
+   [RE_WEEKEND] = { 30, 0, 150, 120 }, /* answered "of course" (calm, the weekend sold) or "I have plans" (REMOTE_WEEKEND_NO) */
+   [RE_CAMERA] = { 30, 8, 300, 80 },   /* the boss sees the cat, the flatmate, the worker asleep */
 };
 #define MEETING_WARN 40 /* 09:40: the meeting is announced */
 #define MEETING_AT 60   /* 10:00 */
@@ -460,6 +463,8 @@ static void end_day(hd_remote *g, int32_t how)
       g->score = g->points / 2;
    else
       g->score = g->points + 1000 + (REMOTE_SUSPICION_MAX - g->suspicion) - 2 * hd_max(0, worked - REMOTE_OVERTIME);
+   if (g->weekend == 1 && how != REND_FIRED)
+      g->score -= REMOTE_WEEKEND_COST; /* the weekend sold */
    g->screen = RSC_END;
    g->screen_t = 0;
    g->best_new = g->score > g->best && !g->attract;
@@ -482,7 +487,13 @@ static void plan_day(hd_state *s, hd_remote *g)
    }
    n = 0;
    for (i = 0; i < nb; i++)
-      kinds[n++] = RE_CALL + rng_range(&s->rng, RE_BOSS_KINDS - 1);
+   {
+      int32_t k = RE_CALL + rng_range(&s->rng, RE_BOSS_KINDS - 1), j;
+      for (j = 0; j < n; j++)
+         if (kinds[j] == k && (k == RE_WEEKEND || k == RE_HOTFIX))
+            k = RE_CALL; /* the weekend is asked once, production falls once */
+      kinds[n++] = k;
+   }
    for (i = 0; i < nr; i++)
       kinds[n++] = house[i];
    for (i = n - 1; i > 0; i--)
@@ -545,14 +556,18 @@ static void fire(hd_state *s, hd_remote *g, int32_t kind)
 /* What the boss hears on a call, once each: the house's noises (and snoring). */
 static void on_call(hd_remote *g)
 {
-   static const int32_t rise[5] = { REMOTE_NOISE, REMOTE_NOISE, REMOTE_NOISE, 0, REMOTE_NOISE };
-   int32_t heard[5], i;
+   static const int32_t rise[REMOTE_HEARD] = { REMOTE_NOISE, REMOTE_NOISE, REMOTE_NOISE, 0, REMOTE_NOISE, REMOTE_NOISE, REMOTE_NOISE, REMOTE_NOISE };
+   int32_t heard[REMOTE_HEARD], i, camera = g->boss == RE_CAMERA + 1;
    heard[0] = g->washer_t > 0;
    heard[1] = g->bell_owed;
    heard[2] = g->mate && g->mate_x > ROOM3D_AT(750) && g->mate_x < ROOM3D_AT(1150) && g->mate_z > ROOM3D_AT(800);
    heard[3] = g->drill_t > 0 && !g->headphones;
    heard[4] = g->energy < REMOTE_WORK_ASLEEP;
-   for (i = 0; i < 5; i++)
+   /* with the camera on the boss also sees: the cat on the desk, the flatmate behind (anywhere in the office), the worker asleep */
+   heard[5] = camera && (g->cat_keys == 2 || (g->cat_spot == SPOT_KEYS && g->cat_mode == CAT_REST && g->cat_y > 0));
+   heard[6] = camera && g->mate && g->mate_x > ROOM3D_AT(750) && g->mate_x < ROOM3D_AT(1150) && g->mate_z > ROOM3D_AT(800);
+   heard[7] = camera && g->energy < REMOTE_WORK_ASLEEP;
+   for (i = 0; i < REMOTE_HEARD; i++)
       if (heard[i] && !(g->boss_noise & (1 << i)))
       {
          g->boss_noise |= 1 << i;
@@ -566,7 +581,13 @@ static void on_call(hd_remote *g)
       }
 }
 
-static void day(hd_state *s, hd_remote *g)
+/* The weekend question waits at the desk for an answer. */
+static int weekend_asked(const hd_remote *g)
+{
+   return g->boss == RE_WEEKEND + 1 && !g->boss_call && at_desk(g) && g->energy >= REMOTE_WORK_ASLEEP;
+}
+
+static void day(hd_state *s, hd_remote *g, int32_t choice)
 {
    int minute = (g->t % FPM) == FPM - 1;
    /* the events whose time came; the boss's wait while another one is under way or the internet is down */
@@ -587,7 +608,24 @@ static void day(hd_state *s, hd_remote *g)
       int32_t kind = g->boss - 1;
       if (!g->boss_call)
       {
-         if (at_desk(g) && g->energy >= REMOTE_WORK_ASLEEP)
+         if (kind == RE_WEEKEND && weekend_asked(g) && choice)
+         {
+            /* "of course" calms the boss and sells the weekend; "I have plans" costs a little suspicion */
+            g->weekend = choice;
+            if (choice == 1)
+            {
+               suspect(g, -boss_events[kind].answered * REMOTE_ANSWER_CALM / 100);
+               phone(g, RW_YOU, RT_BOSS_YES + kind);
+            }
+            else
+            {
+               suspect(g, REMOTE_WEEKEND_NO);
+               phone(g, RW_YOU, RT_WEEKEND_NO);
+               phone(g, RW_BOSS, RT_WEEKEND_NO_BOSS);
+            }
+            g->boss = 0;
+         }
+         else if (kind != RE_WEEKEND && at_desk(g) && g->energy >= REMOTE_WORK_ASLEEP)
          {
             suspect(g, -boss_events[kind].answered * REMOTE_ANSWER_CALM / 100);
             phone(g, RW_YOU, RT_BOSS_YES + kind);
@@ -602,6 +640,8 @@ static void day(hd_state *s, hd_remote *g)
          }
          else if (--g->boss_t <= 0)
          {
+            if (kind == RE_WEEKEND)
+               g->weekend = 1; /* no answer counts as a yes */
             suspect(g, boss_events[kind].missed);
             phone(g, RW_BOSS, RT_BOSS_MISS + kind);
             g->boss = 0;
@@ -611,7 +651,17 @@ static void day(hd_state *s, hd_remote *g)
       {
          on_call(g);
          if (--g->boss_t <= 0)
+         {
+            if (kind == RE_HOTFIX)
+            {
+               /* deployed: it works, nobody knows why */
+               g->points += REMOTE_HOTFIX_POINTS;
+               g->hotfixes++;
+               phone(g, RW_BOSS, RT_HOTFIX_DONE);
+               toast(g, RT_HOTFIX_DONE, REMOTE_HOTFIX_POINTS);
+            }
             g->boss = 0, g->boss_call = 0;
+         }
       }
    }
    /* the house's timers */
@@ -640,6 +690,12 @@ static void day(hd_state *s, hd_remote *g)
       else if (g->away_t > REMOTE_AWAY_GRACE * FPM)
          suspect(g, REMOTE_AWAY_RISE);
    }
+   /* now and then the boss writes something that needs no answer */
+   if (!g->boss && !g->net_t && minute && g->t / FPM >= g->chatter_at)
+   {
+      phone(g, RW_BOSS, RT_CHATTER + rng_range(&s->rng, REMOTE_CHATTER));
+      g->chatter_at = g->t / FPM + 40 + rng_range(&s->rng, 40);
+   }
    cat_step(s, g);
    if (g->mate)
       mate_step(s, g);
@@ -658,7 +714,7 @@ static int32_t status(const hd_remote *g)
    if (g->net_t)
       return RS_OFFLINE;
    if (g->boss && g->boss_call)
-      return g->boss == RE_MEETING + 1 ? RS_MEETING : RS_CALL;
+      return g->boss == RE_MEETING + 1 ? RS_MEETING : g->boss == RE_HOTFIX + 1 ? RS_DEPLOY : RS_CALL;
    if (!at_desk(g) && g->away_t > REMOTE_AWAY_GRACE * FPM)
       return RS_AWAY;
    return RS_ONLINE;
@@ -734,6 +790,7 @@ static void new_day(hd_state *s, hd_remote *g)
    g->cat_mode = CAT_REST;
    g->cat_t = 40 * 60;
    plan_day(s, g);
+   g->chatter_at = 30 + rng_range(&s->rng, 30);
    phone(g, RW_BOSS, RT_GREETING);
    g->phone_new_t = 0;
    play3d_follow(target(g), ahead(g), g->cam_yaw, g->cam_pitch, REMOTE_CAM_DIST, &g->cam_dist, &g->cam_lift);
@@ -851,9 +908,15 @@ static void attract_input(hd_remote *g, hd_input *in)
 static void day_step(hd_state *s, hd_remote *g, const hd_input *in)
 {
    uint32_t b = in->buttons;
-   int pressed = (b & ~g->buttons & PAD_JUMP) != 0;
-   int32_t dx, dz, tilt, want, top;
+   int pressed = (b & ~g->buttons & PAD_JUMP) != 0, other = (b & ~g->buttons & PAD_RUN) != 0;
+   int32_t dx, dz, tilt, want, top, choice = 0;
    g->buttons = b;
+   /* the weekend question at the desk: A says yes (and does not get up), X says no */
+   if (weekend_asked(g) && (pressed || other))
+   {
+      choice = pressed ? 1 : 2;
+      pressed = 0;
+   }
    /* the camera: L and R or the right stick turn it, the right stick's up and down tilt it */
    if (b & PAD_L)
       g->cam_yaw += 28;
@@ -906,7 +969,7 @@ static void day_step(hd_state *s, hd_remote *g, const hd_input *in)
             start(g, g->prompt - 1);
       }
    }
-   day(s, g);
+   day(s, g, choice);
    play3d_follow(target(g), ahead(g), g->cam_yaw, g->cam_pitch, REMOTE_CAM_DIST, &g->cam_dist, &g->cam_lift);
    g->t++;
 }
@@ -1090,7 +1153,7 @@ static void sound_loops(hd_state *s, const hd_remote *g)
    {
       int32_t a = g->act - 1, desk_x = ROOM3D_AT(activities[RA_WORK].ax), desk_z = ROOM3D_AT(activities[RA_WORK].az);
       /* the computer rings until the worker sits down: heard all over the house */
-      if (g->boss && !g->boss_call && g->boss != RE_MESSAGE + 1 && (g->boss != RE_MEETING + 1 || g->boss_t < 15 * 60))
+      if (g->boss && !g->boss_call && g->boss != RE_MESSAGE + 1 && g->boss != RE_WEEKEND + 1 && (g->boss != RE_MEETING + 1 || g->boss_t < 15 * 60))
          heard_at(g, desk_x, desk_z, 210, 110, &want[RF_RING], &pan[RF_RING]);
       /* the neighbor's drill comes and goes; the headphones take most of it away */
       if (g->drill_t > 0 && (g->t / 80) % 4 != 3)
@@ -1133,7 +1196,7 @@ static void sound_day(hd_state *s, const hd_remote *was, const hd_remote *g)
          play(s, RF_MISSED, 220, 0, FX_ONE);
       else if (who == RW_YOU)
          play(s, RF_ANSWER, 200, 0, FX_ONE);
-      else if (text >= RT_HEARD && text < RT_HEARD + 5)
+      else if (text >= RT_HEARD && text < RT_HEARD + REMOTE_HEARD)
          play(s, RF_HEARD, 230, 0, FX_ONE);
       else if (text == RT_BELL && was->boss_call)
          play_at(s, g, RF_DOORBELL, door_x, door_z, 240, 120); /* the delivery, back during the call */
@@ -1141,7 +1204,7 @@ static void sound_day(hd_state *s, const hd_remote *was, const hd_remote *g)
          play(s, who == RW_BOSS ? RF_BOSS_MESSAGE : RF_MESSAGE, 170, 0, FX_ONE);
    }
    /* an urgent message pings again every two and a half seconds until it is answered */
-   if (g->boss == RE_MESSAGE + 1 && !g->boss_call && was->boss == g->boss && g->boss_t % 150 == 0)
+   if ((g->boss == RE_MESSAGE + 1 || g->boss == RE_WEEKEND + 1) && !g->boss_call && was->boss == g->boss && g->boss_t % 150 == 0)
       play(s, RF_BOSS_MESSAGE, 170, 0, FX_ONE);
    /* the last seconds to answer tick */
    if (g->boss && !g->boss_call && g->boss_t <= 5 * 60 && g->boss_t > 0 && g->boss_t % 60 == 0)
@@ -1189,7 +1252,7 @@ static void sound_end(hd_state *s, const hd_remote *g)
          play(s, RF_TYPEWRITER, 150, 0, FX_FRAC(90 + (g->over_t * 13) % 21, 100));
       return;
    }
-   rows = 1 + (g->over == REND_MISSED) + (g->over == REND_SURVIVED ? 2 + (g->work / REMOTE_WORK_UNIT > REMOTE_OVERTIME) : 0);
+   rows = 1 + (g->over == REND_MISSED) + (g->over == REND_SURVIVED ? 2 + (g->work / REMOTE_WORK_UNIT > REMOTE_OVERTIME) : 0) + (g->weekend == 1);
    total_at = rows * 30;
    if (k >= 0 && k < total_at + 40 && k % 3 == 0)
       play(s, RF_COUNT_UP, 110, 0, FX_ONE + (k < total_at ? (k % 30) * 600 : (k - total_at) * 500));
@@ -1416,7 +1479,7 @@ static int32_t wrap(hd_surface *sf, const char *text, int32_t x, int32_t y, int3
 }
 
 static const uint32_t who_color[RW_COUNT] = { 0xff8fab, 0x8ecae6, 0xffb703, 0x80ed99, 0xbfc7d5 };
-static const uint32_t status_color[5] = { 0x57cc99, 0xf6bd60, 0xe63946, 0xe63946, 0x8d99ae };
+static const uint32_t status_color[RS_COUNT] = { 0x57cc99, 0xf6bd60, 0xe63946, 0xe63946, 0x8d99ae, 0xff9f1c };
 
 /* The phone on the right: the last messages, newest at the bottom, and the countdown when the boss waits. */
 static void phone_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
@@ -1459,7 +1522,7 @@ static void phone_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
 static void end_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
 {
    int32_t worked = g->work / REMOTE_WORK_UNIT, title, y = 40 * scale, lx = HD_OUT_W / 2 - 150 * scale, rx = HD_OUT_W / 2 + 150 * scale;
-   int32_t start = g->over == REND_FIRED ? 150 : 30, k = g->over_t - start, rows = 0, labels[4], values[4], colors[4], i, total_at;
+   int32_t start = g->over == REND_FIRED ? 150 : 30, k = g->over_t - start, rows = 0, labels[5], values[5], colors[5], i, total_at;
    char line[64];
    if (g->over == REND_FIRED)
    {
@@ -1485,7 +1548,7 @@ static void end_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
    /* the rows, one every half second, each counting up */
    labels[rows] = RT_END_POINTS, values[rows] = g->points, colors[rows++] = 0xffe66d;
    if (g->over == REND_MISSED)
-      labels[rows] = RT_END_HALF, values[rows] = -(g->points - g->score), colors[rows++] = 0xe63946;
+      labels[rows] = RT_END_HALF, values[rows] = -(g->points - g->points / 2), colors[rows++] = 0xe63946;
    if (g->over == REND_SURVIVED)
    {
       labels[rows] = RT_END_SURVIVED, values[rows] = 1000, colors[rows++] = 0x57cc99;
@@ -1493,6 +1556,8 @@ static void end_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
       if (worked > REMOTE_OVERTIME)
          labels[rows] = RT_END_OVERTIME, values[rows] = -2 * (worked - REMOTE_OVERTIME), colors[rows++] = 0xe63946;
    }
+   if (g->weekend == 1 && g->over != REND_FIRED)
+      labels[rows] = RT_END_WEEKEND, values[rows] = -REMOTE_WEEKEND_COST, colors[rows++] = 0xe63946;
    y = 112 * scale;
    for (i = 0; i < rows && k >= i * 30; i++)
    {
@@ -1529,6 +1594,66 @@ static void end_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
    }
 }
 
+/*
+ * The call's window at the top: the boss talking in a little video, the
+ * time left; with the camera on the worker's own picture beside it with a
+ * red dot, else "your camera: off". A hotfix shows the deploy instead.
+ */
+static void call_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
+{
+   int32_t kind = g->boss - 1, w = 230 * scale, h = 86 * scale, x = (HD_OUT_W - w) / 2, y = 8 * scale, left = (g->boss_t + 59) / 60;
+   int32_t bx = x + 8 * scale, by = y + 8 * scale, bw = 92 * scale, bh = 62 * scale, talk = (g->t / 7) % 3;
+   char line[48];
+   panel(sf, x, y, w, h, 0x0b0d12, 210);
+   if (kind == RE_HOTFIX)
+   {
+      /* the deploy: a bar filling and the log scrolling */
+      static const char *const steps[4] = { "git push -f", "npm run build", "kubectl apply", "pray.sh" };
+      int32_t total = boss_events[RE_HOTFIX].minutes * FPM, done = total - g->boss_t;
+      text_draw(sf, remote_text(RT_DEPLOYING), x + 10 * scale, y + 8 * scale, scale, 0xff9f1c, 1, -1);
+      panel(sf, x + 10 * scale, y + 22 * scale, w - 20 * scale, 6 * scale, 0x000000, 200);
+      gfx_fill(sf, x + 11 * scale, y + 23 * scale, (int32_t)((int64_t)(w - 22 * scale) * done / hd_max(1, total)), 4 * scale, 0x57cc99);
+      snprintf(line, sizeof line, "$ %s", steps[hd_clamp(done * 4 / hd_max(1, total), 0, 3)]);
+      text_draw(sf, line, x + 10 * scale, y + 36 * scale, scale, 0x80ed99, 1, -1);
+      snprintf(line, sizeof line, "%d%%", (int)(done * 100 / hd_max(1, total)));
+      text_draw(sf, line, x + w - 10 * scale - text_width(line, scale), y + 36 * scale, scale, 0xffffff, 1, -1);
+      return;
+   }
+   /* the boss: a face in a frame, the mouth moving while it talks */
+   panel(sf, bx, by, bw, bh, 0x3d5a80, 255);
+   gfx_fill(sf, bx + 30 * scale, by + 10 * scale, 32 * scale, 36 * scale, 0xe0ac69);   /* the face */
+   gfx_fill(sf, bx + 28 * scale, by + 6 * scale, 36 * scale, 8 * scale, 0x6c757d);     /* grey hair */
+   gfx_fill(sf, bx + 36 * scale, by + 22 * scale, 6 * scale, 4 * scale, 0x1d1d1d);     /* eyes */
+   gfx_fill(sf, bx + 50 * scale, by + 22 * scale, 6 * scale, 4 * scale, 0x1d1d1d);
+   gfx_fill(sf, bx + 40 * scale, by + 34 * scale, 12 * scale, (2 + talk * 2) * scale, 0x7a2e2e); /* the mouth */
+   gfx_fill(sf, bx + 22 * scale, by + 46 * scale, 48 * scale, 16 * scale, 0x1d3557);   /* a suit */
+   gfx_fill(sf, bx + 43 * scale, by + 46 * scale, 6 * scale, 12 * scale, 0xe63946);    /* a tie */
+   text_draw(sf, remote_text(RT_CALL_BOSS), bx + 3 * scale, by + bh - 10 * scale, scale, 0xffffff, 1, -1);
+   /* the worker's side */
+   bx += bw + 8 * scale;
+   if (kind == RE_CAMERA)
+   {
+      int32_t asleep = g->energy < REMOTE_WORK_ASLEEP;
+      panel(sf, bx, by, bw, bh, 0x6f9fd0, 255);
+      gfx_fill(sf, bx + 30 * scale, by + 14 * scale, 32 * scale, 34 * scale, 0xe0ac69);
+      gfx_fill(sf, bx + 28 * scale, by + 8 * scale, 36 * scale, 10 * scale, 0x3d2817);
+      gfx_fill(sf, bx + 34 * scale, by + 26 * scale, 24 * scale, 4 * scale, 0x222222); /* glasses */
+      gfx_fill(sf, bx + 40 * scale, by + 38 * scale, 12 * scale, asleep ? scale : 3 * scale, 0x9c4a3a);
+      gfx_fill(sf, bx + 22 * scale, by + 48 * scale, 48 * scale, 14 * scale, 0xf4a261);
+      if (g->cat_keys == 2)
+         gfx_fill(sf, bx + 60 * scale, by + 40 * scale, 30 * scale, 20 * scale, 0xc0601c); /* the cat in the picture */
+      gfx_fill(sf, bx + 4 * scale, by + 4 * scale, 5 * scale, 5 * scale, (g->t / 20) & 1 ? 0xe63946 : 0x7a1c22);
+      text_draw(sf, remote_text(RT_CAM_ON), x + 8 * scale, y + h - 12 * scale, scale, 0xff4d6d, 1, -1);
+   }
+   else
+   {
+      panel(sf, bx, by, bw, bh, 0x1d1d1d, 255);
+      text_draw(sf, remote_text(RT_CAM_OFF), x + 8 * scale, y + h - 12 * scale, scale, 0xbfc7d5, 1, -1);
+   }
+   snprintf(line, sizeof line, "%d:%02d", (int)(left / 60), (int)(left % 60));
+   text_draw(sf, line, x + w - 8 * scale - text_width(line, scale), y + h - 12 * scale, scale, 0xffffff, 1, -1);
+}
+
 static void hud(hd_surface *sf, const hd_remote *g)
 {
    int32_t scale = hd_res, minutes = 9 * 60 + hd_min(g->t / FPM, REMOTE_DAY_MINUTES), worked = g->work / REMOTE_WORK_UNIT;
@@ -1557,8 +1682,17 @@ static void hud(hd_surface *sf, const hd_remote *g)
    panel(sf, HD_OUT_W - text_width(line, scale) - 18 * scale, 6 * scale, text_width(line, scale) + 12 * scale, 16 * scale, 0x101418, 150);
    text_draw(sf, line, HD_OUT_W - text_width(line, scale) - 12 * scale, 10 * scale, scale, 0xffe66d, 1, -1);
    phone_hud(sf, g, scale);
+   if (g->boss && g->boss_call)
+      call_hud(sf, g, scale);
    /* bottom: what the button does, or what is being done and how far it went */
-   if (g->act)
+   if (weekend_asked(g))
+   {
+      const char *what = remote_text(RT_WEEKEND_CHOICE);
+      int32_t w = text_width(what, scale) + 24 * scale, y = HD_OUT_H - 34 * scale;
+      panel(sf, (HD_OUT_W - w) / 2, y, w, 20 * scale, 0x101418, 190);
+      text_center(sf, what, y + 6 * scale, scale, (g->t / 20) & 1 ? 0xffe66d : 0xffffff);
+   }
+   else if (g->act)
    {
       int32_t a = g->act - 1, total = activities[a].minutes * FPM;
       const char *what = a == RA_WORK && g->energy < REMOTE_WORK_ASLEEP ? remote_text(RT_ASLEEP) : remote_text(RT_DOING + a);
@@ -1597,6 +1731,7 @@ static void hud(hd_surface *sf, const hd_remote *g)
    }
 }
 
+#define GUITAR_ROLL -260 /* the guitar's neck up, toward the hand along it */
 /* What the worker holds in each activity (-1: nothing). */
 static const int8_t activity_prop[RA_COUNT] = {
    [RA_WORK] = -1, [RA_NAP] = -1, [RA_COFFEE] = ROOM3D_PROP_MUG, [RA_COOK] = ROOM3D_PROP_PAN, [RA_FRIDGE] = ROOM3D_PROP_CAN,
@@ -1627,7 +1762,11 @@ static void worker_pose(const hd_remote *g, actor3d_pose *pose)
       if (activity_prop[g->act - 1] >= 0)
          pose->prop = room3d_prop(activity_prop[g->act - 1]);
       if (g->act == RA_GUITAR + 1)
-         pose->prop_roll = -420 + (int32_t)(((int64_t)hd_sin((g->t * 90) & 4095) * 30) >> 14); /* the neck up, swaying with the strum */
+      {
+         pose->hold = 0;
+         pose->strum = 1;
+         pose->prop_roll = GUITAR_ROLL; /* the neck up */
+      }
       pose->phase = (g->t * 40) & 4095;
       if (g->act == RA_WORK + 1)
       {
@@ -1993,7 +2132,7 @@ void hd_remote_sanitize(hd_state *s)
    g->boss_call = hd_clamp(g->boss_call, 0, 1);
    g->boss_limit = hd_clamp(g->boss_limit, 0, 1 << 20);
    g->boss_t = hd_clamp(g->boss_t, 0, 1 << 20);
-   g->boss_noise &= 31;
+   g->boss_noise &= (1 << REMOTE_HEARD) - 1;
    g->bell_t = hd_clamp(g->bell_t, 0, REMOTE_BELL_FRAMES);
    g->bell_owed = hd_clamp(g->bell_owed, 0, 1);
    g->drill_t = hd_clamp(g->drill_t, 0, REMOTE_DRILL_MINUTES * FPM);
@@ -2050,4 +2189,7 @@ void hd_remote_sanitize(hd_state *s)
    g->best_new = hd_clamp(g->best_new, 0, 1);
    g->nav &= PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
    g->music_resume = hd_clamp(g->music_resume, 0, 1 << 30);
+   g->weekend = hd_clamp(g->weekend, 0, 2);
+   g->hotfixes = hd_clamp(g->hotfixes, 0, REMOTE_EVENTS_MAX);
+   g->chatter_at = hd_clamp(g->chatter_at, 0, REMOTE_DAY_MINUTES * 2);
 }

@@ -917,6 +917,56 @@ static void test_remote_screens(void)
    CHECK(g->screen == RSC_TITLE);
 }
 
+/* The boss's later events: the weekend question answered either way (or not at all), a hotfix deployed at the desk, a camera call that sees the cat. */
+static void test_remote_boss(void)
+{
+   static hd_state a;
+   hd_remote *g = HD_GAME3D(&a, hd_remote);
+   int32_t s0, p0;
+   hd_reset(&a);
+   hd_remote_new_day(&a);
+   g->x = ROOM3D_AT(950), g->z = ROOM3D_AT(1035), g->energy = 800;
+   remote_steps(&a, 1, 0);
+   remote_steps(&a, 1, PAD_JUMP);
+   CHECK(g->act == RA_WORK + 1);
+   /* "of course": calmer, the weekend sold, still at the desk */
+   g->suspicion = 300;
+   remote_event(g, RE_WEEKEND);
+   remote_steps(&a, 3, 0);
+   CHECK(g->boss == RE_WEEKEND + 1);
+   remote_steps(&a, 1, PAD_JUMP);
+   CHECK(!g->boss && g->weekend == 1 && g->suspicion < 300 && g->act == RA_WORK + 1);
+   /* "I have plans": a little more suspicion */
+   g->weekend = 0;
+   s0 = g->suspicion;
+   remote_event(g, RE_WEEKEND);
+   remote_steps(&a, 3, 0);
+   remote_steps(&a, 1, PAD_RUN);
+   CHECK(!g->boss && g->weekend == 2 && g->suspicion >= s0 + REMOTE_WEEKEND_NO - 1);
+   /* not answered: it counts as a yes, and it is missed */
+   g->weekend = 0;
+   s0 = g->suspicion;
+   remote_event(g, RE_WEEKEND);
+   remote_steps(&a, 31 * 60, 0);
+   CHECK(!g->boss && g->weekend == 1 && g->suspicion >= s0 + 150 - 31 * 60 / REMOTE_FRAMES_PER_MINUTE / REMOTE_WORK_CALM_EVERY - 1); /* working calmed it meanwhile */
+   /* a hotfix: deploying at the desk, then it pays */
+   p0 = g->points;
+   remote_event(g, RE_HOTFIX);
+   remote_steps(&a, 3, 0);
+   CHECK(g->boss == RE_HOTFIX + 1 && g->boss_call);
+   remote_steps(&a, 20 * REMOTE_FRAMES_PER_MINUTE + 2, 0);
+   CHECK(!g->boss && g->hotfixes == 1 && g->points == p0 + REMOTE_HOTFIX_POINTS);
+   /* the camera sees the cat on the keyboard */
+   remote_event(g, RE_CAMERA);
+   remote_steps(&a, 3, 0);
+   CHECK(g->boss == RE_CAMERA + 1 && g->boss_call);
+   s0 = g->suspicion;
+   g->cat_keys = 2, g->cat_mode = CAT_REST, g->cat_spot = 5, g->cat_y = FX_FRAC(79, 100);
+   remote_steps(&a, 2, 0);
+   CHECK((g->boss_noise & (1 << 5)) && g->suspicion >= s0 + REMOTE_NOISE - 1);
+   hd_draw(&a, fb);
+}
+
 /* Every text of TELETRABAJO exists in the three languages and fits the 640 logical pixels at the size it is drawn (the help's lines wrap). */
 static void test_remote_texts(void)
 {
@@ -2732,6 +2782,7 @@ int main(void)
    test_remote_day();
    test_remote_places();
    test_remote_texts();
+   test_remote_boss();
    test_remote_screens();
    test_remote_sound();
 #endif

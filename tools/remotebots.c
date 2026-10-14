@@ -30,14 +30,15 @@ typedef struct
    int32_t react;                  /* frames before it notices the boss (up to twice as many) */
    int32_t bell, cat, phones;      /* answers the door, takes the cat off the keys, puts the headphones on */
    int32_t slack;                  /* wanders off to the fun things now and then */
+   int32_t weekend;                /* the weekend question: 1 "of course", 2 "I have plans" */
    int32_t rests[4];               /* what it does to rest */
 } style;
 
 static const style styles[] = {
-   { "careful", 350, 750, 30, 1, 1, 1, 0, { RA_NAP, RA_COOK, RA_EAT, RA_COFFEE } },
-   { "casual", 300, 600, 120, 1, 1, 0, 0, { RA_COFFEE, RA_SERIES, RA_EAT, RA_FRIDGE } },
-   { "slacker", 500, 900, 240, 0, 1, 0, 1, { RA_SERIES, RA_CONSOLE, RA_GUITAR, RA_SUN } },
-   { "workaholic", 120, 300, 60, 0, 1, 1, 0, { RA_COFFEE, RA_COFFEE, RA_FRIDGE, RA_COFFEE } },
+   { "careful", 350, 750, 30, 1, 1, 1, 0, 2, { RA_NAP, RA_COOK, RA_EAT, RA_COFFEE } },
+   { "casual", 300, 600, 120, 1, 1, 0, 0, 2, { RA_COFFEE, RA_SERIES, RA_EAT, RA_FRIDGE } },
+   { "slacker", 500, 900, 240, 0, 1, 0, 1, 2, { RA_SERIES, RA_CONSOLE, RA_GUITAR, RA_SUN } },
+   { "workaholic", 120, 300, 60, 0, 1, 1, 0, 1, { RA_COFFEE, RA_COFFEE, RA_FRIDGE, RA_COFFEE } },
 };
 #define STYLES ((int)(sizeof styles / sizeof styles[0]))
 
@@ -101,7 +102,13 @@ static int32_t play_day(const style *sty, uint32_t seed)
          if (a == RA_WORK)
          {
             int free = !g->boss_call && !g->boss;
-            if (g->cat_keys == 2 && sty->cat)
+            if (g->boss == RE_WEEKEND + 1 && !g->boss_call && wait == 0)
+            {
+               /* the weekend question: A for "of course", X for "I have plans" */
+               if (!(prev & (PAD_JUMP | PAD_RUN)))
+                  in[0].buttons |= sty->weekend == 1 ? PAD_JUMP : PAD_RUN;
+            }
+            else if (g->cat_keys == 2 && sty->cat)
                press = 1;
             else if (free && g->energy < sty->rest_below)
                press = 1, resting = 1, rest_pick = sty->rests[dice(4)];

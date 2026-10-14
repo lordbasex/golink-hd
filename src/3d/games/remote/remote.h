@@ -37,6 +37,9 @@ enum
    RE_CALL,        /* a surprise video call */
    RE_MESSAGE,     /* an urgent message */
    RE_SHARE,       /* "share your screen" */
+   RE_HOTFIX,      /* production is down: deploy a fix, at the desk until it is out */
+   RE_WEEKEND,     /* "can you work this weekend?": a question with two answers */
+   RE_CAMERA,      /* a video call with the camera on: the boss sees what goes on behind */
    RE_BOSS_KINDS,
    RE_DELIVERY = RE_BOSS_KINDS, /* the bell rings */
    RE_CAT,         /* the cat goes for the keyboard */
@@ -51,7 +54,7 @@ enum
 enum { REND_PLAYING = 0, REND_FIRED, REND_MISSED, REND_SURVIVED };
 
 /* The chat status the boss sees. */
-enum { RS_ONLINE = 0, RS_AWAY, RS_CALL, RS_MEETING, RS_OFFLINE };
+enum { RS_ONLINE = 0, RS_AWAY, RS_CALL, RS_MEETING, RS_OFFLINE, RS_DEPLOY, RS_COUNT };
 
 /* Who wrote a message on the phone. */
 enum { RW_BOSS = 0, RW_YOU, RW_CAT, RW_MATE, RW_HOUSE, RW_COUNT };
@@ -130,6 +133,10 @@ typedef struct
    int32_t nav;                /* last frame's menu directions (the stick as the D-pad) */
    /* phase 5: the sound */
    int32_t music_resume;       /* where the day's music was when a call took over (it goes on from there) */
+   /* more of the boss */
+   int32_t weekend;            /* the weekend question: 0 not asked or not answered, 1 "of course" (sold), 2 "I have plans" */
+   int32_t hotfixes;           /* hotfixes deployed today */
+   int32_t chatter_at;         /* the game minute the boss writes something that needs no answer */
 } hd_remote;
 
 /* Every number that balances the game, in one place. */
@@ -170,6 +177,12 @@ typedef struct
 #define REMOTE_ATTRACT_FRAMES (50 * 60)        /* how long the demo plays */
 #define REMOTE_MORNING_FRAMES 270              /* the alarm, getting up and the camera flying to the worker */
 
+#define REMOTE_HEARD 8   /* what the boss can hear or see on a call (boss_noise has a bit each) */
+#define REMOTE_CHATTER 10
+#define REMOTE_WEEKEND_COST 250 /* points the weekend sold takes from the score */
+#define REMOTE_WEEKEND_NO 60    /* suspicion for "I have plans" */
+#define REMOTE_HOTFIX_POINTS 150
+
 /* The game's texts, each in English, Spanish and Portuguese (remote_text.c). */
 enum
 {
@@ -185,8 +198,8 @@ enum
    RT_DONE = RT_DOING + RA_COUNT,    /* RA_COUNT: the line when it ends */
    RT_AGAIN = RT_DONE + RA_COUNT,    /* an activity done too often */
    RT_SUSPICION,
-   RT_STATUS,        /* 5: RS_* */
-   RT_WHO = RT_STATUS + 5,           /* RW_COUNT: who wrote a message */
+   RT_STATUS,        /* RS_COUNT: RS_* */
+   RT_WHO = RT_STATUS + RS_COUNT,    /* RW_COUNT: who wrote a message */
    RT_ON_CALL = RT_WHO + RW_COUNT,   /* "on a call" instead of "A: stop" */
    RT_CAT_OFF,       /* "A: get the cat off" */
    RT_ANSWER,        /* "answer at the desk" with the countdown */
@@ -194,8 +207,8 @@ enum
    RT_BOSS_ASK,      /* RE_BOSS_KINDS x 2: the boss asks */
    RT_BOSS_YES = RT_BOSS_ASK + RE_BOSS_KINDS * 2, /* RE_BOSS_KINDS: the worker answers */
    RT_BOSS_MISS = RT_BOSS_YES + RE_BOSS_KINDS,    /* RE_BOSS_KINDS: the boss, unanswered */
-   RT_HEARD = RT_BOSS_MISS + RE_BOSS_KINDS,       /* 5: what the boss hears on a call: washer, bell, flatmate, drill, snoring */
-   RT_BELL = RT_HEARD + 5,           /* the house's events */
+   RT_HEARD = RT_BOSS_MISS + RE_BOSS_KINDS,       /* REMOTE_HEARD: what the boss hears on a call (washer, bell, flatmate, drill, snoring), then sees on camera (the cat, the flatmate, the worker asleep) */
+   RT_BELL = RT_HEARD + REMOTE_HEARD, /* the house's events */
    RT_BELL_GONE,
    RT_CAT_KEYS,
    RT_CAT_TYPED,
@@ -238,7 +251,17 @@ enum
    RT_PAUSE_GO_ON,
    RT_PAUSE_RESTART,
    RT_PAUSE_QUIT,
-   RT_COUNT
+   RT_WEEKEND_CHOICE, /* "A: of course, boss   X: I have plans" */
+   RT_WEEKEND_NO,     /* the worker's answer, and the boss's */
+   RT_WEEKEND_NO_BOSS,
+   RT_HOTFIX_DONE,
+   RT_END_WEEKEND,    /* the end's row: the weekend sold */
+   RT_CALL_BOSS,      /* the video call's window: the boss's name, the camera on, off, deploying */
+   RT_CAM_ON,
+   RT_CAM_OFF,
+   RT_DEPLOYING,
+   RT_CHATTER,        /* REMOTE_CHATTER: the boss writing what needs no answer */
+   RT_COUNT = RT_CHATTER + REMOTE_CHATTER
 };
 const char *remote_text(int32_t id);
 

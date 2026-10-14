@@ -1423,13 +1423,13 @@ static void build_props(void)
    bx(5, 2, -2, 7, 3, 0, 0x2a9d8f);
    bx(-6, 2, -4, -3, 3, -2, 0x6c757d);
    props[ROOM3D_PROP_PAD] = r3d_end();
-   /* the guitar across the body, against the belly: its body under the strumming hand, the neck to the other side (turned up by the pose's roll) */
+   /* the guitar, around its sound hole: the body toward the strumming side, the neck to the other one (the pose's roll turns it up) */
    r3d_begin();
-   ball(12, 4, -12, 16, 15, 5, 3, 0x9c5a2b);
-   ball(-6, 8, -12, 12, 11, 5, 3, 0x9c5a2b);
-   ball(4, 6, -17, 4, 4, 1, 2, 0x2b1a10);
-   bx(-50, 7, -14, -14, 11, -10, 0xd9a066);
-   bx(-60, 6, -15, -50, 13, -9, 0x2b1a10);
+   ball(8, -6, -6, 16, 15, 5, 3, 0x9c5a2b);
+   ball(-10, -2, -6, 12, 11, 5, 3, 0x9c5a2b);
+   ball(0, -4, -11, 4, 4, 1, 2, 0x2b1a10);
+   bx(-54, -1, -8, -18, 3, -4, 0xd9a066);
+   bx(-64, -2, -9, -54, 5, -3, 0x2b1a10);
    props[ROOM3D_PROP_GUITAR] = r3d_end();
    /* a watering can, held by its handle */
    r3d_begin();
