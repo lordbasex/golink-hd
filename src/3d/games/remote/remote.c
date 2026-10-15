@@ -2112,7 +2112,7 @@ static void title_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
    char line[64];
    int32_t w, i, y = 172 * scale + 2 * 24 * scale;
    title_text(sf, 40 * scale, scale);
-   panel(sf, (HD_OUT_W - 300 * scale) / 2, 158 * scale, 300 * scale, (g->best > 0 ? 170 : 146) * scale, 0x0b0d12, 175);
+   panel(sf, (HD_OUT_W - 440 * scale) / 2, 158 * scale, 440 * scale, (g->best > 0 ? 170 : 146) * scale, 0x0b0d12, 175);
    menu_draw(sf, items, 2, g->menu, 172 * scale, scale);
    menu_draw(sf, last, 1, g->menu == 4 ? 0 : -1, 172 * scale + 4 * 24 * scale, scale);
    /* the language (its name in itself) and the main character, between arrows, changed with left and right (or A) */

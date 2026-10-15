@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- TELETRABAJO's title: the main character's line ("Main character: < Alberto Teja >") fits in the menu's panel, which is wider now; a test checks every language.
+
 ### Added
 - API 3: `golinkhd_keep_save` and `golinkhd_keep_load`, what a game keeps between sessions (TELETRABAJO's record and main character), stored by the host for each game.
 - TELETRABAJO's package has a picture for game libraries (`tools/remotecover`, packed by `build.py` as `screens.title`); a game coded in the engine never loads its `screens`.

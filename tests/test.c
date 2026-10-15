@@ -1017,6 +1017,13 @@ static void test_remote_texts(void)
             fprintf(stderr, "  remote: text %d in language %d is too wide: %s\n", (int)id, (int)l, t);
          CHECK(text_width(t, scale) + 24 * scale <= 620);
       }
+      /* the title's lines between arrows fit in its panel (440 wide, with the arrow before) */
+      for (id = 0; id < 2; id++)
+      {
+         char line[96];
+         snprintf(line, sizeof line, "%s: < %s >", remote_text(RT_MENU_HERO), remote_text(RT_HERO + id));
+         CHECK(text_width(line, 2) + 44 <= 440);
+      }
    }
    hd_lang = lang;
 }
