@@ -82,7 +82,7 @@ static const char *const texts[RT_COUNT][LANGS] = {
    [RT_ON_CALL] = { "On a call. Nod now and then.", "En llamada. Asiente de vez en cuando.", "Em chamada. Concorde de vez em quando." },
    [RT_CAT_OFF] = { "A: Get the cat off", "A: Bajar al gato", "A: Tirar o gato" },
    [RT_ANSWER] = { "To the desk!", "¡Al escritorio!", "Para a mesa!" },
-   [RT_GREETING] = { "Morning. Lots to do today.", "Buen día. Hoy hay mucho.", "Bom dia. Hoje tem muita coisa." },
+   [RT_GREETING] = { "Morning, Alberto. Lots to do today.", "Buen día, Alberto. Hoy hay mucho.", "Bom dia, Alberto. Hoje tem muita coisa." },
 
    [RT_BOSS_ASK + RE_MEETING * 2] = { "Daily at 10:00. Camera optional, being on time is not.", "Daily a las 10:00. Cámara opcional, puntualidad no.", "Daily às 10:00. Câmera opcional, pontualidade não." },
    [RT_BOSS_ASK + RE_MEETING * 2 + 1] = { "Daily at 10:00. Bring good news.", "Daily a las 10:00. Trae buenas noticias.", "Daily às 10:00. Traga boas notícias." },
@@ -119,7 +119,7 @@ static const char *const texts[RT_COUNT][LANGS] = {
    [RT_BOSS_YES + RE_HOTFIX] = { "On it. Reverting whatever I did on Friday.", "En eso. Revirtiendo lo que hice el viernes.", "Tô nisso. Revertendo o que fiz na sexta." },
    [RT_BOSS_YES + RE_WEEKEND] = { "Of course, boss. I love code on Saturdays.", "Claro, jefe. Me encanta el código en sábado.", "Claro, chefe. Adoro código no sábado." },
    [RT_BOSS_YES + RE_CAMERA] = { "Camera on. Smiling like a stock photo.", "Cámara encendida. Sonriendo como foto de stock.", "Câmera ligada. Sorrindo como foto de banco de imagens." },
-   [RT_BOSS_MISS + RE_MEETING] = { "We waited for you at the daily.", "Te esperamos en la daily.", "Esperamos você na daily." },
+   [RT_BOSS_MISS + RE_MEETING] = { "Alberto, we waited for you at the daily.", "Alberto, te esperamos en la daily.", "Alberto, esperamos você na daily." },
    [RT_BOSS_MISS + RE_CALL] = { "I called you three times.", "Te llamé tres veces.", "Te liguei três vezes." },
    [RT_BOSS_MISS + RE_MESSAGE] = { "Hello? Anyone there?", "¿Hola? ¿Hay alguien?", "Alô? Tem alguém aí?" },
    [RT_BOSS_MISS + RE_SHARE] = { "Black screen. Very transparent.", "Pantalla en negro. Muy transparente.", "Tela preta. Muito transparente." },
@@ -172,8 +172,8 @@ static const char *const texts[RT_COUNT][LANGS] = {
    [RT_MENU_HELP] = { "How to play", "Cómo jugar", "Como jogar" },
    [RT_MENU_LANGUAGE] = { "Language", "Idioma", "Idioma" },
    [RT_MENU_HERO] = { "Main character", "Protagonista", "Protagonista" },
-   [RT_HERO + 0] = { "Man", "Hombre", "Homem" },
-   [RT_HERO + 1] = { "Woman", "Mujer", "Mulher" },
+   [RT_HERO + 0] = { "Alberto Teja", "Alberto Teja", "Alberto Teja" }, /* an anagram of TELETRABAJO */
+   [RT_HERO + 1] = { "Alberta Teja", "Alberta Teja", "Alberta Teja" },
    [RT_MENU_CREDITS] = { "Credits", "Créditos", "Créditos" },
    [RT_PRESS_START] = { "Press START", "Pulsa START", "Aperte START" },
    [RT_DEMO] = { "DEMO", "DEMO", "DEMO" },
@@ -229,6 +229,8 @@ static const struct
    const char *text[LANGS];
 } woman[] = {
    { RT_ASLEEP, { NULL, "Dormida sobre el teclado. Zzz...", NULL } },
+   { RT_GREETING, { "Morning, Alberta. Lots to do today.", "Buen día, Alberta. Hoy hay mucho.", "Bom dia, Alberta. Hoje tem muita coisa." } },
+   { RT_BOSS_MISS + RE_MEETING, { "Alberta, we waited for you at the daily.", "Alberta, te esperamos en la daily.", "Alberta, esperamos você na daily." } },
    { RT_STATUS + RS_MEETING, { NULL, "Reunida", NULL } },
    { RT_DONE + RA_SHOWER, { NULL, "Limpia, fresca y sin trabajar.", "Limpa, fresca e sem trabalhar." } },
    { RT_END_TITLE + 0, { NULL, "DESPEDIDA", "DEMITIDA" } },

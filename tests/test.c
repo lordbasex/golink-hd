@@ -861,6 +861,7 @@ static void test_remote_screens(void)
       CHECK(strcmp(remote_text(RT_ASLEEP), "Dormida sobre el teclado. Zzz...") == 0 && strcmp(remote_text(RT_WORK), "Trabajo") == 0);
       hd_lang = 0;
       CHECK(strcmp(remote_text(RT_ASLEEP), "Asleep on the keyboard. Zzz...") == 0);
+      CHECK(strcmp(remote_text(RT_GREETING), "Morning, Alberta. Lots to do today.") == 0); /* her name, in every language */
       hd_lang = lang;
    }
    remote_steps(&a, 2, PAD_JUMP);

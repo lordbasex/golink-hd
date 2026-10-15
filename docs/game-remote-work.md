@@ -415,7 +415,13 @@ To voice another game: a table like `voiced` in its code, a copy of `voices.py` 
 
 ### The main character
 
-The title's menu has a line "Main character: < Man | Woman >" (`hd_remote.hero`, kept from day to day and back at the title). It picks the model (the package's `worker` or `worker_woman`: Quaternius's CC0 "Animated Woman", a Mixamo rig whose bones and clips `hdm.py --rename mixamo --clips Idle,Walk=Walking,Run=Running` names as the engine knows them; without her the man stands in), the voice above, and the words in Spanish and Portuguese that change with a woman ("Dormida", "Reunida", "Limpia, fresca", "Despedida", "Empleada ejemplar"...: the `woman` table in `remote_text.c`, read through `remote_text_hero`).
+The main character is **Alberto Teja**, or **Alberta Teja**: "Alberto Teja"
+uses exactly the letters of TELETRABAJO, and Alberta borrows one more A
+from CÁMARA APAGADA. The boss calls them by name in the morning's greeting
+and when they miss the daily (the woman's in the `woman` table, in every
+language); the name is never voiced.
+
+The title's menu has a line "Main character: < Alberto Teja | Alberta Teja >" (`hd_remote.hero`, kept from day to day and back at the title). It picks the model (the package's `worker` or `worker_woman`: Quaternius's CC0 "Animated Woman", a Mixamo rig whose bones and clips `hdm.py --rename mixamo --clips Idle,Walk=Walking,Run=Running` names as the engine knows them; without her the man stands in), the voice above, and the words in Spanish and Portuguese that change with a woman ("Dormida", "Reunida", "Limpia, fresca", "Despedida", "Empleada ejemplar"...: the `woman` table in `remote_text.c`, read through `remote_text_hero`).
 
 ## 9. Controls
 
@@ -541,6 +547,10 @@ before the next one.
 | 8 | Willy Maker | Whatever it needs from this game | last |
 
 ## 13. Progress
+
+**A name (2026-10-15).** The user asked for a name with an anagram of the
+title as its surname: Alberto Teja (TELETRABAJO), Alberta Teja for the
+woman (section 8, "The main character").
 
 **Read, thought over, answered (2026-10-15).** The user asked for the
 worker to read the boss's message, think it over and then answer ("this

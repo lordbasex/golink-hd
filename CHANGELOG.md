@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- TELETRABAJO's main character has a name: Alberto Teja (an anagram of TELETRABAJO) or Alberta Teja; the title's menu shows it and the boss uses it.
 - TELETRABAJO: the boss's messages are read aloud, then the worker thinks what it really thinks of them (a thought for each of the 14 asks, voiced inside the head and shown in a cloud), then the answer is heard, said out loud; `hd_sample_len`, and a channel whose `pos` is below 0 waits before it starts; free channels are taken before busy ones.
 - TELETRABAJO: choose the main character at the title (a man or a woman): the model (Quaternius's CC0 "Animated Woman"), the voice (Piper's Argentinian Daniela for her Spanish, Kokoro for the rest) and the words that change in Spanish and Portuguese; named effects played on demand (`"on_demand"`: kept as their file until first played); up to 1024 effects and 2048 files a package; `hdm.py --rename` (Mixamo rigs) and clip renames (`Walk=Walking`).
 - TELETRABAJO's thoughts read aloud in the language chosen (English, Spanish, Portuguese): 35 of the worker's lines recorded with Kokoro-82M (Apache 2.0) by `examples/remote/voices.py` from the game's own texts, made to sound thought by `build.py`, played when they show (`voiced`, `think` in remote.c); a package holds up to 256 effects.
