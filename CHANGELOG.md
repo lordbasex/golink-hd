@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- API 3: `golinkhd_keep_save` and `golinkhd_keep_load`, what a game keeps between sessions (TELETRABAJO's record and main character), stored by the host for each game.
+- TELETRABAJO's package has a picture for game libraries (`tools/remotecover`, packed by `build.py` as `screens.title`); a game coded in the engine never loads its `screens`.
 - TELETRABAJO's main character has a name: Alberto Teja (an anagram of TELETRABAJO) or Alberta Teja; the title's menu shows it and the boss uses it.
 - TELETRABAJO: the boss's messages are read aloud, then the worker thinks what it really thinks of them (a thought for each of the 14 asks, voiced inside the head and shown in a cloud), then the answer is heard, said out loud; `hd_sample_len`, and a channel whose `pos` is below 0 waits before it starts; free channels are taken before busy ones.
 - TELETRABAJO: choose the main character at the title (a man or a woman): the model (Quaternius's CC0 "Animated Woman"), the voice (Piper's Argentinian Daniela for her Spanish, Kokoro for the rest) and the words that change in Spanish and Portuguese; named effects played on demand (`"on_demand"`: kept as their file until first played); up to 1024 effects and 2048 files a package; `hdm.py --rename` (Mixamo rigs) and clip renames (`Walk=Walking`).

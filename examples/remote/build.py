@@ -7,6 +7,8 @@ audio.json (each with where it comes from, its author and its license).
   python3 examples/remote/build.py fetch   # downloads the recordings into source/ (once)
   python3 examples/remote/build.py         # game/: the manifest, the effects and the tracks
   tools/glhd pack examples/remote/game remote.glhd && tools/glhd check remote.glhd
+  make tools/remotecover && tools/remotecover remote.glhd examples/remote/source/cover.png
+                                           # the picture for game libraries; build and pack again
 
 Every effect is cut (from "start", "length" seconds, or the "burst"-th sound
 of a recording of several, the silence before and after removed), made mono
@@ -238,6 +240,13 @@ def build(spec):
         "models": models,
         "credits": game_credits(spec),
     }
+    # the picture game libraries show (tools/remotecover makes it from a package built once without it)
+    cover = os.path.join(SOURCE, "cover.png")
+    if os.path.exists(cover):
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", cover, "-q:v", "3", os.path.join(OUT, "cover.jpg")], check=True)
+        manifest["screens"] = {"title": "cover.jpg"}
+    else:
+        print("no source/cover.png: the package has no picture (see tools/remotecover.c)")
     with open(os.path.join(OUT, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=1, ensure_ascii=False)
     credits(spec)

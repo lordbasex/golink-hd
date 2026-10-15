@@ -119,6 +119,9 @@ int golinkhd_load(golinkhd_engine *e, const uint8_t *package, size_t size, const
       return 0;
    }
    e->has_package = 1;
+#ifndef HD_NO_3D
+   hd_remote_keep_load(&e->state, NULL, 0); /* nothing kept until the host gives it */
+#endif
    say(e, GOLINKHD_LOG_INFO, "playing %s", hd_title);
    golinkhd_restart(e);
    return 1;
@@ -205,6 +208,26 @@ int golinkhd_state_save(golinkhd_engine *e, uint8_t *out, size_t size)
       return 0;
    hd_save(&e->state, out);
    return 1;
+}
+
+size_t golinkhd_keep_save(golinkhd_engine *e, uint8_t *out, size_t size)
+{
+#ifndef HD_NO_3D
+   if (e->has_package && hd_code_game == HD_GAME_REMOTE && out)
+      return hd_remote_keep(&e->state, out, size);
+#endif
+   (void)e, (void)out, (void)size;
+   return 0;
+}
+
+int golinkhd_keep_load(golinkhd_engine *e, const uint8_t *in, size_t size)
+{
+#ifndef HD_NO_3D
+   if (e->has_package && hd_code_game == HD_GAME_REMOTE)
+      return hd_remote_keep_load(&e->state, in, size);
+#endif
+   (void)e, (void)in, (void)size;
+   return 0;
 }
 
 int golinkhd_state_load(golinkhd_engine *e, const uint8_t *in, size_t size, const char **error)

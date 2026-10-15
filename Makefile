@@ -107,7 +107,11 @@ remotebots: tools/remotebots
 tools/remotebots: tools/remotebots.c $(ENGINE_C) $(HEADERS)
 	$(CC) -std=c99 $(WARNINGS) -O2 $(INCFLAGS) -o $@ tools/remotebots.c $(ENGINE_C)
 
+# TELETRABAJO's picture for game libraries (tools/remotecover.c), packed by examples/remote/build.py.
+tools/remotecover: tools/remotecover.c $(ENGINE_C) $(HEADERS)
+	$(CC) -std=c99 $(WARNINGS) -O2 $(INCFLAGS) -o $@ tools/remotecover.c $(ENGINE_C)
+
 clean:
-	rm -f $(OBJECTS) lib$(NAME).so lib$(NAME).dylib $(NAME).dll lib$(NAME).a $(TEST_BIN) tools/hdrun tools/glhd tools/bench tools/remotebots
+	rm -f $(OBJECTS) lib$(NAME).so lib$(NAME).dylib $(NAME).dll lib$(NAME).a $(TEST_BIN) tools/hdrun tools/glhd tools/bench tools/remotebots tools/remotecover
 
 .PHONY: all clean static test tools bench remotebots

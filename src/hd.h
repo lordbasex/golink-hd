@@ -562,6 +562,10 @@ void hd_r3d_sanitize(hd_show *w);
 #define HD_GAME3D_FITS(type) typedef char type##_fits_in_hd_state[sizeof(type) <= sizeof(((hd_state *)0)->taken) && sizeof(type) % 4 == 0 ? 1 : -1]
 /* TELETRABAJO: CÁMARA APAGADA, the first 3D game (show.on 3; src/3d/games/remote, docs/game-remote-work.md). */
 void hd_remote_start(hd_state *s);
+/* What TELETRABAJO keeps between sessions (golinkhd_keep_save/load): the record and the main character; its size, 0 when out is too small. */
+size_t hd_remote_keep(const hd_state *s, uint8_t *out, size_t size);
+/* Kept from before (NULL: nothing), also for every new start; 0 when it is not this game's. */
+int hd_remote_keep_load(hd_state *s, const uint8_t *in, size_t size);
 void hd_remote_step(hd_state *s, const hd_input in[MAX_PLAYERS]);
 void hd_remote_draw(const hd_state *s, void *screen);
 void hd_remote_sanitize(hd_state *s);

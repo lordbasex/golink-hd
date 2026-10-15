@@ -1182,6 +1182,32 @@ static void test_model3d(void)
 }
 
 /* TELETRABAJO as a package ("game": "remote") with its effects and tracks by name: the title's music, the alarm in the morning, loops that keep their channel, a call's music and back. */
+/* What TELETRABAJO keeps between sessions: the record and the main character, back at every start; anything else is refused. */
+static void test_remote_keep(void)
+{
+   static hd_state a;
+   hd_remote *g = HD_GAME3D(&a, hd_remote);
+   uint8_t keep[GOLINKHD_KEEP_MAX], bad[9] = "XXXX";
+   size_t n;
+   hd_reset(&a);
+   hd_remote_start(&a);
+   CHECK(g->best == 0 && g->hero == 0);
+   g->best = 2449;
+   g->hero = 1;
+   n = hd_remote_keep(&a, keep, sizeof keep);
+   CHECK(n == 9 && hd_remote_keep(&a, keep, 4) == 0);
+   hd_reset(&a);
+   CHECK(hd_remote_keep_load(&a, keep, n) == 1);
+   hd_remote_start(&a);
+   CHECK(g->best == 2449 && g->hero == 1 && g->screen == RSC_TITLE);
+   hd_remote_start(&a); /* a restart keeps them too */
+   CHECK(g->best == 2449 && g->hero == 1);
+   CHECK(hd_remote_keep_load(&a, bad, sizeof bad) == 0);
+   hd_remote_start(&a);
+   CHECK(g->best == 0 && g->hero == 0);
+   hd_remote_keep_load(&a, NULL, 0);
+}
+
 static void test_remote_sound(void)
 {
    static uint8_t zip[200000], loop_wav[20000], shot_wav[10000], song[40000];
@@ -2304,6 +2330,10 @@ static void test_api(void)
    }
    CHECK(out.width == 640 && out.height == 360 && out.pitch == 640 && out.audio_frames == HD_SAMPLES_PER_FRAME);
    CHECK(golinkhd_state_size(e) == HD_SAVE_SIZE);
+   {
+      uint8_t keep[GOLINKHD_KEEP_MAX];
+      CHECK(golinkhd_keep_save(e, keep, sizeof keep) == 0 && golinkhd_keep_load(e, keep, 0) == 0); /* the demo keeps nothing */
+   }
    CHECK(!golinkhd_state_save(e, save, HD_SAVE_SIZE - 1));
    CHECK(golinkhd_state_save(e, save, sizeof save));
    for (f = 0; f < 60; f++)
@@ -2980,6 +3010,7 @@ int main(void)
    test_remote_boss();
    test_remote_screens();
    test_remote_sound();
+   test_remote_keep();
    test_model3d();
 #endif
    test_effects_package();

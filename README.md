@@ -348,7 +348,9 @@ A pad (`golinkhd_pad`) carries every button of a modern controller (L2, R2, L3 a
 
 ## Settings
 
-`golinkhd_set_music(e, on)` and `golinkhd_set_language(e, "en" | "es" | "pt")` (texts and dialogs). API 2 adds `golinkhd_set_resolution(e, 360 | 720 | 1080)`: the picture's size for the next `golinkhd_load` (0 is the package's own; see `art_scale`). A host that loads the library at run time looks the function up and goes without it on an older engine.
+`golinkhd_set_music(e, on)` and `golinkhd_set_language(e, "en" | "es" | "pt")` (texts and dialogs). API 2 adds `golinkhd_set_resolution(e, 360 | 720 | 1080)`: the picture's size for the next `golinkhd_load` (0 is the package's own; see `art_scale`). A host that loads the library at run time looks the function up and goes without it on an older engine. API 3 adds `golinkhd_keep_save(e, out, size)` and `golinkhd_keep_load(e, in, size)`: what a game keeps between sessions (TELETRABAJO's record and main character, at most `GOLINKHD_KEEP_MAX` bytes), which the host stores for each game and gives back after every `golinkhd_load`.
+
+A game coded in the engine (`"game"`) draws its own screens, so its `screens.title` is only the picture game libraries show for it (go-link Console's rooms and lists), a PNG or a JPEG the engine never reads.
 
 ## Building
 

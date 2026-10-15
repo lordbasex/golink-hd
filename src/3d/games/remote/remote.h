@@ -274,6 +274,9 @@ const char *remote_text(int32_t id);
 /* Whose texts: 0 a man's, 1 a woman's (Spanish and Portuguese say some words otherwise); the game sets it from hd_remote.hero. */
 extern int32_t remote_text_hero;
 
+/* 1: the day is drawn as the game's picture, its scene with the title over it and no HUD (tools/remotecover). */
+extern int32_t remote_cover;
+
 /* A day straight away, without the title or the morning (tests and tools; the game itself starts at the title, hd_remote_start). */
 void hd_remote_new_day(hd_state *s);
 

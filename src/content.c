@@ -984,8 +984,8 @@ static const char *load_package(const uint8_t *data, size_t size)
       err = hd_layers_load(&zip, hd_json_get(man, "layers"));
    if (!err && !levels)
       err = hd_textures_load(&zip, hd_json_get(man, "textures"));
-   if (!err)
-      err = hd_screens_load(&zip, hd_json_get(man, "screens"));
+   if (!err && !game)
+      err = hd_screens_load(&zip, hd_json_get(man, "screens")); /* a game coded in the engine draws its own: its title picture is only for libraries (any PNG or JPEG) */
    if (!err)
       err = load_credits(hd_json_get(man, "credits"));
    if (!err)

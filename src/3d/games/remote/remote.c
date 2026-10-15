@@ -839,6 +839,38 @@ void hd_remote_new_day(hd_state *s)
    new_day(s, g);
 }
 
+/* What the host keeps between sessions: "RWK1", the record (4 bytes, little end first), the main character. */
+#define KEEP_SIZE 9
+static int32_t kept_best, kept_hero;
+
+size_t hd_remote_keep(const hd_state *s, uint8_t *out, size_t size)
+{
+   const hd_remote *g = HD_GAME3D_C(s, hd_remote);
+   uint32_t best = (uint32_t)hd_max(g->best, kept_best);
+   if (!out || size < KEEP_SIZE)
+      return 0;
+   memcpy(out, "RWK1", 4);
+   out[4] = (uint8_t)best, out[5] = (uint8_t)(best >> 8), out[6] = (uint8_t)(best >> 16), out[7] = (uint8_t)(best >> 24);
+   out[8] = (uint8_t)hd_clamp(g->hero, 0, 1);
+   return KEEP_SIZE;
+}
+
+int hd_remote_keep_load(hd_state *s, const uint8_t *in, size_t size)
+{
+   hd_remote *g = HD_GAME3D(s, hd_remote);
+   kept_best = kept_hero = 0;
+   if (!in || size < KEEP_SIZE || memcmp(in, "RWK1", 4))
+      return 0;
+   kept_best = hd_clamp((int32_t)((uint32_t)in[4] | (uint32_t)in[5] << 8 | (uint32_t)in[6] << 16 | (uint32_t)in[7] << 24), 0, 1 << 30);
+   kept_hero = in[8] ? 1 : 0;
+   if (g->screen == RSC_TITLE)
+   {
+      g->best = hd_max(g->best, kept_best);
+      g->hero = kept_hero;
+   }
+   return 1;
+}
+
 void hd_remote_start(hd_state *s)
 {
    hd_remote *g = HD_GAME3D(s, hd_remote);
@@ -847,6 +879,8 @@ void hd_remote_start(hd_state *s)
    s->show.on = 3;
    memset(g, 0, sizeof *g);
    g->screen = RSC_TITLE;
+   g->best = kept_best;
+   g->hero = kept_hero;
 }
 
 static void to_title(hd_remote *g)
@@ -2211,6 +2245,8 @@ static void pause_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
    menu_draw(sf, items, 4, g->menu, 130 * scale, scale);
 }
 
+int32_t remote_cover;
+
 void hd_remote_draw(const hd_state *s, void *screen)
 {
    hd_surface *sf = (hd_surface *)screen;
@@ -2242,6 +2278,12 @@ void hd_remote_draw(const hd_state *s, void *screen)
    v.pitch = g->cam_pitch + g->cam_lift;
    worker_pose(g, &pose);
    scene(sf, g, &v, &pose);
+   if (remote_cover)
+   {
+      /* the game's picture (tools/remotecover): the day's scene and the title, nothing else */
+      title_text(sf, 40 * scale, scale);
+      return;
+   }
    if (g->screen == RSC_HELP)
    {
       help_hud(sf, g, scale);

@@ -300,7 +300,9 @@ a save state or a replay is still exact.
 
 The record is kept for the session in the game's state (`best`), so it
 survives another day and a save state. Keeping it between sessions needs
-the host (go-link) to store it and pass it in: that is phase 7.
+the host (go-link) to store it and pass it in: API 3's `golinkhd_keep_save`
+and `golinkhd_keep_load` hand it over (with the main character chosen),
+and go-link Console keeps it for each game.
 
 ### HUD
 
@@ -543,10 +545,25 @@ before the next one.
 | 4 | Screens and HUD (**done 2026-10-14**) | Title, how to play, morning, pause, end, score, record | 1 session |
 | 5 | Sound (**done 2026-10-14**) | Recorded effects and music (chill-out, lo-fi) in the game's package (`audio`), the alarm, phone, bell, drill; the language in the title's menu | 1 session |
 | 6 | Polish (**done 2026-10-14**) | Balancing with bots that walk the house (`make remotebots`), texts in 3 languages checked to fit, things in the hands, the shower's water, docs (`docs/3d.md`'s steps 12 to 18 for the next 3D game) | 1 session |
-| 7 | go-link | Show it in go-link Console as an HD game (picture, trailer) | later |
+| 7 | go-link (**under way 2026-10-15**) | Show it in go-link Console as an HD game (picture, trailer), its record kept between sessions | 1 session |
 | 8 | Willy Maker | Whatever it needs from this game | last |
 
 ## 13. Progress
+
+**Phase 7, go-link (2026-10-15), engine side.** The package has a picture
+for game libraries: `tools/remotecover` draws the flat with the worker at
+the desk and the cat on the keyboard, the title over it and no HUD
+(`remote_cover`); `build.py` packs it as `screens.title` (a JPEG, which a
+coded game's engine never loads). API 3 lets the host keep the record and
+the main character between sessions (`golinkhd_keep_save`,
+`golinkhd_keep_load`). Steps to make the package:
+
+```
+python3 examples/remote/build.py
+tools/glhd pack examples/remote/game remote.glhd
+make tools/remotecover && tools/remotecover remote.glhd examples/remote/source/cover.png
+python3 examples/remote/build.py && tools/glhd pack examples/remote/game remote.glhd
+```
 
 **A name (2026-10-15).** The user asked for a name with an anagram of the
 title as its surname: Alberto Teja (TELETRABAJO), Alberta Teja for the
