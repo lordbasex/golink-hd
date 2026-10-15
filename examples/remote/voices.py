@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Federico Pereira <lord.basex@gmail.com>
-"""Records the main character's thoughts for TELETRABAJO: CÁMARA APAGADA in
+"""Records the main character's voice for TELETRABAJO: CÁMARA APAGADA in
 English, Spanish and Portuguese, for both main characters (a man and a
 woman), with speech models that run on the computer, into
-source/voices/<m|w>/<lang>/<key>.wav.
+source/voices/<m|w>/<lang>/<key>.wav: the thoughts, the boss's asks read
+aloud (read_*), what the worker thinks of each (muse_*) and the answers
+(say_*); build.py makes the thoughts sound inside the head.
 
 The lines are the game's own: the `voiced` table in
 src/3d/games/remote/remote.c (each text and its key) and their translations
@@ -51,19 +53,19 @@ def voiced():
     """(text expression, key) of every thought the game says aloud."""
     src = open(os.path.join(GAME, "remote.c"), encoding="utf-8").read()
     table = re.search(r"\} voiced\[\] = \{(.*?)\n\};", src, re.S).group(1)
-    return [(norm(e), k) for e, k in re.findall(r"\{\s*([A-Z_+ ]+?),\s*\"([a-z_]+)\"\s*\}", table)]
+    return [(norm(e), k) for e, k in re.findall(r"\{\s*([A-Z_0-9+* ]+?),\s*\"([a-z_]+)\"\s*\}", table)]
 
 
 def texts():
     """Every text of remote_text.c by its expression: {"m": [en, es, pt], "w": [...]}."""
     src = open(os.path.join(GAME, "remote_text.c"), encoding="utf-8").read()
     out = {}
-    for e, en, es, pt in re.findall(r"\[([A-Z_0-9+ ]+)\]\s*=\s*\{\s*" + STRING + r",\s*" + STRING + r",\s*" + STRING + r"\s*\}", src):
+    for e, en, es, pt in re.findall(r"\[([A-Z_0-9+* ]+)\]\s*=\s*\{\s*" + STRING + r",\s*" + STRING + r",\s*" + STRING + r"\s*\}", src):
         line = [t.replace('\\"', '"') for t in (en, es, pt)]
         out[norm(e)] = {"m": line, "w": list(line)}
     table = re.search(r"\} woman\[\] = \{(.*?)\n\};", src, re.S).group(1)
     one = r'(NULL|' + STRING + r')'
-    for m in re.finditer(r"\{\s*([A-Z_0-9+ ]+),\s*\{\s*" + one + r",\s*" + one + r",\s*" + one + r"\s*\}\s*\}", table):
+    for m in re.finditer(r"\{\s*([A-Z_0-9+* ]+),\s*\{\s*" + one + r",\s*" + one + r",\s*" + one + r"\s*\}\s*\}", table):
         e = norm(m.group(1))
         if e not in out:
             continue  # written another way in the texts (RT_STATUS + 3): never a thought
@@ -76,7 +78,7 @@ def texts():
 
 def spoken(line):
     """What the voice reads: the line as shown, without what is only for the eye."""
-    line = line.replace("...", ",").replace("Zzz", "")
+    line = re.sub(r"([?!])\.\.\.", r"\1", line).replace("...", ",").replace("Zzz", "")
     return re.sub(r"\s+", " ", line).strip()
 
 

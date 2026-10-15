@@ -138,6 +138,7 @@ typedef struct
    int32_t weekend;            /* the weekend question: 0 not asked or not answered, 1 "of course" (sold), 2 "I have plans" */
    int32_t hotfixes;           /* hotfixes deployed today */
    int32_t chatter_at;         /* the game minute the boss writes something that needs no answer */
+   int32_t muse, muse_t;       /* the worker's thought about the boss's ask (a text id + 1) and its frames left */
 } hd_remote;
 
 /* Every number that balances the game, in one place. */
@@ -160,6 +161,8 @@ typedef struct
 #define REMOTE_CAM_PITCH_MIN 250
 #define REMOTE_CAM_PITCH_MAX 1000
 #define REMOTE_TOAST_FRAMES 180                /* a message stays three seconds */
+#define REMOTE_MUSE_WAIT 165                   /* the thought about the boss's ask shows once the ask was read (most are read in under 2.75 seconds), */
+#define REMOTE_MUSE_FRAMES (REMOTE_MUSE_WAIT + 420) /* and stays seven seconds */
 #define REMOTE_SUSPICION_MAX 1000              /* the boss's patience: fired at once */
 #define REMOTE_AWAY_GRACE 10                   /* game minutes away before the status says "away" */
 #define REMOTE_AWAY_RISE 2                     /* suspicion a game minute away after that */
@@ -264,7 +267,8 @@ enum
    RT_CHATTER,        /* REMOTE_CHATTER: the boss writing what needs no answer */
    RT_MENU_HERO = RT_CHATTER + REMOTE_CHATTER, /* "Main character" (the choice follows) */
    RT_HERO,           /* 2: a man, a woman */
-   RT_COUNT = RT_HERO + 2
+   RT_BOSS_MUSE = RT_HERO + 2, /* RE_BOSS_KINDS x 2: what the worker thinks of each ask, after reading it */
+   RT_COUNT = RT_BOSS_MUSE + RE_BOSS_KINDS * 2
 };
 const char *remote_text(int32_t id);
 /* Whose texts: 0 a man's, 1 a woman's (Spanish and Portuguese say some words otherwise); the game sets it from hd_remote.hero. */

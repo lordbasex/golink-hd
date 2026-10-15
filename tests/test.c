@@ -1000,6 +1000,11 @@ static void test_remote_texts(void)
          CHECK(t != NULL && t[0] != 0);
          if (!t || id == RT_TITLE || (id >= RT_HELP_LINE && id < RT_HELP_LINE + REMOTE_HELP_PAGES * 4))
             continue;
+         if (id >= RT_BOSS_MUSE && id < RT_BOSS_MUSE + RE_BOSS_KINDS * 2)
+         {
+            CHECK(strlen(t) < 46 * 3); /* wrapped in the thought's cloud: three lines at most */
+            continue;
+         }
          if (id == RT_PAUSE)
             scale = 4;
          else if ((id >= RT_END_TITLE && id < RT_END_TITLE + 5) || (id >= RT_HELP_TITLE && id < RT_HELP_TITLE + REMOTE_HELP_PAGES) || id == RT_MORNING_RING)
@@ -1191,7 +1196,9 @@ static void test_remote_sound(void)
                    "\"effects\": {\"alarm\": {\"file\": \"loop.wav\", \"loop\": true}, \"drill\": {\"file\": \"loop.wav\", \"loop\": true, \"volume\": 128},"
                    " \"ui_move\": \"shot.wav\", \"step\": \"shot.wav\","
                    " \"voice_m_en_done_coffee\": {\"file\": \"shot.wav\", \"on_demand\": true}, \"voice_m_es_done_coffee\": {\"file\": \"shot.wav\", \"on_demand\": true},"
-                   " \"voice_m_es_cat_moved\": \"shot.wav\", \"voice_w_es_cat_moved\": {\"file\": \"shot.wav\", \"on_demand\": true}},"
+                   " \"voice_m_es_cat_moved\": \"shot.wav\", \"voice_w_es_cat_moved\": {\"file\": \"shot.wav\", \"on_demand\": true},"
+                   " \"voice_m_en_read_call_a\": \"shot.wav\", \"voice_m_en_muse_call_a\": {\"file\": \"song.wav\", \"on_demand\": true},"
+                   " \"voice_m_en_read_call_b\": \"shot.wav\", \"voice_m_en_muse_call_b\": {\"file\": \"song.wav\", \"on_demand\": true}, \"voice_m_en_say_call\": \"shot.wav\"},"
                    " \"tracks\": {\"title\": {\"file\": \"song.wav\"}, \"day\": {\"file\": \"song.wav\", \"volume\": 150}, \"call\": {\"file\": \"song.wav\"}}}}";
    files[1].name = "loop.wav";
    files[1].text = (const char *)loop_wav;
@@ -1294,6 +1301,43 @@ static void test_remote_sound(void)
    g->toast_t = REMOTE_TOAST_FRAMES + 1;
    remote_plays(&a, 1, 0);
    CHECK(channel_of(&a, hd_effect("voice_m_en_done_coffee")) >= 0);
+   /* the boss's ask: read aloud at once, cutting the thought before, then what the worker thinks of it, once the reading ended */
+   {
+      int32_t k, read, muse, c, ask;
+      g->boss = 0;
+      g->net_t = 0;
+      g->ev_next = 0;
+      g->ev_count = 1;
+      g->ev_kind[0] = RE_CALL;
+      g->ev_at[0] = 0;
+      remote_plays(&a, 1, 0);
+      ask = g->phone_text[(g->phone_n - 1) % REMOTE_PHONE] - RT_BOSS_ASK - RE_CALL * 2;
+      CHECK(g->boss == RE_CALL + 1 && (ask == 0 || ask == 1) && g->muse == RT_BOSS_MUSE + RE_CALL * 2 + ask + 1);
+      read = hd_effect(ask ? "voice_m_en_read_call_b" : "voice_m_en_read_call_a");
+      muse = hd_effect(ask ? "voice_m_en_muse_call_b" : "voice_m_en_muse_call_a");
+      c = channel_of(&a, muse);
+      CHECK(channel_of(&a, read) >= 0 && c >= 0 && channel_of(&a, hd_effect("voice_m_en_done_coffee")) == -1);
+      if (c >= 0)
+      {
+         CHECK(a.ch[c].pos < -hd_sample_len(read) + HD_SAMPLES_PER_FRAME * 2);
+         for (k = 0; k < 10; k++)
+            hd_mix(&a, out, 1);
+         CHECK(a.ch[c].sample == muse && a.ch[c].pos < 0); /* still waiting while the ask is read */
+         for (k = 0; k < 60 && a.ch[c].pos < 0; k++)
+            hd_mix(&a, out, 1);
+         hd_mix(&a, out, 1);
+         CHECK(a.ch[c].sample == muse && a.ch[c].pos > 0 && channel_of(&a, read) == -1);
+      }
+      /* the answer, at the desk at once, waits until the thought is over */
+      g->act = RA_WORK + 1;
+      g->energy = REMOTE_ENERGY_MAX;
+      remote_plays(&a, 1, 0);
+      CHECK(g->phone_who[(g->phone_n - 1) % REMOTE_PHONE] == RW_YOU && c >= 0 && a.ch[c].sample == muse);
+      c = channel_of(&a, hd_effect("voice_m_en_say_call"));
+      CHECK(c >= 0 && a.ch[c].pos < -HD_SAMPLES_PER_FRAME);
+      g->boss = 0;
+      g->act = 0;
+   }
    hd_lang = i;
    /* the pause silences the loops */
    g->drill_t = 600;

@@ -357,7 +357,7 @@ typedef struct
 typedef struct
 {
    int32_t sample; /* -1 = idle */
-   int32_t pos;  /* whole samples played */
+   int32_t pos;  /* whole samples played (below 0: output samples still to wait before it starts) */
    int32_t frac; /* and the fraction of the next one, 0..65535 */
    int32_t step; /* 16.16 samples per output sample (the pitch) */
    int32_t vol, decay, pan;
@@ -581,6 +581,12 @@ void hd_play(hd_state *s, int32_t sfx, int32_t screen_x);
  * FX_ONE as recorded). Returns the channel, -1 when nothing was played.
  */
 int32_t hd_play_at(hd_state *s, int32_t sample, int32_t vol, int32_t pan, int32_t step);
+/*
+ * How long a sample is (whole samples as recorded, HD_RATE a second), 0 when
+ * there is none. A channel whose pos is set below 0 right after hd_play_at
+ * waits that many output samples before it starts: a line said after another.
+ */
+int32_t hd_sample_len(int32_t sample);
 /*
  * A sound that goes on while the game wants it (a drill, a shower, a purr):
  * called every frame with its volume and place, it starts the sample on a

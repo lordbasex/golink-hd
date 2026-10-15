@@ -513,13 +513,18 @@ static void plan_day(hd_state *s, hd_remote *g)
 
 static void fire(hd_state *s, hd_remote *g, int32_t kind)
 {
+   int32_t ask;
    if (kind < RE_BOSS_KINDS)
    {
       g->boss = kind + 1;
       g->boss_call = 0;
       g->boss_t = kind == RE_MEETING ? hd_max(10 * 60, (MEETING_AT - g->t / FPM) * FPM) : boss_events[kind].seconds * 60;
       g->boss_limit = g->boss_t;
-      phone(g, RW_BOSS, RT_BOSS_ASK + kind * 2 + rng_range(&s->rng, 2));
+      ask = kind * 2 + rng_range(&s->rng, 2);
+      phone(g, RW_BOSS, RT_BOSS_ASK + ask);
+      /* the worker reads it, then thinks what it really thinks of it */
+      g->muse = RT_BOSS_MUSE + ask + 1;
+      g->muse_t = REMOTE_MUSE_FRAMES;
       return;
    }
    switch (kind)
@@ -930,6 +935,8 @@ static void day_step(hd_state *s, hd_remote *g, const hd_input *in)
    g->cam_yaw &= ANGLE_FULL - 1;
    if (g->toast_t > 0)
       g->toast_t--;
+   if (g->muse_t > 0)
+      g->muse_t--;
    if (g->act)
    {
       g->prompt = 0;
@@ -1091,9 +1098,23 @@ static const struct
    { RT_DONE + RA_SUN, "done_sun" }, { RT_DONE + RA_PLANTS, "done_plants" }, { RT_DONE + RA_SHOWER, "done_shower" },
    { RT_DONE + RA_WASHING, "done_washing" }, { RT_DONE + RA_DOOR, "done_door" }, { RT_DONE + RA_CAT, "done_cat" },
    { RT_DONE + RA_PHONES, "done_phones" }, { RT_AGAIN, "again" }, { RT_CAT_MOVED, "cat_moved" }, { RT_HOTFIX_DONE, "hotfix_done" },
-   { RT_BOSS_YES + RE_MEETING, "yes_meeting" }, { RT_BOSS_YES + RE_CALL, "yes_call" }, { RT_BOSS_YES + RE_MESSAGE, "yes_message" },
-   { RT_BOSS_YES + RE_SHARE, "yes_share" }, { RT_BOSS_YES + RE_HOTFIX, "yes_hotfix" }, { RT_BOSS_YES + RE_WEEKEND, "yes_weekend" },
-   { RT_BOSS_YES + RE_CAMERA, "yes_camera" }, { RT_WEEKEND_NO, "weekend_no" },
+   { RT_BOSS_YES + RE_MEETING, "say_meeting" }, { RT_BOSS_YES + RE_CALL, "say_call" }, { RT_BOSS_YES + RE_MESSAGE, "say_message" },
+   { RT_BOSS_YES + RE_SHARE, "say_share" }, { RT_BOSS_YES + RE_HOTFIX, "say_hotfix" }, { RT_BOSS_YES + RE_WEEKEND, "say_weekend" },
+   { RT_BOSS_YES + RE_CAMERA, "say_camera" }, { RT_WEEKEND_NO, "say_weekend_no" },
+   { RT_BOSS_ASK + RE_MEETING * 2, "read_meeting_a" }, { RT_BOSS_ASK + RE_MEETING * 2 + 1, "read_meeting_b" },
+   { RT_BOSS_ASK + RE_CALL * 2, "read_call_a" }, { RT_BOSS_ASK + RE_CALL * 2 + 1, "read_call_b" },
+   { RT_BOSS_ASK + RE_MESSAGE * 2, "read_message_a" }, { RT_BOSS_ASK + RE_MESSAGE * 2 + 1, "read_message_b" },
+   { RT_BOSS_ASK + RE_SHARE * 2, "read_share_a" }, { RT_BOSS_ASK + RE_SHARE * 2 + 1, "read_share_b" },
+   { RT_BOSS_ASK + RE_HOTFIX * 2, "read_hotfix_a" }, { RT_BOSS_ASK + RE_HOTFIX * 2 + 1, "read_hotfix_b" },
+   { RT_BOSS_ASK + RE_WEEKEND * 2, "read_weekend_a" }, { RT_BOSS_ASK + RE_WEEKEND * 2 + 1, "read_weekend_b" },
+   { RT_BOSS_ASK + RE_CAMERA * 2, "read_camera_a" }, { RT_BOSS_ASK + RE_CAMERA * 2 + 1, "read_camera_b" },
+   { RT_BOSS_MUSE + RE_MEETING * 2, "muse_meeting_a" }, { RT_BOSS_MUSE + RE_MEETING * 2 + 1, "muse_meeting_b" },
+   { RT_BOSS_MUSE + RE_CALL * 2, "muse_call_a" }, { RT_BOSS_MUSE + RE_CALL * 2 + 1, "muse_call_b" },
+   { RT_BOSS_MUSE + RE_MESSAGE * 2, "muse_message_a" }, { RT_BOSS_MUSE + RE_MESSAGE * 2 + 1, "muse_message_b" },
+   { RT_BOSS_MUSE + RE_SHARE * 2, "muse_share_a" }, { RT_BOSS_MUSE + RE_SHARE * 2 + 1, "muse_share_b" },
+   { RT_BOSS_MUSE + RE_HOTFIX * 2, "muse_hotfix_a" }, { RT_BOSS_MUSE + RE_HOTFIX * 2 + 1, "muse_hotfix_b" },
+   { RT_BOSS_MUSE + RE_WEEKEND * 2, "muse_weekend_a" }, { RT_BOSS_MUSE + RE_WEEKEND * 2 + 1, "muse_weekend_b" },
+   { RT_BOSS_MUSE + RE_CAMERA * 2, "muse_camera_a" }, { RT_BOSS_MUSE + RE_CAMERA * 2 + 1, "muse_camera_b" },
    { RT_BELL, "bell" }, { RT_BELL_GONE, "bell_gone" }, { RT_CAT_KEYS, "cat_keys" }, { RT_DRILL, "drill" }, { RT_DRILL_END, "drill_end" },
    { RT_NET, "net" }, { RT_NET_BACK, "net_back" }, { RT_WASHER, "washer" },
 };
@@ -1126,21 +1147,62 @@ static void sound_names(void)
    }
 }
 
-/* A thought said in the language of the texts and the main character's voice, cutting short the one before. */
-static void think(hd_state *s, const hd_remote *g, int32_t text)
+/* The recording of a line in the language of the texts and the main character's voice, -1 when there is none. */
+static int32_t voice_of(const hd_remote *g, int32_t text)
 {
-   int32_t i, k, c, sample = -1;
-   const int32_t *all = &voice_sample[0][0][0];
-   for (i = 0; i < VOICED && sample < 0; i++)
+   int32_t i;
+   for (i = 0; i < VOICED; i++)
       if (voiced[i].text == text)
-         sample = voice_sample[hd_clamp(g->hero, 0, 1)][hd_clamp(hd_lang, 0, LANGS - 1)][i];
-   if (sample < 0)
-      return;
+         return voice_sample[hd_clamp(g->hero, 0, 1)][hd_clamp(hd_lang, 0, LANGS - 1)][i];
+   return -1;
+}
+
+/* Output samples until every line said now (and waiting) is over. */
+static int32_t voice_left(const hd_state *s)
+{
+   const int32_t *all = &voice_sample[0][0][0];
+   int32_t c, k, left = 0;
    for (c = 0; c < MAX_CHANNELS; c++)
       for (k = 0; k < 2 * LANGS * VOICED; k++)
          if (s->ch[c].sample >= 0 && s->ch[c].sample == all[k])
-            s->ch[c].sample = -1;
-   hd_play_at(s, sample, 240, 0, FX_ONE);
+            left = hd_max(left, hd_sample_len(all[k]) - s->ch[c].pos);
+   return left;
+}
+
+/* Lines said one after another: a short breath between two. */
+#define VOICE_GAP (HD_RATE * 2 / 5)
+
+/*
+ * A line said: cutting short the ones before (and those still waiting), or,
+ * `queued`, once they are over; `wait` output samples of silence first.
+ * Returns how long it lasts, 0 when it has no recording.
+ */
+static int32_t say(hd_state *s, const hd_remote *g, int32_t text, int32_t vol, int32_t wait, int queued)
+{
+   const int32_t *all = &voice_sample[0][0][0];
+   int32_t k, c, sample = voice_of(g, text);
+   if (sample < 0)
+      return 0;
+   if (queued)
+   {
+      int32_t left = voice_left(s);
+      wait = left ? left + VOICE_GAP : wait;
+   }
+   else if (!wait)
+      for (c = 0; c < MAX_CHANNELS; c++)
+         for (k = 0; k < 2 * LANGS * VOICED; k++)
+            if (s->ch[c].sample >= 0 && s->ch[c].sample == all[k])
+               s->ch[c].sample = -1;
+   c = hd_play_at(s, sample, vol, 0, FX_ONE);
+   if (c >= 0)
+      s->ch[c].pos = -wait;
+   return c >= 0 ? hd_sample_len(sample) : 0;
+}
+
+/* A thought, cutting short the line before. */
+static void think(hd_state *s, const hd_remote *g, int32_t text)
+{
+   say(s, g, text, 240, 0, 0);
 }
 
 /*
@@ -1241,7 +1303,7 @@ static int32_t newest(const hd_remote *g, int32_t *who)
 /* What happened in the day this frame. */
 static void sound_day(hd_state *s, const hd_remote *was, const hd_remote *g)
 {
-   int32_t who, text;
+   int32_t who, text, k;
    int32_t door_x = ROOM3D_AT(activities[RA_DOOR].ax), door_z = ROOM3D_AT(activities[RA_DOOR].az);
    if (g->phone_n > was->phone_n)
    {
@@ -1256,8 +1318,23 @@ static void sound_day(hd_state *s, const hd_remote *was, const hd_remote *g)
          play_at(s, g, RF_DOORBELL, door_x, door_z, 240, 120); /* the delivery, back during the call */
       else if (who != RW_MATE)
          play(s, who == RW_BOSS ? RF_BOSS_MESSAGE : RF_MESSAGE, 170, 0, FX_ONE);
-      if (who == RW_YOU || who == RW_HOUSE)
+   }
+   /* the voice: every message of the frame (an answer and the boss's reply to it come together) */
+   for (k = hd_max(was->phone_n, g->phone_n - REMOTE_PHONE); k < g->phone_n; k++)
+   {
+      text = g->phone_text[k % REMOTE_PHONE];
+      who = g->phone_who[k % REMOTE_PHONE];
+      if (who == RW_YOU)
+         say(s, g, text, 230, 0, 1); /* the answer to the boss, once the ask was read and thought over */
+      else if (who == RW_HOUSE)
          think(s, g, text);
+      else if (text >= RT_BOSS_ASK && text < RT_BOSS_ASK + RE_BOSS_KINDS * 2)
+      {
+         /* the boss's ask read aloud, then what the worker thinks of it */
+         int32_t read = say(s, g, text, 220, 0, 0);
+         if (read)
+            say(s, g, RT_BOSS_MUSE + text - RT_BOSS_ASK, 240, read + VOICE_GAP, 0);
+      }
    }
    /* an urgent message pings again every two and a half seconds until it is answered */
    if ((g->boss == RE_MESSAGE + 1 || g->boss == RE_WEEKEND + 1) && !g->boss_call && was->boss == g->boss && g->boss_t % 150 == 0)
@@ -1792,6 +1869,18 @@ static void hud(hd_surface *sf, const hd_remote *g)
          text_center(sf, line, y + 17 * scale, scale, 0xffe66d);
       }
    }
+   /* what the worker thinks of the boss's ask, once it was read: a cloud over the messages, its little puffs under it */
+   if (g->muse && g->muse_t > 0 && g->muse_t <= REMOTE_MUSE_FRAMES - REMOTE_MUSE_WAIT)
+   {
+      const char *msg = remote_text(g->muse - 1);
+      int32_t cols = 46, lines = wrap(sf, msg, 0, 0, cols, scale, 0, 0);
+      int32_t w = lines > 1 ? (cols * 6 + 16) * scale : text_width(msg, scale) + 16 * scale;
+      int32_t h = (lines * 9 + 9) * scale, x = (HD_OUT_W - w) / 2, y = HD_OUT_H - 84 * scale - h - 16 * scale;
+      panel(sf, x, y, w, h, 0x2b2346, 190);
+      panel(sf, x + 18 * scale, y + h + 3 * scale, 6 * scale, 5 * scale, 0x2b2346, 190);
+      panel(sf, x + 12 * scale, y + h + 10 * scale, 4 * scale, 3 * scale, 0x2b2346, 190);
+      wrap(sf, msg, x + 8 * scale, y + 5 * scale, cols, scale, 0xd9ccff, 1);
+   }
 }
 
 #define GUITAR_ROLL -260 /* the guitar's neck up, toward the hand along it */
@@ -2200,6 +2289,8 @@ void hd_remote_sanitize(hd_state *s)
    g->toast = hd_clamp(g->toast, 0, RT_COUNT);
    g->toast_t = hd_clamp(g->toast_t, 0, REMOTE_TOAST_FRAMES);
    g->toast_points = hd_clamp(g->toast_points, -100000, 100000);
+   g->muse = hd_clamp(g->muse, 0, RT_COUNT);
+   g->muse_t = hd_clamp(g->muse_t, 0, REMOTE_MUSE_FRAMES);
    g->screen_scroll = hd_clamp(g->screen_scroll, 0, 1 << 30);
    g->suspicion = hd_clamp(g->suspicion, 0, REMOTE_SUSPICION_MAX);
    g->away_t = hd_clamp(g->away_t, 0, 1 << 30);

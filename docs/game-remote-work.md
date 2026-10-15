@@ -390,12 +390,26 @@ short.
 | The man | Kokoro `am_michael` | Kokoro `em_alex`, Latin American sounds (espeak-ng `es-419`) | Kokoro `pm_alex` |
 | The woman | Kokoro `af_heart` | Piper `es_AR-daniela-high` (an Argentinian voice), 20 % slower (`length_scale` 1.2) | Kokoro `pf_dora` |
 
-- The game: the `voiced` table in `remote.c` (35 lines, each a text and a key); `think()` plays `voice_<m|w>_<en|es|pt>_<key>`, a named effect of the package, when a toast or a phone line of "You" or "Home" appears. A line without a recording says nothing.
+- The game: the `voiced` table in `remote.c` (63 lines, each a text and a key); `say()` plays `voice_<m|w>_<en|es|pt>_<key>`, a named effect of the package, when a toast or a phone line appears (`think()` for a thought, which cuts the line before). A line without a recording says nothing.
 - The recordings: `examples/remote/voices.py` reads the `voiced` table and `remote_text.c` (with the woman's words where they differ), so a text changed in the game is recorded again with its new words. Its engines run on the processor of any computer (no server, no account): Kokoro-82M (Apache 2.0, by hexgrad) through `kokoro-onnx`, and Piper voices through `piper-tts`; the phonemes come from the system's espeak-ng for both. audio.json's `"voices"` says who says what. They land in `source/voices/<m|w>/<lang>/` (not in git, like the other recordings).
-- The sound: `build.py` makes each one sound thought (a little bass and treble off, a short echo of a small room), levels it over the music and packs it as ADPCM with `"on_demand": true`: 210 recordings, about 10 MB in the package, but only the ones played become samples in memory (one character, one language).
+- The sound: `build.py` makes each thought sound inside the head (a little bass and treble off, a short echo of a small room) and leaves what is said out loud dry (keys `read_*` and `say_*`), levels them over the music and packs them as ADPCM with `"on_demand": true`: 378 recordings, about 23 MB in the package, but only the ones played become samples in memory (one character, one language).
 - Licenses: Kokoro's voices are Apache 2.0; Daniela was trained by larcanio on Google's Argentinian Spanish recordings (OpenSLR 61, CC BY-SA 4.0), so the woman's Spanish recordings are shared under CC BY-SA 4.0 too, with that credit (the game's credits and CREDITS.md).
 - Chosen by ear from seven Spanish voices (Kokoro Alex neutral and Rioplatense, Santa, Dora; Piper's Mexican Ald and Claude; Daniela). No open Argentinian man's voice exists yet: a fine-tuned Orpheus 3B ("Rioplatense") needs a graphics card, and a small zero-shot one is only a proof of concept.
 - Over VoiceStudio (an AGPL desktop app of about 5 GB whose model has its own terms) and the public demos of Kokoro (no API, only English, or paused).
+
+#### Read, thought over, answered
+
+When the boss writes, the worker reads the message aloud (`read_*`, dry),
+thinks what it really thinks of it (`muse_*`, inside the head: "This guy is
+crazy. How am I going to work the weekend?... I'll tell him... I have a
+birthday.") and only then is the answer heard (`say_*`, dry, the polite one:
+"I can't, it's my cat's birthday."). The joke is the gap between the thought
+and the answer.
+
+- Texts: one thought for each of the boss's 14 asks (`RT_BOSS_MUSE`, written in Spanish first, neutral "tú", no gender words, so the woman needs no variants).
+- On screen: the thought shows as a violet cloud over the toasts (`hd_remote.muse`, `muse_t`), 2.75 seconds after the ask (when most are read) and for 7 seconds. It is only shown: the rules never wait for it.
+- The sound: the thought is put on a channel at once with a wait of the ask's length plus 0.4 seconds (`hd_sample_len`, a channel's `pos` below 0 waits), so it follows the reading exactly in every language and voice. A worker already at the desk answers in the same frame: the answer goes after every line still playing or waiting (`say(..., queued)`), never cutting the thought. The voices take free channels first (`next_channel`), so footsteps never steal a line that waits.
+- The answer and the boss's reply to it arrive in the same frame ("I have plans", "Noted..."): the sound walks every message of the frame, not only the newest.
 
 To voice another game: a table like `voiced` in its code, a copy of `voices.py` pointed at its texts, and the effects named the same way.
 
@@ -527,6 +541,13 @@ before the next one.
 | 8 | Willy Maker | Whatever it needs from this game | last |
 
 ## 13. Progress
+
+**Read, thought over, answered (2026-10-15).** The user asked for the
+worker to read the boss's message, think it over and then answer ("this
+guy is crazy... I'll tell him I have a birthday"). Section 8, "Read,
+thought over, answered": 14 thoughts in three languages for both
+characters, the asks read aloud, the answers said dry; a thought cloud on
+screen; a channel can wait before it starts (`hd_sample_len`).
 
 **A man or a woman, and their voices (2026-10-14).** The user picked the
 voices by ear (the Kokoro Alex neutral one for a man, Piper's Argentinian

@@ -180,6 +180,13 @@ void hd_audio_named(int32_t k, const int16_t *data, int32_t len, int loop)
 static hd_channel *next_channel(hd_state *s, int32_t *index)
 {
    int32_t tries;
+   /* a free channel first, so a sound still playing (or waiting to) is cut only when every one is busy */
+   for (tries = MUSIC_CHANNELS; tries < MAX_CHANNELS; tries++)
+      if (s->ch[tries].sample < 0)
+      {
+         *index = tries;
+         return &s->ch[tries];
+      }
    for (tries = 0; tries < MAX_CHANNELS - MUSIC_CHANNELS; tries++)
    {
       int32_t i = s->sfx_next;
@@ -219,6 +226,13 @@ int32_t hd_play_at(hd_state *s, int32_t sample, int32_t vol, int32_t pan, int32_
    c->decay = 0;
    c->pan = hd_clamp(pan, -256, 256);
    return i;
+}
+
+int32_t hd_sample_len(int32_t sample)
+{
+   if (sample >= HD_SFX_NAMED && sample < HD_SAMPLES && !samples[sample].data)
+      hd_audio_named_ready(sample - HD_SFX_NAMED);
+   return sample >= 0 && sample < HD_SAMPLES && samples[sample].data ? samples[sample].len : 0;
 }
 
 void hd_loop(hd_state *s, int32_t sample, int32_t vol, int32_t pan)
@@ -315,6 +329,11 @@ void hd_mix(hd_state *s, int16_t *out, int music_on)
       for (n = 0; n < HD_SAMPLES_PER_FRAME; n++)
       {
          int32_t v;
+         if (c->pos < 0)
+         {
+            c->pos++; /* still waiting to start */
+            continue;
+         }
          if (c->pos >= len)
          {
             if (!smp->loop)

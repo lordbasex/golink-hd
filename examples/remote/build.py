@@ -16,10 +16,11 @@ made stereo at 48 kHz, its loop blended the same way (unless it is
 "seamless" already). Everything is stored as IMA ADPCM (tools/glhd adpcm), a
 quarter of the size. CREDITS.md lists every recording.
 
-The main character's thoughts (audio.json's "voices") are recorded by
-voices.py into source/voices/<m|w>/<lang>/; here they are made to sound
-thought (softer, closer, a little room) and packed as the effects
-"voice_<m|w>_<lang>_<key>".
+The main character's voice (audio.json's "voices") is recorded by
+voices.py into source/voices/<m|w>/<lang>/; here the thoughts are made to
+sound inside the head (softer, closer, a little room), what is said out
+loud (the boss's asks read, read_*, and the answers, say_*) stays dry, and
+all are packed as the effects "voice_<m|w>_<lang>_<key>".
 """
 import array
 import json
@@ -43,6 +44,7 @@ QUIET = 500          # quieter than this at an effect's start or end is silence
 BLEND = 0.25         # seconds of a loop's end blended into its start
 VOICE_PEAK = 15000   # a thought over the music and the house
 THOUGHT = "apad=pad_dur=0.3,highpass=f=120,lowpass=f=5500,aecho=0.8:0.5:40|75:0.25|0.15"  # inside the head
+SAID = "highpass=f=90,lowpass=f=9000"  # out loud: the boss's asks read (read_*) and the answers (say_*)
 
 
 def decode(path, channels, start=0.0, length=None, filters=None):
@@ -202,7 +204,8 @@ def build(spec):
                     sys.exit("the thoughts are not recorded: run examples/remote/voices.py (python3 examples/remote/voices.py for its help)")
                 for f in sorted(os.listdir(folder)):
                     if f.endswith(".wav"):
-                        pcm = level(fade_out(trim(decode(os.path.join(folder, f), 1, filters=THOUGHT)), 1), VOICE_PEAK)
+                        said = f.startswith(("read_", "say_"))
+                        pcm = level(fade_out(trim(decode(os.path.join(folder, f), 1, filters=SAID if said else THOUGHT)), 1), VOICE_PEAK)
                         name = f"voice_{who}_{lang}_{f[:-4]}"
                         adpcm(pcm, 1, os.path.join(OUT, name + ".wav"))
                         effects[name] = {"file": name + ".wav", "on_demand": True}  # a game plays one character's, in one language
