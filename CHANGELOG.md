@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-15
+
 ### Fixed
 - TELETRABAJO's title: the main character's line ("Main character: < Alberto Teja >") fits in the menu's panel, which is wider now; a test checks every language.
 
