@@ -146,7 +146,7 @@ enum
 };
 /* A package's named effects (format 3's "audio"), after the built-in ones and the music's two waves. */
 #define HD_SFX_NAMED (SFX_COUNT + 2)
-#define HD_NAMED_MAX 256
+#define HD_NAMED_MAX 1024
 /* Every sample the mixer knows: the effects, the music's two waves and the named effects. */
 #define HD_SAMPLES (HD_SFX_NAMED + HD_NAMED_MAX)
 
@@ -572,6 +572,8 @@ void hd_audio_build(void);
 void hd_audio_sample(int32_t sfx, const int16_t *data, int32_t len);
 /* A package's named effect k (0..HD_NAMED_MAX-1, sample HD_SFX_NAMED + k); NULL removes it. */
 void hd_audio_named(int32_t k, const int16_t *data, int32_t len, int loop);
+/* Named effect k made ready to play: an "on_demand" one is made into samples the first time (sound.c); 0 when it has none. */
+int hd_audio_named_ready(int32_t k);
 void hd_play(hd_state *s, int32_t sfx, int32_t screen_x);
 /*
  * Any sample (a built-in effect or a named one) at a volume (0..256), placed

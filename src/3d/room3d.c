@@ -36,7 +36,7 @@ static r3d_mesh scene;
 static actor3d_kit people[ROOM3D_PEOPLE];
 static pet3d_kit cat;
 static r3d_mesh props[ROOM3D_PROPS];
-static model3d_body bodies[ROOM3D_PEOPLE];
+static model3d_body bodies[ROOM3D_MODELS];
 static int32_t built_for = -1, builds;
 static int32_t bodies_gen = -1, bodies_first = -1;
 static r3d_mesh person_shadow;
@@ -1815,7 +1815,7 @@ const r3d_mesh *room3d_shadow(void)
 
 model3d_body *room3d_person_model(int32_t who)
 {
-   static const char *const names[ROOM3D_PEOPLE] = { "worker", "flatmate" };
+   static const char *const names[ROOM3D_MODELS] = { "worker", "flatmate", "worker_woman" };
    int32_t i;
    hd_r3d_build();
    if (bodies_gen != model3d_gen)
@@ -1825,18 +1825,18 @@ model3d_body *room3d_person_model(int32_t who)
          r3d_truncate(bodies_first);
       bodies_first = r3d_triangles();
       r3d_place(0, 0, 0, 0);
-      for (i = 0; i < ROOM3D_PEOPLE; i++)
+      for (i = 0; i < ROOM3D_MODELS; i++)
          model3d_body_build(&bodies[i], model3d_find(names[i]));
       bodies_gen = model3d_gen;
    }
-   who = hd_clamp(who, 0, ROOM3D_PEOPLE - 1);
+   who = hd_clamp(who, 0, ROOM3D_MODELS - 1);
    return bodies[who].model && model3d_bones(bodies[who].model) ? &bodies[who] : NULL;
 }
 
 const actor3d_kit *room3d_person(int32_t who)
 {
    hd_r3d_build();
-   return &people[hd_clamp(who, 0, ROOM3D_PEOPLE - 1)];
+   return &people[who == ROOM3D_WORKER_WOMAN ? ROOM3D_WORKER : hd_clamp(who, 0, ROOM3D_PEOPLE - 1)];
 }
 
 void hd_r3d_start(hd_state *s)

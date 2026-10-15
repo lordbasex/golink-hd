@@ -375,20 +375,33 @@ CC-BY with credit) are listed in `examples/remote/audio.json`, and
 
 ### The thoughts' voice
 
-The lines the worker thinks are read aloud when they show, in the language
-of the texts (English, Spanish or Portuguese, switched from the title's
-menu): what an activity left ("Another coffee. Who's counting?"), "again?",
-the cat taken off, the hotfix out, the answers to the boss and the
-weekend's "no", and what happens in the house (the bell, the drill, the
-internet, the washing machine). The boss, the flatmate and the cat are not
-voiced. A new thought cuts the one before short.
+The lines the main character thinks are read aloud when they show, in the
+language of the texts (English, Spanish or Portuguese, switched from the
+title's menu) and in the voice of the character the player picked (a man
+or a woman, also from the title's menu): what an activity left ("Another
+coffee. Who's counting?"), "again?", the cat taken off, the hotfix out, the
+answers to the boss and the weekend's "no", and what happens in the house
+(the bell, the drill, the internet, the washing machine). The boss, the
+flatmate and the cat are not voiced. A new thought cuts the one before
+short.
 
-- The game: the `voiced` table in `remote.c` (35 lines, each a text and a key); `think()` plays `voice_<en|es|pt>_<key>`, a named effect of the package, when a toast or a phone line of "You" or "Home" appears. A line without a recording says nothing.
-- The recordings: `examples/remote/voices.py` reads the `voiced` table and `remote_text.c`, so a text changed in the game is recorded again with its new words. It runs Kokoro-82M (Apache 2.0, by hexgrad; through `kokoro-onnx`, about 90 MB, on the processor of any computer: no server, no account) with audio.json's `"voices"` (one per language, and the speed). They land in `source/voices/<lang>/` (not in git, like the other recordings).
-- The sound: `build.py` makes each one sound thought (a little bass and treble off, a short echo of a small room), levels it over the music and packs it as ADPCM: 105 recordings, about 5 MB.
-- Chosen over VoiceStudio (an AGPL desktop app of about 5 GB whose model has its own terms) and over the public demos of Kokoro (they offer no API, only English, or are paused).
+| Who | English | Spanish | Portuguese |
+|---|---|---|---|
+| The man | Kokoro `am_michael` | Kokoro `em_alex`, Latin American sounds (espeak-ng `es-419`) | Kokoro `pm_alex` |
+| The woman | Kokoro `af_heart` | Piper `es_AR-daniela-high` (an Argentinian voice), 20 % slower (`length_scale` 1.2) | Kokoro `pf_dora` |
+
+- The game: the `voiced` table in `remote.c` (35 lines, each a text and a key); `think()` plays `voice_<m|w>_<en|es|pt>_<key>`, a named effect of the package, when a toast or a phone line of "You" or "Home" appears. A line without a recording says nothing.
+- The recordings: `examples/remote/voices.py` reads the `voiced` table and `remote_text.c` (with the woman's words where they differ), so a text changed in the game is recorded again with its new words. Its engines run on the processor of any computer (no server, no account): Kokoro-82M (Apache 2.0, by hexgrad) through `kokoro-onnx`, and Piper voices through `piper-tts`; the phonemes come from the system's espeak-ng for both. audio.json's `"voices"` says who says what. They land in `source/voices/<m|w>/<lang>/` (not in git, like the other recordings).
+- The sound: `build.py` makes each one sound thought (a little bass and treble off, a short echo of a small room), levels it over the music and packs it as ADPCM with `"on_demand": true`: 210 recordings, about 10 MB in the package, but only the ones played become samples in memory (one character, one language).
+- Licenses: Kokoro's voices are Apache 2.0; Daniela was trained by larcanio on Google's Argentinian Spanish recordings (OpenSLR 61, CC BY-SA 4.0), so the woman's Spanish recordings are shared under CC BY-SA 4.0 too, with that credit (the game's credits and CREDITS.md).
+- Chosen by ear from seven Spanish voices (Kokoro Alex neutral and Rioplatense, Santa, Dora; Piper's Mexican Ald and Claude; Daniela). No open Argentinian man's voice exists yet: a fine-tuned Orpheus 3B ("Rioplatense") needs a graphics card, and a small zero-shot one is only a proof of concept.
+- Over VoiceStudio (an AGPL desktop app of about 5 GB whose model has its own terms) and the public demos of Kokoro (no API, only English, or paused).
 
 To voice another game: a table like `voiced` in its code, a copy of `voices.py` pointed at its texts, and the effects named the same way.
+
+### The main character
+
+The title's menu has a line "Main character: < Man | Woman >" (`hd_remote.hero`, kept from day to day and back at the title). It picks the model (the package's `worker` or `worker_woman`: Quaternius's CC0 "Animated Woman", a Mixamo rig whose bones and clips `hdm.py --rename mixamo --clips Idle,Walk=Walking,Run=Running` names as the engine knows them; without her the man stands in), the voice above, and the words in Spanish and Portuguese that change with a woman ("Dormida", "Reunida", "Limpia, fresca", "Despedida", "Empleada ejemplar"...: the `woman` table in `remote_text.c`, read through `remote_text_hero`).
 
 ## 9. Controls
 
@@ -514,6 +527,13 @@ before the next one.
 | 8 | Willy Maker | Whatever it needs from this game | last |
 
 ## 13. Progress
+
+**A man or a woman, and their voices (2026-10-14).** The user picked the
+voices by ear (the Kokoro Alex neutral one for a man, Piper's Argentinian
+Daniela, a little slower, for a woman) and asked to choose the main
+character at the start: section 8, "The main character". Effects can be
+played on demand now, so 210 recordings cost memory only for the ones
+heard; a package holds up to 1024 effects and 2048 files.
 
 **The thoughts read aloud (2026-10-14).** The user asked for the lines on
 screen to be read as if the worker were thinking them, in the language

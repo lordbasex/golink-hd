@@ -129,6 +129,7 @@ typedef struct
    int32_t attract;            /* 1: a bot plays a short day while the title waits (the demo) */
    int32_t attract_goal, attract_t; /* the demo bot's next place and frames into what it does */
    int32_t best;               /* the best score of this session (the host keeps it between sessions later) */
+   int32_t hero;               /* who plays: 0 a man, 1 a woman (the title's menu; the model, the voice and the texts' gender) */
    int32_t best_new;           /* 1: this day's score beat it */
    int32_t nav;                /* last frame's menu directions (the stick as the D-pad) */
    /* phase 5: the sound */
@@ -261,9 +262,13 @@ enum
    RT_CAM_OFF,
    RT_DEPLOYING,
    RT_CHATTER,        /* REMOTE_CHATTER: the boss writing what needs no answer */
-   RT_COUNT = RT_CHATTER + REMOTE_CHATTER
+   RT_MENU_HERO = RT_CHATTER + REMOTE_CHATTER, /* "Main character" (the choice follows) */
+   RT_HERO,           /* 2: a man, a woman */
+   RT_COUNT = RT_HERO + 2
 };
 const char *remote_text(int32_t id);
+/* Whose texts: 0 a man's, 1 a woman's (Spanish and Portuguese say some words otherwise); the game sets it from hd_remote.hero. */
+extern int32_t remote_text_hero;
 
 /* A day straight away, without the title or the morning (tests and tools; the game itself starts at the title, hd_remote_start). */
 void hd_remote_new_day(hd_state *s);

@@ -54,6 +54,7 @@ and, for the music, looped and stored as IMA ADPCM.
 | effect `shower` | shower.wav | simosco (freesound.org) | CC0 1.0 | https://freesound.org/people/simosco/sounds/235574/ |
 | model `worker` | Casual Character | Quaternius | CC0 1.0 | https://poly.pizza/m/kZ3DmIoGip |
 | model `flatmate` | Hoodie Character | Quaternius | CC0 1.0 | https://poly.pizza/m/gKLBoRsyKe |
+| model `worker_woman` | Animated Woman | Quaternius | CC0 1.0 | https://poly.pizza/m/9kF7eTDbhO |
 | model `sofa` | Ultimate House Interior Pack: Couch_L | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
 | model `armchair` | Ultimate House Interior Pack: Couch_Small1 | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
 | model `chair` | Ultimate House Interior Pack: Chair_1 | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
@@ -74,4 +75,9 @@ and, for the music, looped and stored as IMA ADPCM.
 | model `floor_lamp` | Ultimate House Interior Pack: Light_Stand1 | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
 | model `stool` | Ultimate House Interior Pack: Stool | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
 | model `sink` | Ultimate House Interior Pack: Bathroom_Sink | Quaternius | CC0 1.0 | https://opengameart.org/node/126986 |
-| voices `voice_*` (en am_michael, es em_alex, pt pm_alex) | Kokoro-82M | hexgrad | Apache 2.0 | https://huggingface.co/hexgrad/Kokoro-82M |
+| voices `voice_m_en_*` (the man: am_michael) | Kokoro-82M | hexgrad | Apache 2.0 | https://huggingface.co/hexgrad/Kokoro-82M |
+| voices `voice_m_es_*` (the man: em_alex) | Kokoro-82M | hexgrad | Apache 2.0 | https://huggingface.co/hexgrad/Kokoro-82M |
+| voices `voice_m_pt_*` (the man: pm_alex) | Kokoro-82M | hexgrad | Apache 2.0 | https://huggingface.co/hexgrad/Kokoro-82M |
+| voices `voice_w_en_*` (the woman: af_heart) | Kokoro-82M | hexgrad | Apache 2.0 | https://huggingface.co/hexgrad/Kokoro-82M |
+| voices `voice_w_es_*` (the woman: es_AR-daniela-high) | Piper: es_AR daniela | larcanio, from Google's Argentinian Spanish recordings (OpenSLR 61) | CC BY-SA 4.0 | https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_AR/daniela/high |
+| voices `voice_w_pt_*` (the woman: pf_dora) | Kokoro-82M | hexgrad | Apache 2.0 | https://huggingface.co/hexgrad/Kokoro-82M |

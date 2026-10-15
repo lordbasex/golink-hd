@@ -16,7 +16,9 @@
 /* A point of the flat's plan in centimeters, in the world (16.16 meters). */
 #define ROOM3D_AT(cm) (ROOM3D_BASE + FX_FRAC(cm, 100))
 
-enum { ROOM3D_WORKER = 0, ROOM3D_FLATMATE, ROOM3D_PEOPLE };
+enum { ROOM3D_WORKER = 0, ROOM3D_FLATMATE, ROOM3D_PEOPLE,
+       ROOM3D_WORKER_WOMAN = ROOM3D_PEOPLE, /* the package's "worker_woman", when the player picks her (no built one: the built worker stands in) */
+       ROOM3D_MODELS };
 
 const r3d_mesh *room3d_scene(void);
 /* How many times the flat was built: again when a package brings other models (a game's walk grid is built again too). */

@@ -475,6 +475,17 @@
    "height": 1.72,
    "clips": "Idle,Walk,Run,Wave,Interact"
   },
+  "worker_woman": {
+   "title": "Animated Woman",
+   "author": "Quaternius",
+   "license": "CC0 1.0",
+   "page": "https://poly.pizza/m/9kF7eTDbhO",
+   "url": "https://static.poly.pizza/cf08b740-dd48-443e-9fde-6d3d54abf119.glb",
+   "file": "models/woman.glb",
+   "height": 1.66,
+   "clips": "Idle,Walk=Walking,Run=Running",
+   "rename": "mixamo"
+  },
   "sofa": {
    "title": "Ultimate House Interior Pack: Couch_L",
    "author": "Quaternius",
@@ -651,13 +662,55 @@
   }
  },
  "voices": {
-  "title": "Kokoro-82M",
-  "author": "hexgrad",
-  "license": "Apache 2.0",
-  "page": "https://huggingface.co/hexgrad/Kokoro-82M",
-  "speed": 0.95,
-  "en": "am_michael",
-  "es": "em_alex",
-  "pt": "pm_alex"
+  "credits": [
+   {
+    "title": "Kokoro-82M",
+    "author": "hexgrad",
+    "license": "Apache 2.0",
+    "page": "https://huggingface.co/hexgrad/Kokoro-82M"
+   },
+   {
+    "title": "Piper: es_AR daniela",
+    "author": "larcanio, from Google's Argentinian Spanish recordings (OpenSLR 61)",
+    "short": "larcanio, Google (OpenSLR 61)",
+    "license": "CC BY-SA 4.0",
+    "page": "https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_AR/daniela/high"
+   }
+  ],
+  "m": {
+   "en": {
+    "engine": "kokoro",
+    "voice": "am_michael",
+    "speed": 0.95
+   },
+   "es": {
+    "engine": "kokoro",
+    "voice": "em_alex",
+    "speed": 0.95,
+    "phonemes": "es-419"
+   },
+   "pt": {
+    "engine": "kokoro",
+    "voice": "pm_alex",
+    "speed": 0.95
+   }
+  },
+  "w": {
+   "en": {
+    "engine": "kokoro",
+    "voice": "af_heart",
+    "speed": 0.95
+   },
+   "es": {
+    "engine": "piper",
+    "model": "es_AR-daniela-high",
+    "length_scale": 1.2
+   },
+   "pt": {
+    "engine": "kokoro",
+    "voice": "pf_dora",
+    "speed": 0.95
+   }
+  }
  }
 }

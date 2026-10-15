@@ -3,7 +3,7 @@
 """Turns a glTF model (.glb) into go-link HD's model file (.hdm), integers
 only, so the engine stays exact (src/3d/model3d.h):
 
-  python3 hdm.py IN.glb OUT.hdm [--clips Idle,Walk,...] [--height METERS] [--fps 30]
+  python3 hdm.py IN.glb OUT.hdm [--clips Idle,Walk=Walking,...] [--rename Spine=Abdomen,...] [--height METERS] [--fps 30]
 
 - Every triangle gets one color: its material's, or its texture's at the
   triangle's middle (low-poly packs paint with palettes).
@@ -228,7 +228,13 @@ def obj_model(path):
     return np.array(verts, float), np.array(norms, float), tris
 
 
-def convert(path, out, clips, height, fps):
+# Another rig's bones under the names the engine looks for (actor3d.c): Mixamo's (`--rename mixamo`)
+MIXAMO = {"Spine": "Abdomen", "RightArm": "UpperArm.R", "LeftArm": "UpperArm.L", "RightForeArm": "LowerArm.R", "LeftForeArm": "LowerArm.L",
+          "RightHand": "Wrist.R", "LeftHand": "Wrist.L", "RightUpLeg": "UpperLeg.R", "LeftUpLeg": "UpperLeg.L", "RightLeg": "LowerLeg.R",
+          "LeftLeg": "LowerLeg.L"}
+
+
+def convert(path, out, clips, height, fps, rename=""):
     if path.lower().endswith(".obj"):
         return convert_static(path, out, height)
     g = Glb(path)
@@ -240,7 +246,9 @@ def convert(path, out, clips, height, fps):
     if skin:
         joints = skin["joints"]
         names = [j["nodes"][i].get("name", "") for i in joints]
-        keep = [k for k, n in enumerate(names) if not n.startswith(DROP)]
+        keep = [k for k, n in enumerate(names) if not any(d in n for d in DROP)]
+        renames = MIXAMO if rename == "mixamo" else dict(r.split("=") for r in rename.split(",") if r)
+        names = [renames.get(n.split(":")[-1], n.split(":")[-1]) for n in names]
         node_to_k = {joints[k]: k for k in range(len(joints))}
 
         def kept_parent(k):
@@ -366,11 +374,14 @@ def convert(path, out, clips, height, fps):
     nj = len(keep) if skin else 0
     anims = []
     if skin:
-        want = [c for c in clips.split(",") if c] if clips else None
+        # "Walk=Walking": the clip Walking kept as Walk
+        want = dict((c.split("=")[-1], c.split("=")[0]) for c in clips.split(",") if c) if clips else None
         for a in j.get("animations", []):
             name = a.get("name", "").split("|")[-1]
             if want is not None and name not in want:
                 continue
+            if want is not None:
+                name = want[name]
             end = max(j["accessors"][s["input"]]["max"][0] for s in a["samplers"])
             frames = max(1, int(round(end * fps)))
             anims.append((name, [pose_of(sc.worlds(sc.locals_at(a, f / fps))) for f in range(frames)]))
@@ -423,7 +434,8 @@ if __name__ == "__main__":
     ap.add_argument("inp")
     ap.add_argument("out")
     ap.add_argument("--clips", default="")
+    ap.add_argument("--rename", default="")
     ap.add_argument("--height", type=float, default=0)
     ap.add_argument("--fps", type=int, default=30)
     a = ap.parse_args()
-    convert(a.inp, a.out, a.clips, a.height, a.fps)
+    convert(a.inp, a.out, a.clips, a.height, a.fps, a.rename)

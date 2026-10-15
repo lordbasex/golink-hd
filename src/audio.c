@@ -204,6 +204,8 @@ int32_t hd_play_at(hd_state *s, int32_t sample, int32_t vol, int32_t pan, int32_
 {
    int32_t i;
    hd_channel *c;
+   if (sample >= HD_SFX_NAMED && sample < HD_SAMPLES && !samples[sample].data)
+      hd_audio_named_ready(sample - HD_SFX_NAMED);
    if (sample < 0 || sample >= HD_SAMPLES || !samples[sample].data || vol <= 0)
       return -1;
    c = next_channel(s, &i);
@@ -300,6 +302,8 @@ void hd_mix(hd_state *s, int16_t *out, int music_on)
       if (c->sample < 0)
          continue;
       smp = &samples[c->sample];
+      if (!smp->data && c->sample >= HD_SFX_NAMED)
+         hd_audio_named_ready(c->sample - HD_SFX_NAMED); /* a save state's voice, not played yet in this run */
       len = smp->len;
       if (!smp->data)
       {

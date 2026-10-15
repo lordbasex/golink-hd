@@ -768,9 +768,10 @@ static void doing(hd_state *s, hd_remote *g, int pressed)
 /* Everything of a new day, the session's record kept; the worker in the hall. */
 static void new_day(hd_state *s, hd_remote *g)
 {
-   int32_t best = g->best;
+   int32_t best = g->best, hero = g->hero;
    memset(g, 0, sizeof *g);
    g->best = best;
+   g->hero = hero;
    g->screen = RSC_DAY;
    /* in the hall, facing east toward the front door, the camera behind */
    g->x = ROOM3D_AT(450);
@@ -845,9 +846,10 @@ void hd_remote_start(hd_state *s)
 
 static void to_title(hd_remote *g)
 {
-   int32_t best = g->best;
+   int32_t best = g->best, hero = g->hero;
    memset(g, 0, sizeof *g);
    g->best = best;
+   g->hero = hero;
    g->screen = RSC_TITLE;
    g->buttons = PAD_JUMP | PAD_START;
 }
@@ -1073,9 +1075,10 @@ static int32_t effect_sample[RF_COUNT], track_value[TRACKS];
 /*
  * The worker's thoughts read aloud: the lines shown on screen that the
  * worker thinks (what an activity left, the answers to the boss, what
- * happens in the house), each the package's recording in every language,
- * named "voice_<en|es|pt>_<key>" (examples/remote/voices.py reads this
- * table and remote_text.c to make them).
+ * happens in the house), each the package's recording in every language
+ * and for both main characters, named "voice_<m|w>_<en|es|pt>_<key>"
+ * (examples/remote/voices.py reads this table and remote_text.c to make
+ * them).
  */
 static const struct
 {
@@ -1096,7 +1099,7 @@ static const struct
 };
 #define VOICED ((int32_t)(sizeof voiced / sizeof voiced[0]))
 static const char *const voice_langs[LANGS] = { "en", "es", "pt" };
-static int32_t voice_sample[LANGS][VOICED];
+static int32_t voice_sample[2][LANGS][VOICED];
 
 /* The samples and tracks of the content loaded now (looked up again when it changes). */
 static void sound_names(void)
@@ -1114,26 +1117,28 @@ static void sound_names(void)
    }
    for (i = 0; i < TRACKS; i++)
       track_value[i] = hd_track(track_names[i]);
-   for (i = 0; i < LANGS * VOICED; i++)
+   for (i = 0; i < 2 * LANGS * VOICED; i++)
    {
       char name[48];
-      snprintf(name, sizeof name, "voice_%s_%s", voice_langs[i / VOICED], voiced[i % VOICED].key);
-      voice_sample[i / VOICED][i % VOICED] = hd_effect(name);
+      int32_t who = i / (LANGS * VOICED), lang = i / VOICED % LANGS;
+      snprintf(name, sizeof name, "voice_%c_%s_%s", who ? 'w' : 'm', voice_langs[lang], voiced[i % VOICED].key);
+      voice_sample[who][lang][i % VOICED] = hd_effect(name);
    }
 }
 
-/* A thought said in the language of the texts, cutting short the one before. */
-static void think(hd_state *s, int32_t text)
+/* A thought said in the language of the texts and the main character's voice, cutting short the one before. */
+static void think(hd_state *s, const hd_remote *g, int32_t text)
 {
    int32_t i, k, c, sample = -1;
+   const int32_t *all = &voice_sample[0][0][0];
    for (i = 0; i < VOICED && sample < 0; i++)
       if (voiced[i].text == text)
-         sample = voice_sample[hd_clamp(hd_lang, 0, LANGS - 1)][i];
+         sample = voice_sample[hd_clamp(g->hero, 0, 1)][hd_clamp(hd_lang, 0, LANGS - 1)][i];
    if (sample < 0)
       return;
    for (c = 0; c < MAX_CHANNELS; c++)
-      for (k = 0; k < LANGS * VOICED; k++)
-         if (s->ch[c].sample >= 0 && s->ch[c].sample == voice_sample[k / VOICED][k % VOICED])
+      for (k = 0; k < 2 * LANGS * VOICED; k++)
+         if (s->ch[c].sample >= 0 && s->ch[c].sample == all[k])
             s->ch[c].sample = -1;
    hd_play_at(s, sample, 240, 0, FX_ONE);
 }
@@ -1252,7 +1257,7 @@ static void sound_day(hd_state *s, const hd_remote *was, const hd_remote *g)
       else if (who != RW_MATE)
          play(s, who == RW_BOSS ? RF_BOSS_MESSAGE : RF_MESSAGE, 170, 0, FX_ONE);
       if (who == RW_YOU || who == RW_HOUSE)
-         think(s, text);
+         think(s, g, text);
    }
    /* an urgent message pings again every two and a half seconds until it is answered */
    if ((g->boss == RE_MESSAGE + 1 || g->boss == RE_WEEKEND + 1) && !g->boss_call && was->boss == g->boss && g->boss_t % 150 == 0)
@@ -1276,7 +1281,7 @@ static void sound_day(hd_state *s, const hd_remote *was, const hd_remote *g)
    if (g->toast_points > 0 && g->toast_t == REMOTE_TOAST_FRAMES)
       play(s, RF_DONE, 170, 0, FX_ONE);
    if (g->toast && g->toast_t == REMOTE_TOAST_FRAMES)
-      think(s, g->toast - 1);
+      think(s, g, g->toast - 1);
    /* the cat: a meow when the keyboard calls it, a cross one when it is taken off, now and then one when it arrives somewhere */
    if (g->cat_keys == 1 && was->cat_keys == 0)
       play_at(s, g, RF_MEOW, g->cat_x, g->cat_z, 220, 90);
@@ -1346,17 +1351,20 @@ void hd_remote_step(hd_state *s, const hd_input in[MAX_PLAYERS])
    uint32_t b = in[0].buttons;
    int32_t side, lang = hd_lang;
    ready();
+   remote_text_hero = g->hero;
    g->screen_t = hd_min(g->screen_t + 1, 1 << 30);
    switch (g->screen)
    {
    case RSC_TITLE:
-      if (menu_step(g, &in[0], 4, &side))
+      if (menu_step(g, &in[0], 5, &side))
       {
          if (g->menu == 0)
             start_morning(s, g, (uint32_t)g->screen_t);
          else if (g->menu == 2)
             hd_lang = (hd_lang + 1) % LANGS; /* the texts' language: the host's by default, the player's from here */
          else if (g->menu == 3)
+            g->hero ^= 1;
+         else if (g->menu == 4)
          {
             g->screen = RSC_CREDITS;
             g->screen_t = 0;
@@ -1370,6 +1378,8 @@ void hd_remote_step(hd_state *s, const hd_input in[MAX_PLAYERS])
       }
       else if (g->menu == 2 && side)
          hd_lang = (hd_lang + LANGS + side) % LANGS;
+      else if (g->menu == 3 && side)
+         g->hero ^= 1;
       if (g->screen != RSC_TITLE)
          break;
       if (any_input(&in[0]))
@@ -1835,6 +1845,8 @@ static void worker_pose(const hd_remote *g, actor3d_pose *pose)
 static int32_t place_person(int32_t who, const actor3d_pose *pose, r3d_instance *out)
 {
    model3d_body *body = room3d_person_model(who);
+   if (!body && who == ROOM3D_WORKER_WOMAN)
+      body = room3d_person_model(ROOM3D_WORKER); /* a package with no woman: the man stands in */
    if (body)
       return actor3d_place_model(body, pose, room3d_shadow(), out);
    return actor3d_place(room3d_person(who), pose, out);
@@ -1859,7 +1871,7 @@ static void scene(hd_surface *sf, const hd_remote *g, r3d_view *v, const actor3d
    /* the desk's screens: code going up while working, asleep otherwise */
    tex3d_terminal(room3d_desk_screen(0), 11, g->screen_scroll, typing);
    tex3d_terminal(room3d_desk_screen(1), 12, g->screen_scroll / 2 + 40, typing);
-   n = place_person(ROOM3D_WORKER, worker, inst);
+   n = place_person(g->hero ? ROOM3D_WORKER_WOMAN : ROOM3D_WORKER, worker, inst);
    /* the flatmate, waving while it talks */
    if (g->mate)
    {
@@ -1975,24 +1987,31 @@ static void title_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
    static const int32_t items[2] = { RT_MENU_PLAY, RT_MENU_HELP }, last[1] = { RT_MENU_CREDITS };
    static const char *const names[LANGS] = { "English", "Español", "Português" };
    char line[64];
-   int32_t w, y = 172 * scale + 2 * 24 * scale;
+   int32_t w, i, y = 172 * scale + 2 * 24 * scale;
    title_text(sf, 40 * scale, scale);
-   panel(sf, (HD_OUT_W - 300 * scale) / 2, 158 * scale, 300 * scale, (g->best > 0 ? 146 : 122) * scale, 0x0b0d12, 175);
+   panel(sf, (HD_OUT_W - 300 * scale) / 2, 158 * scale, 300 * scale, (g->best > 0 ? 170 : 146) * scale, 0x0b0d12, 175);
    menu_draw(sf, items, 2, g->menu, 172 * scale, scale);
-   menu_draw(sf, last, 1, g->menu == 3 ? 0 : -1, 172 * scale + 3 * 24 * scale, scale);
-   /* the language: its name in itself, between arrows, changed with left and right (or A) */
-   snprintf(line, sizeof line, "%s: < %s >", remote_text(RT_MENU_LANGUAGE), names[hd_clamp(hd_lang, 0, LANGS - 1)]);
-   w = text_width(line, 2 * scale);
-   if (g->menu == 2)
+   menu_draw(sf, last, 1, g->menu == 4 ? 0 : -1, 172 * scale + 4 * 24 * scale, scale);
+   /* the language (its name in itself) and the main character, between arrows, changed with left and right (or A) */
+   for (i = 0; i < 2; i++)
    {
-      panel(sf, (HD_OUT_W - w) / 2 - 22 * scale, y - 5 * scale, w + 44 * scale, 22 * scale, 0xffe66d, 60);
-      text_draw(sf, ">", (HD_OUT_W - w) / 2 - 18 * scale, y, 2 * scale, 0xffe66d, 1, -1);
+      int32_t at = y + i * 24 * scale, on = g->menu == 2 + i;
+      if (i == 0)
+         snprintf(line, sizeof line, "%s: < %s >", remote_text(RT_MENU_LANGUAGE), names[hd_clamp(hd_lang, 0, LANGS - 1)]);
+      else
+         snprintf(line, sizeof line, "%s: < %s >", remote_text(RT_MENU_HERO), remote_text(RT_HERO + hd_clamp(g->hero, 0, 1)));
+      w = text_width(line, 2 * scale);
+      if (on)
+      {
+         panel(sf, (HD_OUT_W - w) / 2 - 22 * scale, at - 5 * scale, w + 44 * scale, 22 * scale, 0xffe66d, 60);
+         text_draw(sf, ">", (HD_OUT_W - w) / 2 - 18 * scale, at, 2 * scale, 0xffe66d, 1, -1);
+      }
+      text_draw(sf, line, (HD_OUT_W - w) / 2, at, 2 * scale, on ? 0xffe66d : 0xd8dee9, 1, -1);
    }
-   text_draw(sf, line, (HD_OUT_W - w) / 2, y, 2 * scale, g->menu == 2 ? 0xffe66d : 0xd8dee9, 1, -1);
    if (g->best > 0)
    {
       snprintf(line, sizeof line, "%s: %d", remote_text(RT_RECORD), (int)g->best);
-      text_center(sf, line, 278 * scale, scale, 0xbfc7d5);
+      text_center(sf, line, 302 * scale, scale, 0xbfc7d5);
    }
    if ((g->screen_t / 30) & 1)
       text_center(sf, remote_text(RT_PRESS_START), HD_OUT_H - 30 * scale, scale, 0xffffff);
@@ -2110,6 +2129,7 @@ void hd_remote_draw(const hd_state *s, void *screen)
    int32_t scale = hd_res;
    r3d_view v;
    actor3d_pose pose;
+   remote_text_hero = g->hero;
    ready();
    if (g->screen == RSC_TITLE || g->screen == RSC_CREDITS || (g->screen == RSC_HELP && g->help_back == RSC_TITLE))
    {
@@ -2156,6 +2176,7 @@ void hd_remote_sanitize(hd_state *s)
    hd_remote *g = HD_GAME3D(s, hd_remote);
    int32_t i;
    s->show.on = 3;
+   g->hero = hd_clamp(g->hero, 0, 1);
    g->t = hd_clamp(g->t, 0, 1 << 30);
    g->x = hd_clamp(g->x, ROOM3D_AT(0), ROOM3D_AT(1600));
    g->z = hd_clamp(g->z, ROOM3D_AT(-210), ROOM3D_AT(1250));

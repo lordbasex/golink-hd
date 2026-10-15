@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- TELETRABAJO: choose the main character at the title (a man or a woman): the model (Quaternius's CC0 "Animated Woman"), the voice (Piper's Argentinian Daniela for her Spanish, Kokoro for the rest) and the words that change in Spanish and Portuguese; named effects played on demand (`"on_demand"`: kept as their file until first played); up to 1024 effects and 2048 files a package; `hdm.py --rename` (Mixamo rigs) and clip renames (`Walk=Walking`).
 - TELETRABAJO's thoughts read aloud in the language chosen (English, Spanish, Portuguese): 35 of the worker's lines recorded with Kokoro-82M (Apache 2.0) by `examples/remote/voices.py` from the game's own texts, made to sound thought by `build.py`, played when they show (`voiced`, `think` in remote.c); a package holds up to 256 effects.
 - More of TELETRABAJO's furniture from Quaternius's CC0 house interior when the package brings it: the TV unit, the dining room's sideboard and oval table, the floor lamps (their shades still lit), the kitchen's stools, the bathroom's wall sink.
 - A model types for real (`actor3d_place_model`): it sits forward on the seat, the left hand on the keyboard and the right on the mouse, palms down (a twist along the forearm).

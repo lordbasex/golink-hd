@@ -14,8 +14,10 @@
  *      named effects and music tracks for a game coded in the engine (the
  *      manifest's "game"), which asks for them by name (hd_effect, hd_track):
  *      up to HD_NAMED_MAX effects of up to 30 seconds ("loop": played over and
- *      over by hd_loop; "volume" 0..256 scales it as it loads) and
- *      HD_TRACKS_MAX tracks
+ *      over by hd_loop; "volume" 0..256 scales it as it loads; "on_demand":
+ *      kept as its file and made into samples only when it is first played,
+ *      for the many voices of which a game plays a few) and HD_TRACKS_MAX
+ *      tracks
  *
  * WAV files are PCM, 16 bits, or IMA ADPCM (4 bits a sample, a quarter of
  * the size: the music of a whole game), 48000 Hz, mono or stereo: effects are mixed
@@ -40,6 +42,9 @@ static struct
 {
    char name[NAME_LEN];
    int16_t *data;
+   uint8_t *file;         /* an effect played on demand: its WAV, until it is first played */
+   size_t file_size;
+   int32_t vol, loop;
 } named[HD_NAMED_MAX];
 static int32_t named_count;
 static struct
@@ -72,6 +77,7 @@ void hd_sounds_free(void)
    for (i = 0; i < named_count; i++)
    {
       free(named[i].data);
+      free(named[i].file);
       hd_audio_named(i, NULL, 0, 0);
    }
    memset(named, 0, sizeof named);
@@ -387,6 +393,40 @@ static int good_name(const char *name)
    return name && name[0] && strlen(name) < NAME_LEN;
 }
 
+/* A WAV's samples made one mono effect at a volume (0..256); NULL when there is no memory. */
+static int16_t *to_mono(int16_t *st, int32_t frames, int32_t vol)
+{
+   int16_t *mono = (int16_t *)malloc((size_t)frames * 2);
+   int32_t k;
+   if (mono)
+      for (k = 0; k < frames; k++)
+         mono[k] = (int16_t)((((int32_t)st[2 * k] + st[2 * k + 1]) / 2) * vol / 256);
+   free(st);
+   return mono;
+}
+
+int hd_audio_named_ready(int32_t k)
+{
+   const char *err;
+   int16_t *st, *mono;
+   int32_t frames;
+   if (k < 0 || k >= named_count)
+      return 0;
+   if (named[k].data)
+      return 1;
+   if (!named[k].file)
+      return 0;
+   st = wav_read(named[k].file, named[k].file_size, NAMED_SECONDS_MAX, &frames, &err);
+   free(named[k].file);
+   named[k].file = NULL;
+   mono = st ? to_mono(st, frames, named[k].vol) : NULL;
+   if (!mono)
+      return 0;
+   named[k].data = mono;
+   hd_audio_named(k, mono, frames, named[k].loop);
+   return 1;
+}
+
 static const char *load_effects(const hd_zip *zip, const json *effects)
 {
    static char msg[200];
@@ -395,32 +435,54 @@ static const char *load_effects(const hd_zip *zip, const json *effects)
    {
       const json *file = it->type == JSON_STRING ? it : hd_json_get(it, "file"), *loop = it->type == JSON_OBJECT ? hd_json_get(it, "loop") : NULL;
       const json *vol = it->type == JSON_OBJECT ? hd_json_get(it, "volume") : NULL;
+      const json *lazy = it->type == JSON_OBJECT ? hd_json_get(it, "on_demand") : NULL;
       int16_t *st, *mono;
-      int32_t frames, k, v;
+      int32_t frames;
       if (!good_name(it->key))
          return "each of audio's effects needs a name shorter than 32 letters";
       if (named_count >= HD_NAMED_MAX)
-         return "audio has more than 256 effects";
+         return "audio has more than 1024 effects";
       if (hd_effect(it->key) >= 0)
          return "two of audio's effects have the same name";
-      if (!file || file->type != JSON_STRING || (loop && loop->type != JSON_BOOL) || (vol && (vol->type != JSON_INT || vol->num < 0 || vol->num > 256)))
-         return "each of audio's effects is a file name, or {\"file\", \"loop\": true|false, \"volume\": 0..256}";
+      if (!file || file->type != JSON_STRING || (loop && loop->type != JSON_BOOL) || (lazy && lazy->type != JSON_BOOL) ||
+          (vol && (vol->type != JSON_INT || vol->num < 0 || vol->num > 256)))
+         return "each of audio's effects is a file name, or {\"file\", \"loop\": true|false, \"volume\": 0..256, \"on_demand\": true|false}";
+      snprintf(named[named_count].name, NAME_LEN, "%s", it->key);
+      named[named_count].vol = vol ? (int32_t)vol->num : 256;
+      named[named_count].loop = loop && loop->num;
+      if (lazy && lazy->num)
+      {
+         /* checked now (a package that loads plays), kept as its file */
+         const char *err;
+         size_t size;
+         uint8_t *raw = hd_zip_read(zip, file->str, &size, &err);
+         if (!raw)
+         {
+            snprintf(msg, sizeof msg, "%s: %s", file->str, err);
+            return msg;
+         }
+         st = wav_read(raw, size, NAMED_SECONDS_MAX, &frames, &err);
+         if (!st)
+         {
+            free(raw);
+            snprintf(msg, sizeof msg, "%s: %s", file->str, err);
+            return msg;
+         }
+         free(st);
+         named[named_count].file = raw;
+         named[named_count].file_size = size;
+         hd_audio_named(named_count, NULL, 0, 0);
+         named_count++;
+         continue;
+      }
       st = load_wav(zip, file->str, NAMED_SECONDS_MAX, &frames, msg, sizeof msg);
       if (!st)
          return msg;
-      mono = (int16_t *)malloc((size_t)frames * 2);
+      mono = to_mono(st, frames, named[named_count].vol);
       if (!mono)
-      {
-         free(st);
          return "not enough memory for the sounds";
-      }
-      v = vol ? (int32_t)vol->num : 256;
-      for (k = 0; k < frames; k++)
-         mono[k] = (int16_t)((((int32_t)st[2 * k] + st[2 * k + 1]) / 2) * v / 256);
-      free(st);
-      snprintf(named[named_count].name, NAME_LEN, "%s", it->key);
       named[named_count].data = mono;
-      hd_audio_named(named_count, mono, frames, loop && loop->num);
+      hd_audio_named(named_count, mono, frames, named[named_count].loop);
       named_count++;
    }
    return NULL;

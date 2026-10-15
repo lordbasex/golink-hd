@@ -232,7 +232,7 @@ static void le32(FILE *f, uint32_t v)
    le16(f, v >> 16);
 }
 
-#define PACK_MAX 256
+#define PACK_MAX 2048
 
 static int add_name(char (*names)[256], int *count, const char *name, const char *path)
 {

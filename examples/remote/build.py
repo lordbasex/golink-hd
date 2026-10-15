@@ -16,9 +16,10 @@ made stereo at 48 kHz, its loop blended the same way (unless it is
 "seamless" already). Everything is stored as IMA ADPCM (tools/glhd adpcm), a
 quarter of the size. CREDITS.md lists every recording.
 
-The worker's thoughts (audio.json's "voices") are recorded by voices.py
-into source/voices/<lang>/; here they are made to sound thought (softer,
-closer, a little room) and packed as the effects "voice_<lang>_<key>".
+The main character's thoughts (audio.json's "voices") are recorded by
+voices.py into source/voices/<m|w>/<lang>/; here they are made to sound
+thought (softer, closer, a little room) and packed as the effects
+"voice_<m|w>_<lang>_<key>".
 """
 import array
 import json
@@ -194,16 +195,17 @@ def build(spec):
             entry["volume"] = e["volume"]
         effects[name] = entry if len(entry) > 1 else out
     if spec.get("voices"):
-        for lang in ("en", "es", "pt"):
-            folder = os.path.join(SOURCE, "voices", lang)
-            if not os.path.isdir(folder):
-                sys.exit("the thoughts are not recorded: run examples/remote/voices.py (python3 examples/remote/voices.py for its help)")
-            for f in sorted(os.listdir(folder)):
-                if f.endswith(".wav"):
-                    pcm = level(fade_out(trim(decode(os.path.join(folder, f), 1, filters=THOUGHT)), 1), VOICE_PEAK)
-                    name = f"voice_{lang}_{f[:-4]}"
-                    adpcm(pcm, 1, os.path.join(OUT, name + ".wav"))
-                    effects[name] = name + ".wav"
+        for who in ("m", "w"):
+            for lang in ("en", "es", "pt"):
+                folder = os.path.join(SOURCE, "voices", who, lang)
+                if not os.path.isdir(folder):
+                    sys.exit("the thoughts are not recorded: run examples/remote/voices.py (python3 examples/remote/voices.py for its help)")
+                for f in sorted(os.listdir(folder)):
+                    if f.endswith(".wav"):
+                        pcm = level(fade_out(trim(decode(os.path.join(folder, f), 1, filters=THOUGHT)), 1), VOICE_PEAK)
+                        name = f"voice_{who}_{lang}_{f[:-4]}"
+                        adpcm(pcm, 1, os.path.join(OUT, name + ".wav"))
+                        effects[name] = {"file": name + ".wav", "on_demand": True}  # a game plays one character's, in one language
     for name, t in spec["tracks"].items():
         pcm = level(decode(source_path(t), 2, t.get("start", 0), t.get("length")), TRACK_PEAK)
         if not t.get("seamless"):
@@ -219,6 +221,8 @@ def build(spec):
             cmd += ["--height", str(m["height"])]
         if m.get("clips"):
             cmd += ["--clips", m["clips"]]
+        if m.get("rename"):
+            cmd += ["--rename", m["rename"]]
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
         models[name] = out
     manifest = {
@@ -278,8 +282,10 @@ def game_credits(spec):
                 lines.append(author)
             lines.append("")
         if spec.get("voices"):
-            v = spec["voices"]
-            lines += [f"# {h['voices']}", v["title"], f"{h['by']} {v['author']} ({v['license']})", ""]
+            lines.append(f"# {h['voices']}")
+            for v in spec["voices"]["credits"]:
+                lines += [v["title"], f"{h['by']} {v.get('short', v['author'])}", f"({v['license']})"]
+            lines.append("")
         lines.append(f"# {h['sounds']}")
         authors = []
         for e in spec["effects"].values():
@@ -311,8 +317,10 @@ def credits(spec):
         for name, e in spec[kind].items():
             lines.append(f"| {kind[:-1]} `{name}` | {e.get('title', '')} | {e.get('author', '')} | {e['license']} | {e.get('page', e['url'])} |")
     if spec.get("voices"):
-        v = spec["voices"]
-        lines.append(f"| voices `voice_*` (en {v['en']}, es {v['es']}, pt {v['pt']}) | {v['title']} | {v['author']} | {v['license']} | {v['page']} |")
+        for who, name in (("m", "the man"), ("w", "the woman")):
+            for lang, v in spec["voices"][who].items():
+                engine = next(c for c in spec["voices"]["credits"] if c["title"].lower().startswith(v["engine"]))
+                lines.append(f"| voices `voice_{who}_{lang}_*` ({name}: {v.get('voice', v.get('model'))}) | {engine['title']} | {engine['author']} | {engine['license']} | {engine['page']} |")
     with open(os.path.join(HERE, "CREDITS.md"), "w") as f:
         f.write("\n".join(lines) + "\n")
 

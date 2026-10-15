@@ -847,11 +847,29 @@ static void test_remote_screens(void)
    for (page = 0; page < REMOTE_HELP_PAGES; page++)
       remote_steps(&a, 2, PAD_JUMP);
    CHECK(g->screen == RSC_TITLE);
+   /* the main character: a woman with right (or A), her words in Spanish, kept by the day; back to a man */
+   remote_steps(&a, 2, PAD_DOWN);
+   remote_steps(&a, 2, PAD_DOWN);
+   remote_steps(&a, 2, PAD_DOWN);
+   CHECK(g->menu == 3 && g->hero == 0);
+   remote_steps(&a, 2, PAD_RIGHT);
+   CHECK(g->hero == 1);
+   hd_draw(&a, fb);
+   {
+      int32_t lang = hd_lang;
+      hd_lang = 1;
+      CHECK(strcmp(remote_text(RT_ASLEEP), "Dormida sobre el teclado. Zzz...") == 0 && strcmp(remote_text(RT_WORK), "Trabajo") == 0);
+      hd_lang = 0;
+      CHECK(strcmp(remote_text(RT_ASLEEP), "Asleep on the keyboard. Zzz...") == 0);
+      hd_lang = lang;
+   }
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(g->hero == 0);
+   hd_draw(&a, fb);
+   CHECK(remote_text_hero == 0);
    /* the credits: from the menu's last line, they roll by themselves back to the title; A cuts them short after two seconds */
    remote_steps(&a, 2, PAD_DOWN);
-   remote_steps(&a, 2, PAD_DOWN);
-   remote_steps(&a, 2, PAD_DOWN);
-   CHECK(g->menu == 3);
+   CHECK(g->menu == 4);
    remote_steps(&a, 2, PAD_JUMP);
    CHECK(g->screen == RSC_CREDITS);
    remote_steps(&a, 60, 0);
@@ -859,7 +877,7 @@ static void test_remote_screens(void)
    for (page = 0; page < 20000 && g->screen == RSC_CREDITS; page++)
       remote_steps(&a, 1, 0);
    CHECK(g->screen == RSC_TITLE && page > 800);
-   g->menu = 3;
+   g->menu = 4;
    remote_steps(&a, 2, 0); /* the title takes a held button as held: let go first */
    remote_steps(&a, 2, PAD_JUMP);
    CHECK(g->screen == RSC_CREDITS);
@@ -1172,7 +1190,8 @@ static void test_remote_sound(void)
    files[0].text = "{\"format\": 3, \"title\": \"Remote\", \"game\": \"remote\", \"audio\": {"
                    "\"effects\": {\"alarm\": {\"file\": \"loop.wav\", \"loop\": true}, \"drill\": {\"file\": \"loop.wav\", \"loop\": true, \"volume\": 128},"
                    " \"ui_move\": \"shot.wav\", \"step\": \"shot.wav\","
-                   " \"voice_en_done_coffee\": \"shot.wav\", \"voice_es_done_coffee\": \"shot.wav\", \"voice_es_cat_moved\": \"shot.wav\"},"
+                   " \"voice_m_en_done_coffee\": {\"file\": \"shot.wav\", \"on_demand\": true}, \"voice_m_es_done_coffee\": {\"file\": \"shot.wav\", \"on_demand\": true},"
+                   " \"voice_m_es_cat_moved\": \"shot.wav\", \"voice_w_es_cat_moved\": {\"file\": \"shot.wav\", \"on_demand\": true}},"
                    " \"tracks\": {\"title\": {\"file\": \"song.wav\"}, \"day\": {\"file\": \"song.wav\", \"volume\": 150}, \"call\": {\"file\": \"song.wav\"}}}}";
    files[1].name = "loop.wav";
    files[1].text = (const char *)loop_wav;
@@ -1250,20 +1269,31 @@ static void test_remote_sound(void)
    g->toast = RT_DONE + RA_COFFEE + 1;
    g->toast_t = REMOTE_TOAST_FRAMES + 1;
    remote_plays(&a, 1, 0);
-   CHECK(channel_of(&a, hd_effect("voice_es_done_coffee")) >= 0 && channel_of(&a, hd_effect("voice_en_done_coffee")) == -1);
+   CHECK(channel_of(&a, hd_effect("voice_m_es_done_coffee")) >= 0 && channel_of(&a, hd_effect("voice_m_en_done_coffee")) == -1);
    g->toast = RT_CAT_MOVED + 1;
    g->toast_t = REMOTE_TOAST_FRAMES + 1;
    remote_plays(&a, 1, 0);
-   CHECK(channel_of(&a, hd_effect("voice_es_cat_moved")) >= 0 && channel_of(&a, hd_effect("voice_es_done_coffee")) == -1);
+   CHECK(channel_of(&a, hd_effect("voice_m_es_cat_moved")) >= 0 && channel_of(&a, hd_effect("voice_m_es_done_coffee")) == -1);
    hd_lang = 0;
    g->toast = RT_DONE + RA_COFFEE + 1;
    g->toast_t = REMOTE_TOAST_FRAMES + 1;
    remote_plays(&a, 1, 0);
-   CHECK(channel_of(&a, hd_effect("voice_en_done_coffee")) >= 0);
+   CHECK(channel_of(&a, hd_effect("voice_m_en_done_coffee")) >= 0);
+   g->hero = 1; /* the woman's voice, made into samples when first played */
+   hd_lang = 1;
+   g->toast = RT_CAT_MOVED + 1;
+   g->toast_t = REMOTE_TOAST_FRAMES + 1;
+   remote_plays(&a, 1, 0);
+   CHECK(channel_of(&a, hd_effect("voice_w_es_cat_moved")) >= 0 && channel_of(&a, hd_effect("voice_m_es_cat_moved")) == -1);
+   g->hero = 0;
+   hd_lang = 0;
+   g->toast = RT_DONE + RA_COFFEE + 1;
+   g->toast_t = REMOTE_TOAST_FRAMES + 1;
+   remote_plays(&a, 1, 0);
    g->toast = RT_AGAIN + 1; /* a line with no recording: nothing said, nothing cut */
    g->toast_t = REMOTE_TOAST_FRAMES + 1;
    remote_plays(&a, 1, 0);
-   CHECK(channel_of(&a, hd_effect("voice_en_done_coffee")) >= 0);
+   CHECK(channel_of(&a, hd_effect("voice_m_en_done_coffee")) >= 0);
    hd_lang = i;
    /* the pause silences the loops */
    g->drill_t = 600;

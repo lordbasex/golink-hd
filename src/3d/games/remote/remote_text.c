@@ -157,6 +157,9 @@ static const char *const texts[RT_COUNT][LANGS] = {
    [RT_MENU_PLAY] = { "Start the day", "Empezar la jornada", "Começar o dia" },
    [RT_MENU_HELP] = { "How to play", "Cómo jugar", "Como jogar" },
    [RT_MENU_LANGUAGE] = { "Language", "Idioma", "Idioma" },
+   [RT_MENU_HERO] = { "Main character", "Protagonista", "Protagonista" },
+   [RT_HERO + 0] = { "Man", "Hombre", "Homem" },
+   [RT_HERO + 1] = { "Woman", "Mujer", "Mulher" },
    [RT_MENU_CREDITS] = { "Credits", "Créditos", "Créditos" },
    [RT_PRESS_START] = { "Press START", "Pulsa START", "Aperte START" },
    [RT_DEMO] = { "DEMO", "DEMO", "DEMO" },
@@ -205,9 +208,33 @@ static const char *const texts[RT_COUNT][LANGS] = {
    [RT_PAUSE_QUIT] = { "Back to the title", "Volver al título", "Voltar ao título" },
 };
 
+/* The lines that change when the main character is a woman (NULL: the same as above). */
+static const struct
+{
+   int16_t id;
+   const char *text[LANGS];
+} woman[] = {
+   { RT_ASLEEP, { NULL, "Dormida sobre el teclado. Zzz...", NULL } },
+   { RT_STATUS + RS_MEETING, { NULL, "Reunida", NULL } },
+   { RT_DONE + RA_SHOWER, { NULL, "Limpia, fresca y sin trabajar.", "Limpa, fresca e sem trabalhar." } },
+   { RT_END_TITLE + 0, { NULL, "DESPEDIDA", "DEMITIDA" } },
+   { RT_END_TITLE + 1, { NULL, "BECARIA DEL SOFÁ", "ESTAGIÁRIA DO SOFÁ" } },
+   { RT_END_TITLE + 2, { NULL, "EMPLEADA EJEMPLAR", "FUNCIONÁRIA EXEMPLAR" } },
+   { RT_HELP_LINE + 6, { NULL, "Sospecha: sube lejos del escritorio, dormida o ignorando al jefe. Arriba del todo te despiden.",
+                         "Suspeita: sobe longe da mesa, dormindo ou ignorando o chefe. No máximo você é demitida." } },
+};
+
+int32_t remote_text_hero;
+
 const char *remote_text(int32_t id)
 {
+   int32_t lang = hd_clamp(hd_lang, 0, LANGS - 1);
+   size_t i;
    if (id < 0 || id >= RT_COUNT || !texts[id][0])
       return "";
-   return texts[id][hd_clamp(hd_lang, 0, LANGS - 1)];
+   if (remote_text_hero)
+      for (i = 0; i < sizeof woman / sizeof woman[0]; i++)
+         if (woman[i].id == id && woman[i].text[lang])
+            return woman[i].text[lang];
+   return texts[id][lang];
 }
