@@ -6,7 +6,7 @@
  * packs it as the package's title screen (screens.title).
  *
  *   make tools/remotecover
- *   tools/remotecover remote.glhd cover.png [man|woman]
+ *   tools/remotecover remote.glhd cover.png [man|woman] [720|1080]
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -141,7 +141,7 @@ int main(int argc, char **argv)
    FILE *in;
    if (argc < 3)
    {
-      fprintf(stderr, "usage: tools/remotecover remote.glhd cover.png [man|woman]\n");
+      fprintf(stderr, "usage: tools/remotecover remote.glhd cover.png [man|woman] [720|1080]\n");
       return 2;
    }
    in = fopen(argv[1], "rb");
@@ -158,7 +158,7 @@ int main(int argc, char **argv)
       return 1;
    }
    fclose(in);
-   hd_res = 2;  /* 720p */
+   hd_res = argc > 4 && !strcmp(argv[4], "1080") ? 3 : 2; /* 720p, or 1080p */
    hd_lang = 1; /* the title as the game is named, in Spanish */
    hd_reset(&st);
    hd_remote_new_day(&st);
@@ -176,11 +176,11 @@ int main(int argc, char **argv)
       step(0);
    remote_cover = 1;
    hd_draw(&st, fb);
-   if (!write_png(argv[2], fb, 1280, 720))
+   if (!write_png(argv[2], fb, (uint32_t)(640 * hd_res), (uint32_t)(360 * hd_res)))
    {
       fprintf(stderr, "cannot write %s\n", argv[2]);
       return 1;
    }
-   printf("%s: %s at the desk%s\n", argv[2], g->hero ? "the woman" : "the man", g->cat_keys == 2 ? ", the cat on the keyboard" : "");
+   printf("%s: %dp, %s at the desk%s\n", argv[2], (int)(360 * hd_res), g->hero ? "the woman" : "the man", g->cat_keys == 2 ? ", the cat on the keyboard" : "");
    return 0;
 }

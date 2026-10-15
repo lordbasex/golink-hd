@@ -561,9 +561,18 @@ the main character between sessions (`golinkhd_keep_save`,
 ```
 python3 examples/remote/build.py
 tools/glhd pack examples/remote/game remote.glhd
-make tools/remotecover && tools/remotecover remote.glhd examples/remote/source/cover.png
-python3 examples/remote/build.py && tools/glhd pack examples/remote/game remote.glhd
+make tools/remotecover && tools/remotecover remote.glhd examples/remote/source/cover-720p.png
+python3 examples/remote/build.py && tools/glhd pack examples/remote/game remote-720p.glhd
+tools/remotecover remote-720p.glhd examples/remote/source/cover-1080p.png man 1080
+python3 examples/remote/build.py --resolution 1080p && tools/glhd pack examples/remote/game remote-1080p.glhd
 ```
+
+Two packages, like ANTÍDOTO: `remote-720p.glhd` and `remote-1080p.glhd`,
+the same game whose manifest says the size it is drawn at. At 1080p the 3D
+picture is drawn at 720p and made 1.5 times bigger (bilinear, in integers,
+on every core: `draw3d`), and the HUD's texts are drawn over it at the full
+size, sharp: 16.6 ms a frame on average on an Intel i9-10900, against 31 ms
+drawing the 3D at 1080p (13 ms at 720p).
 
 **A name (2026-10-15).** The user asked for a name with an anagram of the
 title as its surname: Alberto Teja (TELETRABAJO), Alberta Teja for the

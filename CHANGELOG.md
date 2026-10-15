@@ -6,6 +6,7 @@
 - TELETRABAJO's title: the main character's line ("Main character: < Alberto Teja >") fits in the menu's panel, which is wider now; a test checks every language.
 
 ### Added
+- TELETRABAJO in 720p and 1080p, two packages like every go-link HD game (`build.py --resolution`, `tools/remotecover ... 1080`): at 1080p the 3D picture is drawn at 720p and made 1.5 times bigger (bilinear, on every core) under a full-size HUD, 16.6 ms a frame on an Intel i9-10900 (31 ms drawn whole).
 - API 3: `golinkhd_keep_save` and `golinkhd_keep_load`, what a game keeps between sessions (TELETRABAJO's record and main character), stored by the host for each game.
 - TELETRABAJO's package has a picture for game libraries (`tools/remotecover`, packed by `build.py` as `screens.title`); a game coded in the engine never loads its `screens`.
 - TELETRABAJO's main character has a name: Alberto Teja (an anagram of TELETRABAJO) or Alberta Teja; the title's menu shows it and the boss uses it.
