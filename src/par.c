@@ -1,10 +1,12 @@
 /* Copyright (c) 2026 Federico Pereira <lord.basex@gmail.com> */
 /*
  * Rows drawn on several cores: a pass over a big picture (720p and 1080p)
- * is cut into bands of rows, each done by its own thread. Every band writes
- * only its own rows and reads what does not change, so the picture is the
- * same pixel for pixel whatever the number of threads; small pictures (the
- * 360p screen) stay on one.
+ * is cut into small bands of rows, which the threads take one after another
+ * as each finishes its last (a part of the picture full of furniture costs
+ * more than the ceiling, so equal shares would leave cores waiting). Every
+ * band writes only its own rows and reads what does not change, so the
+ * picture is the same pixel for pixel however it is cut; small pictures
+ * (the 360p screen) stay on one thread.
  */
 #if !defined(_WIN32) && !defined(__APPLE__)
 #define _POSIX_C_SOURCE 200809L
@@ -23,12 +25,33 @@
 #define PAR_MIN_PIXELS (1280 * 720)
 #define PAR_MAX 8
 
+#define PAR_BANDS 12 /* bands per thread: small enough to share the work out evenly */
+
+/* One pass: its rows and the next band to take (taken by every thread at once). */
 typedef struct
 {
    hd_rows_fn fn;
    void *ctx;
-   int32_t y0, y1;
-} band;
+   int32_t h, size;
+   volatile long next;
+} pass;
+
+/* The first row of the next band to do (an atomic add: each band goes to one thread). */
+static int32_t take(pass *p)
+{
+#if defined(_MSC_VER)
+   return (int32_t)InterlockedExchangeAdd(&p->next, p->size);
+#else
+   return (int32_t)__sync_fetch_and_add(&p->next, (long)p->size);
+#endif
+}
+
+static void work(pass *p)
+{
+   int32_t y;
+   while ((y = take(p)) < p->h)
+      p->fn(p->ctx, y, hd_min(p->h, y + p->size));
+}
 
 static int32_t cores(void)
 {
@@ -53,22 +76,20 @@ static int32_t cores(void)
 #if defined(_WIN32)
 static unsigned __stdcall run_band(void *arg)
 {
-   band *b = (band *)arg;
-   b->fn(b->ctx, b->y0, b->y1);
+   work((pass *)arg);
    return 0;
 }
 #elif !defined(HD_NO_THREADS)
 static void *run_band(void *arg)
 {
-   band *b = (band *)arg;
-   b->fn(b->ctx, b->y0, b->y1);
+   work((pass *)arg);
    return NULL;
 }
 #endif
 
 void hd_rows(int32_t w, int32_t h, hd_rows_fn fn, void *ctx)
 {
-   band bands[PAR_MAX];
+   pass p;
    int32_t n = (int64_t)w * h < PAR_MIN_PIXELS ? 1 : cores(), k;
 #if defined(_WIN32)
    HANDLE th[PAR_MAX];
@@ -81,22 +102,16 @@ void hd_rows(int32_t w, int32_t h, hd_rows_fn fn, void *ctx)
       fn(ctx, 0, h);
       return;
    }
-   for (k = 0; k < n; k++)
-   {
-      bands[k].fn = fn;
-      bands[k].ctx = ctx;
-      bands[k].y0 = (int32_t)((int64_t)h * k / n);
-      bands[k].y1 = (int32_t)((int64_t)h * (k + 1) / n);
-   }
-   /* the other bands on new threads, the first on this one; a thread that cannot start runs here */
+   p.fn = fn;
+   p.ctx = ctx;
+   p.h = h;
+   p.size = hd_max(1, h / (n * PAR_BANDS));
+   p.next = 0;
+   /* the other threads start, this one works too; a thread that cannot start leaves its share to the others */
 #if defined(_WIN32)
    for (k = 1; k < n; k++)
-   {
-      th[k] = (HANDLE)_beginthreadex(NULL, 0, run_band, &bands[k], 0, NULL);
-      if (!th[k])
-         run_band(&bands[k]);
-   }
-   run_band(&bands[0]);
+      th[k] = (HANDLE)_beginthreadex(NULL, 0, run_band, &p, 0, NULL);
+   work(&p);
    for (k = 1; k < n; k++)
       if (th[k])
       {
@@ -105,17 +120,12 @@ void hd_rows(int32_t w, int32_t h, hd_rows_fn fn, void *ctx)
       }
 #elif !defined(HD_NO_THREADS)
    for (k = 1; k < n; k++)
-   {
-      started[k] = pthread_create(&th[k], NULL, run_band, &bands[k]) == 0;
-      if (!started[k])
-         run_band(&bands[k]);
-   }
-   run_band(&bands[0]);
+      started[k] = pthread_create(&th[k], NULL, run_band, &p) == 0;
+   work(&p);
    for (k = 1; k < n; k++)
       if (started[k])
          pthread_join(th[k], NULL);
 #else
-   for (k = 0; k < n; k++)
-      fn(ctx, bands[k].y0, bands[k].y1);
+   work(&p);
 #endif
 }

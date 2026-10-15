@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-15
+
+### Fixed
+- TELETRABAJO: the man sat with his knees at his chest and his feet on the floor where he had stood (on the sofa he ended up over its back): his model's legs hang from a pelvis over its hips, which stayed at standing height, and its feet hang from the model's root. Sitting and crouching now lower the bone the legs hang from, and a foot hung from the root goes with its shin (`actor3d_place_model`).
+- TELETRABAJO: people sit on what is under them: the seat's top is measured once from the flat (`r3d_surface_below`, the highest face turned up under a point) and the thighs rest on it, sloping down from a high seat until the feet reach the floor or with the shins forward on a low one (`actor3d_pose.seat`); the beanbag gives way under the worker.
+- TELETRABAJO: crouching at the washing machine left the feet 40 cm over the floor: a squat with the knees over the toes, the body lowered until the feet are on the floor.
+- TELETRABAJO: a mug, a can, a bowl or a controller is held with the hands together (`actor3d_pose.small`), not as wide as the parcel.
+
+### Added
+- API 4: `golinkhd_frame_skip`, a frame without its picture: a host behind the clock keeps the game and its sound at their speed and shows fewer pictures for a moment, instead of the sound running short (heard as gaps). The game is the same either way (a test checks the state and the sound).
+- `tools/remoteposes`: TELETRABAJO's main characters in every activity, seen from four sides, and where their hips, knees, feet and head are against the seat under them (`actor3d_joints`).
+
+### Changed
+- Rows drawn on several cores are cut into small bands that the threads take as they finish (`hd_rows`), so a part of the picture full of furniture no longer leaves the other cores waiting: TELETRABAJO's 720p frame from 13.6 to 12.7 ms on an Intel i9-10900.
+
 ## [0.3.0] - 2026-10-15
 
 ### Fixed

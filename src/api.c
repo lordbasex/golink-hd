@@ -170,11 +170,12 @@ void golinkhd_set_resolution(golinkhd_engine *e, int32_t lines)
    hd_res_host = lines >= 1080 ? 3 : lines >= 720 ? 2 : lines > 0 ? 1 : 0;
 }
 
-void golinkhd_frame(golinkhd_engine *e, const golinkhd_pad *pads, int32_t count, golinkhd_frame_out *out)
+/* One frame of the game and its sound; its picture too when `draw` (else the last one stays). */
+static void run_frame(golinkhd_engine *e, const golinkhd_pad *pads, int32_t count, golinkhd_frame_out *out, int draw)
 {
    hd_input in[MAX_PLAYERS];
-   memset(in, 0, sizeof in);
    int32_t i;
+   memset(in, 0, sizeof in);
    if (pads && count > 0)
       memcpy(in, pads, sizeof(hd_input) * (size_t)hd_min(count, MAX_PLAYERS));
    /* both ways at once cancel out, on every host */
@@ -186,7 +187,8 @@ void golinkhd_frame(golinkhd_engine *e, const golinkhd_pad *pads, int32_t count,
          in[i].buttons &= ~(uint32_t)(PAD_UP | PAD_DOWN);
    }
    hd_step(&e->state, in);
-   hd_draw(&e->state, e->frame);
+   if (draw)
+      hd_draw(&e->state, e->frame);
    hd_mix(&e->state, e->audio, e->music);
    out->pixels = e->frame;
    out->width = HD_OUT_W;
@@ -194,6 +196,16 @@ void golinkhd_frame(golinkhd_engine *e, const golinkhd_pad *pads, int32_t count,
    out->pitch = HD_OUT_W;
    out->audio = e->audio;
    out->audio_frames = HD_SAMPLES_PER_FRAME;
+}
+
+void golinkhd_frame(golinkhd_engine *e, const golinkhd_pad *pads, int32_t count, golinkhd_frame_out *out)
+{
+   run_frame(e, pads, count, out, 1);
+}
+
+void golinkhd_frame_skip(golinkhd_engine *e, const golinkhd_pad *pads, int32_t count, golinkhd_frame_out *out)
+{
+   run_frame(e, pads, count, out, 0);
 }
 
 size_t golinkhd_state_size(golinkhd_engine *e)

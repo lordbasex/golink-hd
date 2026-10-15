@@ -1926,6 +1926,32 @@ static const int8_t activity_prop[RA_COUNT] = {
    [RA_PHONES] = ROOM3D_PROP_HEADPHONES,
 };
 
+/*
+ * The top of the seat under a sitting person whose feet are at `at` (over
+ * them, 16.16 meters), 0 when there is none: what the thighs rest on. Kept
+ * for each place (`slot`) until the flat is built again.
+ */
+static int32_t seat_under(int32_t slot, r3d_vec at)
+{
+   static int32_t built = -1, seat[RA_COUNT + 1], found[RA_COUNT + 1];
+   r3d_vec p = at;
+   int32_t y;
+   if (built != room3d_builds())
+   {
+      memset(found, 0, sizeof found);
+      built = room3d_builds();
+   }
+   if (!found[slot])
+   {
+      p.y += CM(75);
+      y = r3d_surface_below(p);
+      seat[slot] = y == R3D_NOTHING || y < at.y + CM(20) ? 0 : y - at.y;
+      found[slot] = 1;
+   }
+   return seat[slot];
+}
+#define SEAT_MORNING RA_COUNT /* seat_under's slot for the bed's edge in the morning */
+
 /* The worker's pose from the state: walking, or the activity's pose. */
 static void worker_pose(const hd_remote *g, actor3d_pose *pose)
 {
@@ -1946,8 +1972,14 @@ static void worker_pose(const hd_remote *g, actor3d_pose *pose)
       pose->hold = (a->pose & P_HOLD) != 0;
       pose->crouch = (a->pose & P_CROUCH) != 0;
       pose->lie = (a->pose & P_LIE) != 0;
+      if (pose->sit)
+         pose->seat = seat_under(g->act - 1, pose->at);
       if (activity_prop[g->act - 1] >= 0)
-         pose->prop = room3d_prop(activity_prop[g->act - 1]);
+      {
+         int32_t prop = activity_prop[g->act - 1];
+         pose->prop = room3d_prop(prop);
+         pose->small = prop == ROOM3D_PROP_MUG || prop == ROOM3D_PROP_CAN || prop == ROOM3D_PROP_BOWL || prop == ROOM3D_PROP_PAD;
+      }
       if (g->act == RA_GUITAR + 1)
       {
          pose->hold = 0;
@@ -2254,6 +2286,7 @@ static void morning_draw(hd_surface *sf, const hd_remote *g, int32_t scale)
       pose.at.z = ROOM3D_AT(1010);
       pose.yaw = FACE_EAST;
       pose.sit = 1;
+      pose.seat = seat_under(SEAT_MORNING, pose.at);
       pose.nod = -200;
    }
    else

@@ -2355,6 +2355,30 @@ static void test_api(void)
       h2 = fnv(out.pixels, sizeof(uint32_t) * 640 * 360, h2);
    }
    CHECK(h1 == h2);
+   {
+      /* API 4: frames whose picture is skipped play the same game and sound, and keep the last picture */
+      static uint8_t after_a[HD_SAVE_SIZE], after_b[HD_SAVE_SIZE];
+      uint32_t sa = 0, sb = 0, last;
+      CHECK(golinkhd_state_load(e, save, sizeof save, &err));
+      for (f = 0; f < 60; f++)
+      {
+         golinkhd_frame(e, pads, 1, &out);
+         sa = fnv(out.audio, sizeof(int16_t) * 2 * (size_t)out.audio_frames, sa);
+      }
+      CHECK(golinkhd_state_save(e, after_a, sizeof after_a));
+      CHECK(golinkhd_state_load(e, save, sizeof save, &err));
+      golinkhd_frame(e, pads, 1, &out);
+      sb = fnv(out.audio, sizeof(int16_t) * 2 * (size_t)out.audio_frames, sb);
+      last = fnv(out.pixels, sizeof(uint32_t) * 640 * 360, 0);
+      for (f = 1; f < 60; f++)
+      {
+         golinkhd_frame_skip(e, pads, 1, &out);
+         CHECK(out.audio_frames == HD_SAMPLES_PER_FRAME && fnv(out.pixels, sizeof(uint32_t) * 640 * 360, 0) == last);
+         sb = fnv(out.audio, sizeof(int16_t) * 2 * (size_t)out.audio_frames, sb);
+      }
+      CHECK(golinkhd_state_save(e, after_b, sizeof after_b));
+      CHECK(sa == sb && memcmp(after_a, after_b, sizeof after_a) == 0);
+   }
    save[0] = 'X';
    CHECK(!golinkhd_state_load(e, save, sizeof save, &err) && err != NULL);
 

@@ -59,6 +59,8 @@ typedef struct
    int32_t prop_pitch, prop_roll;
    int32_t strum;     /* playing a guitar (the prop, in front of the belly): one hand along its neck, the other strumming over its body */
    int32_t clock;     /* game frames, for a model's idle breathing (actor3d_place_model) */
+   int32_t small;     /* with `hold`: something small (a mug, a can, a bowl, a controller), held with the hands together */
+   int32_t seat;      /* sitting: the seat's top over at.y (16.16 meters; a model's thighs rest on it), 0: the pose's own height */
 } actor3d_pose;
 
 /* Builds the parts (with the fabric texture's id for the clothes, -1 none). */
@@ -76,5 +78,12 @@ int32_t actor3d_place(const actor3d_kit *k, const actor3d_pose *p, r3d_instance 
  */
 #define ACT_MODEL_INSTANCES 3
 int32_t actor3d_place_model(model3d_body *body, const actor3d_pose *p, const r3d_mesh *shadow, r3d_instance *out);
+/*
+ * Where the last model posed had its joints, in the world (16.16 meters):
+ * the hips, each knee and foot, the head (tools/remoteposes checks a pose
+ * against the furniture with them).
+ */
+enum { ACTOR3D_J_HIPS = 0, ACTOR3D_J_KNEE, ACTOR3D_J_FOOT = ACTOR3D_J_KNEE + 2, ACTOR3D_J_HEAD = ACTOR3D_J_FOOT + 2, ACTOR3D_JOINTS };
+extern r3d_vec actor3d_joints[ACTOR3D_JOINTS];
 
 #endif

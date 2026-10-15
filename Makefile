@@ -111,7 +111,11 @@ tools/remotebots: tools/remotebots.c $(ENGINE_C) $(HEADERS)
 tools/remotecover: tools/remotecover.c $(ENGINE_C) $(HEADERS)
 	$(CC) -std=c99 $(WARNINGS) -O2 $(INCFLAGS) -o $@ tools/remotecover.c $(ENGINE_C)
 
+# TELETRABAJO's poses, one picture per activity and side (tools/remoteposes.c).
+tools/remoteposes: tools/remoteposes.c $(ENGINE_C) $(HEADERS)
+	$(CC) -std=c99 $(WARNINGS) -O2 $(INCFLAGS) -o $@ tools/remoteposes.c $(ENGINE_C)
+
 clean:
-	rm -f $(OBJECTS) lib$(NAME).so lib$(NAME).dylib $(NAME).dll lib$(NAME).a $(TEST_BIN) tools/hdrun tools/glhd tools/bench tools/remotebots tools/remotecover
+	rm -f $(OBJECTS) lib$(NAME).so lib$(NAME).dylib $(NAME).dll lib$(NAME).a $(TEST_BIN) tools/hdrun tools/glhd tools/bench tools/remotebots tools/remotecover tools/remoteposes
 
 .PHONY: all clean static test tools bench remotebots

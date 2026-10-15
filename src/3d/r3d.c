@@ -89,7 +89,7 @@ static int32_t lm_face_count, lm_used;
 #define LM_TEXEL (FX_ONE / 20)
 
 static r3d_tri tris[R3D_MAX_TRIS];
-static int32_t tri_count, mesh_first;
+static int32_t tri_count, mesh_first, baked_count;
 static void lin3(uint32_t c, int32_t *r, int32_t *g, int32_t *b);
 static uint32_t sky_top, sky_bottom;
 /* a width that makes hd_rows split any number of rows over the cores */
@@ -123,6 +123,7 @@ void r3d_clear(void)
 {
    tri_count = 0;
    mesh_first = 0;
+   baked_count = 0;
    solid_count = 0;
    lamp_count = 0;
    lm_face_count = 0;
@@ -1189,6 +1190,31 @@ void r3d_bake(const r3d_light_cfg *c)
    hd_rows(PAR_WIDE, lm_face_count, bake_faces, &j);
    blur_faces();
    hd_rows(PAR_WIDE, tri_count, bake_tris, &j);
+   baked_count = tri_count;
+}
+
+int32_t r3d_surface_below(r3d_vec p)
+{
+   int32_t i, best = R3D_NOTHING;
+   for (i = 0; i < hd_min(baked_count, tri_count); i++)
+   {
+      const r3d_tri *t = &tris[i];
+      const r3d_vec *a = &t->v[0], *b = &t->v[1], *c = &t->v[2];
+      int64_t d0, d1, d2, y;
+      if (t->ny < 4096)
+         continue; /* not turned up (a wall, a side, an underside) */
+      /* inside the triangle seen from above: the same side of its three edges */
+      d0 = ((int64_t)b->x - a->x) * ((int64_t)p.z - a->z) - ((int64_t)b->z - a->z) * ((int64_t)p.x - a->x);
+      d1 = ((int64_t)c->x - b->x) * ((int64_t)p.z - b->z) - ((int64_t)c->z - b->z) * ((int64_t)p.x - b->x);
+      d2 = ((int64_t)a->x - c->x) * ((int64_t)p.z - c->z) - ((int64_t)a->z - c->z) * ((int64_t)p.x - c->x);
+      if ((d0 < 0 || d1 < 0 || d2 < 0) && (d0 > 0 || d1 > 0 || d2 > 0))
+         continue;
+      /* its plane's height there: n . (q - a) = 0 */
+      y = a->y - ((int64_t)t->nx * ((int64_t)p.x - a->x) + (int64_t)t->nz * ((int64_t)p.z - a->z)) / t->ny;
+      if (y <= p.y && y > best)
+         best = (int32_t)y;
+   }
+   return best;
 }
 
 /* ---- the screen's colors: linear light to 0..255 through a filmic curve ---- */

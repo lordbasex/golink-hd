@@ -574,6 +574,35 @@ on every core: `draw3d`), and the HUD's texts are drawn over it at the full
 size, sharp: 16.6 ms a frame on average on an Intel i9-10900, against 31 ms
 drawing the 3D at 1080p (13 ms at 720p).
 
+**Poses and sound (2026-10-15).** The user saw the man sitting badly: at
+the dining table with his knees over it, on the sofa over its back.
+`tools/remoteposes remote.glhd OUT [ACTIVITY ...]` draws both main
+characters in every activity from four sides and prints where their hips,
+knees, feet and head are, and the seat's height under the hips
+(`POSE_PITCH` and `POSE_DIST` move the camera when a wall is in the way).
+What it found and what changed:
+
+- The man's model (Quaternius) hangs its legs from a pelvis over its hips
+  and its feet from the root: lowering the hips left the legs standing
+  (knees at 89 cm) and the feet on the floor. Now the bone the legs hang
+  from is lowered, and a foot hung from the root follows its shin.
+- Every seat is measured from the flat (`r3d_surface_below`: desk chair
+  52 cm, dining chairs 40, sofa 39, beanbag 57, bed 59) and the thighs rest
+  on it; from a high seat they slope down until the feet reach the floor
+  (the woman's legs are shorter), on a low one the shins go forward. The
+  beanbag gives way 16 cm.
+- The squat at the washing machine had the feet 40 cm up: now the knees are
+  over the toes and the body goes down until the feet are on the floor.
+- Small things (a mug, a can, a bowl, a controller) are held with the hands
+  together.
+
+The sound came and went because go-link Console ran the game at 35 to 50
+frames a second on the Intel Mac (its telemetry), and every frame brings
+its 1/60 s of sound: short frames, short sound. API 4's
+`golinkhd_frame_skip` runs a frame without its picture, so the host keeps
+the game at 60 and its sound whole while it shows fewer pictures; the rows
+are now shared between the cores in small bands (13.6 to 12.7 ms a frame).
+
 **A name (2026-10-15).** The user asked for a name with an anagram of the
 title as its surname: Alberto Teja (TELETRABAJO), Alberta Teja for the
 woman (section 8, "The main character").

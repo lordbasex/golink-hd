@@ -146,6 +146,9 @@ static r3d_vec add(r3d_vec a, r3d_vec b)
 #define STRUM_GY 22
 #define STRUM_GZ 20
 
+#ifndef HOLD_SMALL
+#define HOLD_SMALL 340 /* the forearms turned in until the hands meet */
+#endif
 /* A pose's angles (4096 a turn; a positive pitch swings a limb's end forward, toward the face), side 0 and 1. */
 typedef struct
 {
@@ -183,11 +186,12 @@ static void angles(const actor3d_pose *p, pose_angles *a)
    }
    if (p->crouch)
    {
-      a->hip_y = CM(52);
+      /* a squat: the thighs a little over level, the shins down with the knees over the toes (a model's feet are then put on the floor) */
+      a->hip_y = CM(40);
       for (side = 0; side < 2; side++)
       {
-         a->thigh[side] = 1200; /* forward and up */
-         a->knee[side] = -1900; /* the shins back down */
+         a->thigh[side] = side ? 1100 : 1180;
+         a->knee[side] = side ? -1400 : -1480;
       }
       a->lean = 260;
    }
@@ -198,7 +202,7 @@ static void angles(const actor3d_pose *p, pose_angles *a)
       {
          a->upper[side] = 420;
          a->elbow[side] = 900;
-         a->spread[side] = side ? -160 : 160;
+         a->spread[side] = p->small ? (side ? HOLD_SMALL : -HOLD_SMALL) : (side ? -160 : 160);
       }
    }
    if (p->strum)
@@ -345,15 +349,45 @@ int32_t actor3d_place(const actor3d_kit *k, const actor3d_pose *p, r3d_instance 
 #define MOUSE_ELBOW 300
 #define MOUSE_SPREAD 200
 #endif
+#define SEAT_THIGH CM(8) /* a thigh's half thickness: its joint over the seat */
 #ifndef TYPE_REACH
 #define TYPE_REACH 14 /* cm: it sits forward on the seat, closer to the desk */
 #endif
 
 /* The bones the pose turns, found by name once per model. */
-enum { MB_HIPS = 0, MB_SPINE, MB_HEAD, MB_UPPER, MB_FORE = MB_UPPER + 2, MB_WRIST = MB_FORE + 2, MB_THIGH = MB_WRIST + 2, MB_SHIN = MB_THIGH + 2, MB_COUNT = MB_SHIN + 2 };
+enum { MB_HIPS = 0, MB_SPINE, MB_HEAD, MB_UPPER, MB_FORE = MB_UPPER + 2, MB_WRIST = MB_FORE + 2, MB_THIGH = MB_WRIST + 2, MB_SHIN = MB_THIGH + 2,
+       MB_FOOT = MB_SHIN + 2, MB_COUNT = MB_FOOT + 2 };
 /* side 0 of a pose is the person's right: the model's ".R" */
 static const char *const bone_names[MB_COUNT] = { "Hips", "Abdomen", "Head", "UpperArm.R", "UpperArm.L", "LowerArm.R", "LowerArm.L",
-                                                  "Wrist.R", "Wrist.L", "UpperLeg.R", "UpperLeg.L", "LowerLeg.R", "LowerLeg.L" };
+                                                  "Wrist.R", "Wrist.L", "UpperLeg.R", "UpperLeg.L", "LowerLeg.R", "LowerLeg.L",
+                                                  "Foot.R", "Foot.L" };
+
+/* Whether bone `a` is `b` or one of its ancestors. */
+static int ancestor(const model3d *m, int32_t a, int32_t b)
+{
+   for (; b >= 0; b = model3d_parent(m, b))
+      if (b == a)
+         return 1;
+   return 0;
+}
+
+/* out = a⁻¹ b, for turns with places (a's turn is a rotation: its inverse is its transpose). */
+static void relative(const model3d_xf *a, const model3d_xf *b, model3d_xf *out)
+{
+   int32_t i, j, k;
+   r3d_vec d = v3(b->t.x - a->t.x, b->t.y - a->t.y, b->t.z - a->t.z);
+   for (i = 0; i < 3; i++)
+      for (j = 0; j < 3; j++)
+      {
+         int64_t sum = 0;
+         for (k = 0; k < 3; k++)
+            sum += (int64_t)a->r[k * 3 + i] * b->r[k * 3 + j];
+         out->r[i * 3 + j] = (int32_t)(sum >> 14);
+      }
+   out->t.x = (int32_t)(((int64_t)a->r[0] * d.x + (int64_t)a->r[3] * d.y + (int64_t)a->r[6] * d.z) >> 14);
+   out->t.y = (int32_t)(((int64_t)a->r[1] * d.x + (int64_t)a->r[4] * d.y + (int64_t)a->r[7] * d.z) >> 14);
+   out->t.z = (int32_t)(((int64_t)a->r[2] * d.x + (int64_t)a->r[5] * d.y + (int64_t)a->r[8] * d.z) >> 14);
+}
 
 /*
  * An actor's turn (its face toward -z) as the model's (its front toward
@@ -426,12 +460,21 @@ static void set_turn(model3d_xf *g, const int32_t turn[9], const model3d_xf *res
    memcpy(g->r, r.r, sizeof g->r);
 }
 
+r3d_vec actor3d_joints[ACTOR3D_JOINTS];
+
+/* A bone's place in the world, posed. */
+static r3d_vec joint_at(const model3d_xf *global, int32_t bone, const int32_t place[9], r3d_vec at)
+{
+   r3d_vec v = r3d_rot_apply(place, global[bone].t);
+   return v3(at.x + v.x, at.y + v.y, at.z + v.z);
+}
+
 int32_t actor3d_place_model(model3d_body *body, const actor3d_pose *p, const r3d_mesh *shadow, r3d_instance *out)
 {
    const model3d *m = body->model;
    model3d_xf local[MODEL3D_BONES], global[MODEL3D_BONES];
    int32_t bone[MB_COUNT], turn_of[MODEL3D_BONES], turns[MB_COUNT][9], down[MB_COUNT][9];
-   int32_t n = 0, i, side, clip, time, still, place[9], yawm[9], over_hips = 0;
+   int32_t n = 0, i, side, clip, time, still, place[9], yawm[9], over_hips = 0, low, foot[2];
    pose_angles a;
    r3d_vec at = p->at;
    if (!m || !model3d_bones(m))
@@ -447,6 +490,39 @@ int32_t actor3d_place_model(model3d_body *body, const actor3d_pose *p, const r3d
    }
    for (i = 0; i < MB_COUNT; i++)
       bone[i] = model3d_bone(m, bone_names[i]);
+   for (side = 0; side < 2; side++)
+   {
+      /* each foot: its own bone, or what hangs from the shin */
+      foot[side] = bone[MB_FOOT + side];
+      for (i = 0; i < model3d_bones(m) && foot[side] < 0 && bone[MB_SHIN + side] >= 0; i++)
+         if (model3d_parent(m, i) == bone[MB_SHIN + side])
+            foot[side] = i;
+   }
+   if (p->sit && p->seat > 0 && bone[MB_THIGH] >= 0 && bone[MB_SHIN] >= 0 && foot[0] >= 0)
+   {
+      /*
+       * The legs fitted to the seat, the thighs level on it: from a high
+       * seat they slope down until the feet reach the floor (35 degrees at
+       * most), from a low one the shins go forward until they fit.
+       */
+      int32_t thigh = model3d_rest(m, bone[MB_THIGH])->t.y - model3d_rest(m, bone[MB_SHIN])->t.y;
+      int32_t shin = model3d_rest(m, bone[MB_SHIN])->t.y - model3d_rest(m, foot[0])->t.y;
+      int32_t room = p->seat + SEAT_THIGH - model3d_rest(m, foot[0])->t.y, k = 0;
+      if (room > shin)
+      {
+         while (k < 400 && (int32_t)(((int64_t)thigh * hd_sin(k)) >> 14) < room - shin)
+            k += 16;
+         for (side = 0; side < 2; side++)
+            a.thigh[side] = 1024 - k, a.knee[side] = -(1024 - k);
+      }
+      else
+      {
+         while (k < 900 && (int32_t)(((int64_t)shin * hd_cos(k)) >> 14) > room)
+            k += 16;
+         for (side = 0; side < 2; side++)
+            a.knee[side] = -1024 + k;
+      }
+   }
    /* each limb made to hang first: from its joint toward the next one at rest (the foot: the shin's first child) */
    for (i = 0; i < MB_COUNT; i++)
    {
@@ -462,9 +538,13 @@ int32_t actor3d_place_model(model3d_body *body, const actor3d_pose *p, const r3d
       else if (i >= MB_THIGH && i < MB_THIGH + 2)
          next = bone[MB_SHIN + i - MB_THIGH];
       else if (i >= MB_SHIN && i < MB_SHIN + 2)
+      {
          for (k = 0; k < model3d_bones(m) && next < 0; k++)
             if (model3d_parent(m, k) == bone[i])
                next = k;
+         if (next < 0)
+            next = bone[MB_FOOT + i - MB_SHIN]; /* a foot that hangs from elsewhere (the root, for its steps) */
+      }
       if (next < 0)
          continue;
       d.x = model3d_rest(m, next)->t.x - model3d_rest(m, bone[i])->t.x;
@@ -541,6 +621,13 @@ int32_t actor3d_place_model(model3d_body *body, const actor3d_pose *p, const r3d
       to_model(r, turns[MB_HEAD]);
       turn_of[bone[MB_HEAD]] = MB_HEAD;
    }
+   /*
+    * The bone lowered when the hips go down: the hips, or the pelvis over
+    * them when the legs hang from it (else the legs stay standing).
+    */
+   low = bone[MB_HIPS];
+   if (low >= 0 && bone[MB_THIGH] >= 0 && ancestor(m, model3d_parent(m, bone[MB_THIGH]), low))
+      low = model3d_parent(m, bone[MB_THIGH]);
    for (i = 0; i < model3d_bones(m); i++)
    {
       int32_t par = model3d_parent(m, i);
@@ -548,15 +635,38 @@ int32_t actor3d_place_model(model3d_body *body, const actor3d_pose *p, const r3d
          global[i] = local[i];
       else
          model3d_mul(&global[par], &local[i], &global[i]);
-      if (i == bone[MB_HIPS] && over_hips)
+      if (i == low && over_hips)
       {
          /* the hips lowered as the pose's (sitting, crouching), the model's own height kept */
          const model3d_xf *rest = model3d_rest(m, i);
-         global[i].t.y = rest->t.y + (int32_t)((int64_t)(a.hip_y - CM(94)) * rest->t.y / CM(94));
+         int32_t hips_y = model3d_rest(m, bone[MB_HIPS])->t.y;
+         global[i].t.y = rest->t.y + (int32_t)((int64_t)(a.hip_y - CM(94)) * hips_y / CM(94));
+         if (p->sit && p->seat > 0 && bone[MB_THIGH] >= 0)
+            /* on the seat: the thighs' joints a thigh's half thickness over it */
+            global[i].t.y = p->seat + SEAT_THIGH - (model3d_rest(m, bone[MB_THIGH])->t.y - rest->t.y);
          global[i].t.x = rest->t.x, global[i].t.z = rest->t.z;
       }
       if (turn_of[i] >= 0)
          set_turn(&global[i], turns[turn_of[i]], model3d_rest(m, i), down[turn_of[i]]);
+      for (side = 0; side < 2 && over_hips; side++)
+         if (i == bone[MB_FOOT + side] && bone[MB_SHIN + side] >= 0 && bone[MB_SHIN + side] < i && par != bone[MB_SHIN + side])
+         {
+            /* a foot hanging from the root (where a walk puts its steps) goes with its shin, as at rest */
+            model3d_xf rel;
+            relative(model3d_rest(m, bone[MB_SHIN + side]), model3d_rest(m, i), &rel);
+            model3d_mul(&global[bone[MB_SHIN + side]], &rel, &global[i]);
+         }
+   }
+   if (p->crouch && over_hips)
+   {
+      /* crouching: the whole body down until the lower foot is where it is when standing (on the floor) */
+      int32_t lowest = INT32_MAX, sole = 0;
+      for (side = 0; side < 2; side++)
+         if (foot[side] >= 0 && global[foot[side]].t.y < lowest)
+            lowest = global[foot[side]].t.y, sole = model3d_rest(m, foot[side])->t.y;
+      if (lowest != INT32_MAX)
+         for (i = 0; i < model3d_bones(m); i++)
+            global[i].t.y += sole - lowest;
    }
    /* the model turned to the person's facing (its front +z is the actor's back), and lying down when it lies */
    r3d_rotation(p->yaw + 2048, 0, 0, place);
@@ -583,7 +693,18 @@ int32_t actor3d_place_model(model3d_body *body, const actor3d_pose *p, const r3d
       at.x += f.x, at.z += f.z;
    }
    model3d_body_pose(body, global, place, at);
-   memset(&out[n], 0, sizeof out[n]);
+   if (bone[MB_HIPS] >= 0)
+      actor3d_joints[ACTOR3D_J_HIPS] = joint_at(global, bone[MB_HIPS], place, at);
+   if (bone[MB_HEAD] >= 0)
+      actor3d_joints[ACTOR3D_J_HEAD] = joint_at(global, bone[MB_HEAD], place, at);
+   for (side = 0; side < 2; side++)
+   {
+      if (bone[MB_SHIN + side] >= 0)
+         actor3d_joints[ACTOR3D_J_KNEE + side] = joint_at(global, bone[MB_SHIN + side], place, at);
+      if (foot[side] >= 0)
+         actor3d_joints[ACTOR3D_J_FOOT + side] = joint_at(global, foot[side], place, at);
+   }
+  memset(&out[n], 0, sizeof out[n]);
    out[n++].mesh = body->mesh;
    /* what the hands hold: between them, at the belly for a guitar, or in the right hand */
    if (p->prop && p->prop->count && bone[MB_WRIST] >= 0 && bone[MB_WRIST + 1] >= 0)

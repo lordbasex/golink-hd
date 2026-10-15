@@ -131,6 +131,13 @@ void r3d_bake(const r3d_light_cfg *c);
 int32_t r3d_solid_at(r3d_vec p);
 int32_t r3d_reach(r3d_vec from, r3d_vec to);
 int32_t r3d_triangles(void);
+/*
+ * The top of what was baked right under `p` (a vertical line down from it):
+ * the highest face turned up whose y is not over p.y (16.16 meters), or
+ * R3D_NOTHING. Where a person sits, lies or puts something down.
+ */
+#define R3D_NOTHING INT32_MIN
+int32_t r3d_surface_below(r3d_vec p);
 /* Drops the triangles from `count` on (what was built last, to build it again: a package's models). */
 void r3d_truncate(int32_t count);
 

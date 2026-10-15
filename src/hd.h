@@ -18,7 +18,7 @@
 #include "fixed.h"
 #include "golink_hd.h"
 
-#define HD_VERSION "0.3.0"
+#define HD_VERSION "0.3.1"
 /*
  * The save state's layout version. Bump it whenever hd_state changes; a
  * save state of another version is refused cleanly, never misread.
