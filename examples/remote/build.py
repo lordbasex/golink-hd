@@ -27,7 +27,7 @@ quarter of the size. CREDITS.md lists every recording.
 The main character's voice (audio.json's "voices") is recorded by
 voices.py into source/voices/<m|w>/<lang>/; here the thoughts are made to
 sound inside the head (softer, closer, a little room), what is said out
-loud (the boss's asks read, read_*, and the answers, say_*) stays dry, and
+loud (the boss's asks read, read_*, and the answers chosen, ans_*) stays dry, and
 all are packed as the effects "voice_<m|w>_<lang>_<key>".
 """
 import array
@@ -52,7 +52,7 @@ QUIET = 500          # quieter than this at an effect's start or end is silence
 BLEND = 0.25         # seconds of a loop's end blended into its start
 VOICE_PEAK = 15000   # a thought over the music and the house
 THOUGHT = "apad=pad_dur=0.3,highpass=f=120,lowpass=f=5500,aecho=0.8:0.5:40|75:0.25|0.15"  # inside the head
-SAID = "highpass=f=90,lowpass=f=9000"  # out loud: the boss's asks read (read_*) and the answers (say_*)
+SAID = "highpass=f=90,lowpass=f=9000"  # out loud: the boss's asks read (read_*) and the answers chosen (ans_*)
 
 
 def decode(path, channels, start=0.0, length=None, filters=None):
@@ -212,7 +212,7 @@ def build(spec, resolution="720p"):
                     sys.exit("the thoughts are not recorded: run examples/remote/voices.py (python3 examples/remote/voices.py for its help)")
                 for f in sorted(os.listdir(folder)):
                     if f.endswith(".wav"):
-                        said = f.startswith(("read_", "say_"))
+                        said = f.startswith(("read_", "ans_"))
                         pcm = level(fade_out(trim(decode(os.path.join(folder, f), 1, filters=SAID if said else THOUGHT)), 1), VOICE_PEAK)
                         name = f"voice_{who}_{lang}_{f[:-4]}"
                         adpcm(pcm, 1, os.path.join(OUT, name + ".wav"))
@@ -239,7 +239,7 @@ def build(spec, resolution="720p"):
     manifest = {
         "format": 3,
         "title": "TELETRABAJO: CÁMARA APAGADA",
-        "version": spec.get("version", "0.5.0"),
+        "version": spec.get("version", "0.6.0"),
         "game": "remote",
         "resolution": resolution,
         "players": 1,

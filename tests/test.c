@@ -746,6 +746,18 @@ static void remote_event(hd_remote *g, int32_t kind)
    g->ev_at[g->ev_next] = g->t / REMOTE_FRAMES_PER_MINUTE;
 }
 
+/* The boss asks now with variant `v` of its kind (the dialogue opens at once when the worker is at the desk). */
+static void remote_ask(hd_state *s, int32_t kind, int32_t v)
+{
+   hd_remote *g = HD_GAME3D(s, hd_remote);
+   remote_event(g, kind);
+   remote_steps(s, 1, 0);
+   g->ask = kind * 2 + v;
+   if (g->dlg)
+      g->dlg = g->ask + 1;
+   remote_steps(s, 1, 0);
+}
+
 static void test_remote_day(void)
 {
    static hd_state a, b;
@@ -776,8 +788,10 @@ static void test_remote_day(void)
    CHECK(g->act == RA_WORK + 1);
    g->washer_t = 100;
    s0 = g->suspicion;
-   remote_event(g, RE_CALL);
-   remote_steps(&a, 2, 0);
+   remote_ask(&a, RE_CALL, 0);
+   /* the dialogue opens and the boss waits; the first answer ("call me now") */
+   CHECK(g->dlg == RE_CALL * 2 + 1 && !g->boss_call && g->suspicion >= s0 - 1);
+   remote_steps(&a, 2, PAD_JUMP);
    /* (a minute of work may have passed too: -1) */
    CHECK(g->boss == RE_CALL + 1 && g->boss_call && g->suspicion >= s0 - 100 * REMOTE_ANSWER_CALM / 100 - 1 + REMOTE_NOISE &&
          g->suspicion <= s0 - 100 * REMOTE_ANSWER_CALM / 100 + REMOTE_NOISE);
@@ -937,7 +951,7 @@ static void test_remote_screens(void)
    CHECK(g->screen == RSC_TITLE);
 }
 
-/* The boss's later events: the weekend question answered either way (or not at all), a hotfix deployed at the desk, a camera call that sees the cat. */
+/* The boss's asks answered in dialogues: the weekend sold, half sold (a question follows) or kept with a joke the boss takes badly, or not answered at all; a call put off twice; a hotfix deployed at the desk; a camera call that sees the cat. */
 static void test_remote_boss(void)
 {
    static hd_state a;
@@ -949,36 +963,78 @@ static void test_remote_boss(void)
    remote_steps(&a, 1, 0);
    remote_steps(&a, 1, PAD_JUMP);
    CHECK(g->act == RA_WORK + 1);
-   /* "of course": calmer, the weekend sold, still at the desk */
+   /* the weekend, ask a: "of course" (the first answer) calms the boss and sells it, still at the desk */
    g->suspicion = 300;
-   remote_event(g, RE_WEEKEND);
-   remote_steps(&a, 3, 0);
-   CHECK(g->boss == RE_WEEKEND + 1);
-   remote_steps(&a, 1, PAD_JUMP);
-   CHECK(!g->boss && g->weekend == 1 && g->suspicion < 300 && g->act == RA_WORK + 1);
-   /* "I have plans": a little more suspicion */
+   p0 = g->points;
+   remote_ask(&a, RE_WEEKEND, 0);
+   CHECK(g->boss == RE_WEEKEND + 1 && g->dlg == RE_WEEKEND * 2 + 1);
+   s0 = g->boss_t;
+   remote_steps(&a, 120, 0);
+   CHECK(g->boss_t == s0); /* the boss waits while the answer is chosen */
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(!g->boss && !g->dlg && g->weekend == 1 && g->suspicion < 300 && g->act == RA_WORK + 1 && g->points == p0 + REMOTE_DLG_GOOD);
+   /* "yes, but half time" (the second): a question follows, "Saturday morning" sells half of it */
    g->weekend = 0;
+   remote_ask(&a, RE_WEEKEND, 0);
+   remote_steps(&a, 2, PAD_DOWN);
+   CHECK(g->dlg_sel == 1);
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(g->boss == RE_WEEKEND + 1 && g->dlg == RE_BOSS_KINDS * 2 + 1 && g->dlg_sel == 0);
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(!g->boss && !g->dlg && g->weekend == 3);
+   /* the cat's birthday (a joke): fine while the boss is calm, costly once it suspects */
+   g->weekend = 0;
+   g->suspicion = REMOTE_FUNNY_LIMIT + 100;
    s0 = g->suspicion;
-   remote_event(g, RE_WEEKEND);
-   remote_steps(&a, 3, 0);
-   remote_steps(&a, 1, PAD_RUN);
-   CHECK(!g->boss && g->weekend == 2 && g->suspicion >= s0 + REMOTE_WEEKEND_NO - 1);
+   p0 = g->points;
+   remote_ask(&a, RE_WEEKEND, 0);
+   remote_steps(&a, 2, PAD_UP);
+   remote_steps(&a, 2, PAD_UP);
+   CHECK(g->dlg_sel == 2);
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(!g->boss && g->weekend == 2 && g->suspicion >= s0 + REMOTE_DLG_FUNNY_RISE - 1 && g->points == p0 + REMOTE_DLG_FUNNY_BAD &&
+         g->phone_text[(g->phone_n - 1) % REMOTE_PHONE] == RT_DLG_FUNNY_BAD + RE_WEEKEND * 2);
    /* not answered: it counts as a yes, and it is missed */
    g->weekend = 0;
+   g->act = 0;
    s0 = g->suspicion;
    remote_event(g, RE_WEEKEND);
    remote_steps(&a, 31 * 60, 0);
-   CHECK(!g->boss && g->weekend == 1 && g->suspicion >= s0 + 150 - 31 * 60 / REMOTE_FRAMES_PER_MINUTE / REMOTE_WORK_CALM_EVERY - 1); /* working calmed it meanwhile */
-   /* a hotfix: deploying at the desk, then it pays */
+   CHECK(!g->boss && g->weekend == 1 && g->suspicion >= s0 + 150 - 1);
+   /* a call put off: "in 10 minutes?" ends it, and the boss calls again then; a second time it will not wait */
+   g->x = ROOM3D_AT(950), g->z = ROOM3D_AT(1035);
+   remote_steps(&a, 1, 0);
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(g->act == RA_WORK + 1);
+   g->postponed = 0;
+   remote_ask(&a, RE_CALL, 0);
+   remote_steps(&a, 2, PAD_DOWN);
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(!g->boss && (g->postponed & (1 << RE_CALL)) && g->ev_kind[g->ev_next] == RE_CALL &&
+         g->ev_at[g->ev_next] == g->t / REMOTE_FRAMES_PER_MINUTE + REMOTE_LATER_MINUTES);
+   g->ev_at[g->ev_next] = g->t / REMOTE_FRAMES_PER_MINUTE;
+   remote_steps(&a, 1, 0);
+   g->ask = RE_CALL * 2;
+   g->dlg = g->ask + 1;
+   remote_steps(&a, 1, 0);
+   remote_steps(&a, 2, PAD_DOWN);
    p0 = g->points;
-   remote_event(g, RE_HOTFIX);
-   remote_steps(&a, 3, 0);
-   CHECK(g->boss == RE_HOTFIX + 1 && g->boss_call);
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(g->boss == RE_CALL + 1 && g->boss_call && g->points == p0 + REMOTE_DLG_BAD &&
+         g->phone_text[(g->phone_n - 1) % REMOTE_PHONE] == RT_DLG_NOW);
+   remote_steps(&a, 10 * REMOTE_FRAMES_PER_MINUTE + 2, 0);
+   CHECK(!g->boss);
+   /* a hotfix: deploying at the desk, then it pays */
+   remote_ask(&a, RE_HOTFIX, 0);
+   p0 = g->points;
+   remote_steps(&a, 1, PAD_JUMP); /* "it was me": honest */
+   CHECK(g->boss == RE_HOTFIX + 1 && g->boss_call && g->points == p0 + REMOTE_DLG_HONEST);
    remote_steps(&a, 20 * REMOTE_FRAMES_PER_MINUTE + 2, 0);
-   CHECK(!g->boss && g->hotfixes == 1 && g->points == p0 + REMOTE_HOTFIX_POINTS);
+   CHECK(!g->boss && g->hotfixes == 1 && g->points == p0 + REMOTE_DLG_HONEST + REMOTE_HOTFIX_POINTS);
    /* the camera sees the cat on the keyboard */
    remote_event(g, RE_CAMERA);
    remote_steps(&a, 3, 0);
+   remote_steps(&a, 1, PAD_JUMP);
    CHECK(g->boss == RE_CAMERA + 1 && g->boss_call);
    s0 = g->suspicion;
    g->cat_keys = 2, g->cat_mode = CAT_REST, g->cat_spot = 5, g->cat_y = FX_FRAC(79, 100);
@@ -1232,7 +1288,7 @@ static void test_remote_sound(void)
                    " \"voice_m_en_done_coffee\": {\"file\": \"shot.wav\", \"on_demand\": true}, \"voice_m_es_done_coffee\": {\"file\": \"shot.wav\", \"on_demand\": true},"
                    " \"voice_m_es_cat_moved\": \"shot.wav\", \"voice_w_es_cat_moved\": {\"file\": \"shot.wav\", \"on_demand\": true},"
                    " \"voice_m_en_read_call_a\": \"shot.wav\", \"voice_m_en_muse_call_a\": {\"file\": \"song.wav\", \"on_demand\": true},"
-                   " \"voice_m_en_read_call_b\": \"shot.wav\", \"voice_m_en_muse_call_b\": {\"file\": \"song.wav\", \"on_demand\": true}, \"voice_m_en_say_call\": \"shot.wav\"},"
+                   " \"voice_m_en_read_call_b\": \"shot.wav\", \"voice_m_en_muse_call_b\": {\"file\": \"song.wav\", \"on_demand\": true}, \"voice_m_en_ans_02_0\": \"shot.wav\"},"
                    " \"tracks\": {\"title\": {\"file\": \"song.wav\"}, \"day\": {\"file\": \"song.wav\", \"volume\": 150}, \"call\": {\"file\": \"song.wav\"}}}}";
    files[1].name = "loop.wav";
    files[1].text = (const char *)loop_wav;
@@ -1362,12 +1418,15 @@ static void test_remote_sound(void)
          hd_mix(&a, out, 1);
          CHECK(a.ch[c].sample == muse && a.ch[c].pos > 0 && channel_of(&a, read) == -1);
       }
-      /* the answer, at the desk at once, waits until the thought is over */
+      /* the answer chosen at the desk at once waits until the thought is over */
       g->act = RA_WORK + 1;
       g->energy = REMOTE_ENERGY_MAX;
+      g->ask = RE_CALL * 2;
       remote_plays(&a, 1, 0);
-      CHECK(g->phone_who[(g->phone_n - 1) % REMOTE_PHONE] == RW_YOU && c >= 0 && a.ch[c].sample == muse);
-      c = channel_of(&a, hd_effect("voice_m_en_say_call"));
+      CHECK(g->dlg == RE_CALL * 2 + 1);
+      remote_plays(&a, 1, PAD_JUMP);
+      CHECK(g->phone_who[(g->phone_n - 2) % REMOTE_PHONE] == RW_YOU && c >= 0 && a.ch[c].sample == muse);
+      c = channel_of(&a, hd_effect("voice_m_en_ans_02_0"));
       CHECK(c >= 0 && a.ch[c].pos < -HD_SAMPLES_PER_FRAME);
       g->boss = 0;
       g->act = 0;

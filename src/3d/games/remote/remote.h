@@ -38,7 +38,7 @@ enum
    RE_MESSAGE,     /* an urgent message */
    RE_SHARE,       /* "share your screen" */
    RE_HOTFIX,      /* production is down: deploy a fix, at the desk until it is out */
-   RE_WEEKEND,     /* "can you work this weekend?": a question with two answers */
+   RE_WEEKEND,     /* "can you work this weekend?": all of it, half of it (a question follows) or none */
    RE_CAMERA,      /* a video call with the camera on: the boss sees what goes on behind */
    RE_BOSS_KINDS,
    RE_DELIVERY = RE_BOSS_KINDS, /* the bell rings */
@@ -135,10 +135,17 @@ typedef struct
    /* phase 5: the sound */
    int32_t music_resume;       /* where the day's music was when a call took over (it goes on from there) */
    /* more of the boss */
-   int32_t weekend;            /* the weekend question: 0 not asked or not answered, 1 "of course" (sold), 2 "I have plans" */
+   int32_t weekend;            /* the weekend question: 0 not asked or not answered, 1 sold, 2 kept, 3 half sold */
    int32_t hotfixes;           /* hotfixes deployed today */
    int32_t chatter_at;         /* the game minute the boss writes something that needs no answer */
    int32_t muse, muse_t;       /* the worker's thought about the boss's ask (a text id + 1) and its frames left */
+   /* the answers to the boss (a dialogue: the boss's ask or a question that follows an answer) */
+   int32_t ask;                /* the boss's ask under way: its dialogue (kind * 2 + its variant) */
+   int32_t dlg;                /* the dialogue open at the desk + 1, 0: none */
+   int32_t dlg_sel;            /* the answer chosen in it, 0..REMOTE_DLG_ANSWERS - 1 */
+   int32_t dlg_t;              /* frames it has been open */
+   int32_t dlg_points;         /* what the day's answers gave or took (part of `points`) */
+   int32_t postponed;          /* the boss's kinds already put off ("in 10 minutes?"), a bit each */
 } hd_remote;
 
 /* Every number that balances the game, in one place. */
@@ -184,7 +191,19 @@ typedef struct
 #define REMOTE_HEARD 8   /* what the boss can hear or see on a call (boss_noise has a bit each) */
 #define REMOTE_CHATTER 10
 #define REMOTE_WEEKEND_COST 250 /* points the weekend sold takes from the score */
-#define REMOTE_WEEKEND_NO 60    /* suspicion for "I have plans" */
+#define REMOTE_WEEKEND_HALF_COST 120 /* half of it sold */
+/* the answers: each dialogue has 4, of a tone that says what it does (remote.c) */
+#define REMOTE_DLG_ANSWERS 4
+#define REMOTE_DLG_COUNT (RE_BOSS_KINDS * 2 + 2) /* the asks, then the two questions that follow an answer about the weekend */
+#define REMOTE_DLG_GOOD 40        /* points of an answer that pleases the boss (and calms it as an answer always did) */
+#define REMOTE_DLG_HONEST 20      /* an honest one (half the calm) */
+#define REMOTE_DLG_FUNNY 60       /* a joke the boss takes well (the calm of a good one), */
+#define REMOTE_FUNNY_LIMIT 400    /* which it does under this suspicion; over it the joke costs: */
+#define REMOTE_DLG_FUNNY_BAD (-40)
+#define REMOTE_DLG_FUNNY_RISE 80
+#define REMOTE_DLG_BAD (-50)      /* an answer the boss dislikes */
+#define REMOTE_DLG_BAD_RISE 100
+#define REMOTE_LATER_MINUTES 10   /* "in 10 minutes?": the boss comes back then (once; a second time it will not wait) */
 #define REMOTE_HOTFIX_POINTS 150
 
 /* The game's texts, each in English, Spanish and Portuguese (remote_text.c). */
@@ -209,8 +228,7 @@ enum
    RT_ANSWER,        /* "answer at the desk" with the countdown */
    RT_GREETING,      /* the boss's good morning */
    RT_BOSS_ASK,      /* RE_BOSS_KINDS x 2: the boss asks */
-   RT_BOSS_YES = RT_BOSS_ASK + RE_BOSS_KINDS * 2, /* RE_BOSS_KINDS: the worker answers */
-   RT_BOSS_MISS = RT_BOSS_YES + RE_BOSS_KINDS,    /* RE_BOSS_KINDS: the boss, unanswered */
+   RT_BOSS_MISS = RT_BOSS_ASK + RE_BOSS_KINDS * 2, /* RE_BOSS_KINDS: the boss, unanswered */
    RT_HEARD = RT_BOSS_MISS + RE_BOSS_KINDS,       /* REMOTE_HEARD: what the boss hears on a call (washer, bell, flatmate, drill, snoring), then sees on camera (the cat, the flatmate, the worker asleep) */
    RT_BELL = RT_HEARD + REMOTE_HEARD, /* the house's events */
    RT_BELL_GONE,
@@ -255,9 +273,6 @@ enum
    RT_PAUSE_GO_ON,
    RT_PAUSE_RESTART,
    RT_PAUSE_QUIT,
-   RT_WEEKEND_CHOICE, /* "A: of course, boss   X: I have plans" */
-   RT_WEEKEND_NO,     /* the worker's answer, and the boss's */
-   RT_WEEKEND_NO_BOSS,
    RT_HOTFIX_DONE,
    RT_END_WEEKEND,    /* the end's row: the weekend sold */
    RT_CALL_BOSS,      /* the video call's window: the boss's name, the camera on, off, deploying */
@@ -268,7 +283,14 @@ enum
    RT_MENU_HERO = RT_CHATTER + REMOTE_CHATTER, /* "Main character" (the choice follows) */
    RT_HERO,           /* 2: a man, a woman */
    RT_BOSS_MUSE = RT_HERO + 2, /* RE_BOSS_KINDS x 2: what the worker thinks of each ask, after reading it */
-   RT_COUNT = RT_BOSS_MUSE + RE_BOSS_KINDS * 2
+   RT_DLG_ANSWER = RT_BOSS_MUSE + RE_BOSS_KINDS * 2,                    /* REMOTE_DLG_COUNT x 4: the answers, said out loud */
+   RT_DLG_REPLY = RT_DLG_ANSWER + REMOTE_DLG_COUNT * REMOTE_DLG_ANSWERS, /* REMOTE_DLG_COUNT x 4: the boss's reply to each (the next question, for one that leads on) */
+   RT_DLG_FUNNY_BAD = RT_DLG_REPLY + REMOTE_DLG_COUNT * REMOTE_DLG_ANSWERS, /* REMOTE_DLG_COUNT: the boss's reply to the dialogue's joke when it is not in the mood */
+   RT_DLG_HINT = RT_DLG_FUNNY_BAD + REMOTE_DLG_COUNT, /* "Up/Down: choose   A: answer" */
+   RT_DLG_NOW,       /* the boss, put off a second time: it will not wait */
+   RT_END_ANSWERS,   /* the end's rows: what the answers gave, half the weekend sold */
+   RT_END_WEEKEND_HALF,
+   RT_COUNT
 };
 const char *remote_text(int32_t id);
 /* Whose texts: 0 a man's, 1 a woman's (Spanish and Portuguese say some words otherwise); the game sets it from hd_remote.hero. */
@@ -286,6 +308,10 @@ void hd_remote_new_day(hd_state *s);
  * (centimeters of the plan). Each returns 0 past the last one.
  */
 enum { REMOTE_PLACE_ACTIVITY = 0, REMOTE_PLACE_CAT, REMOTE_PLACE_MATE };
+
+/* An answer's tone (REMOTE_TONE_*), for bots and tests: answer `i` of dialogue `d` (hd_remote.dlg - 1); -1 past the last. */
+enum { REMOTE_TONE_GOOD = 0, REMOTE_TONE_HONEST, REMOTE_TONE_FUNNY, REMOTE_TONE_BAD };
+int32_t remote_answer_tone(int32_t d, int32_t i);
 int32_t remote_place(int32_t kind, int32_t a, int32_t *x, int32_t *z);
 
 #endif

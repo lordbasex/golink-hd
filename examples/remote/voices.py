@@ -5,7 +5,8 @@ English, Spanish and Portuguese, for both main characters (a man and a
 woman), with speech models that run on the computer, into
 source/voices/<m|w>/<lang>/<key>.wav: the thoughts, the boss's asks read
 aloud (read_*), what the worker thinks of each (muse_*) and the answers
-(say_*); build.py makes the thoughts sound inside the head.
+chosen in the dialogues (ans_<dialogue>_<answer>); build.py makes the
+thoughts sound inside the head.
 
 The lines are the game's own: the `voiced` table in
 src/3d/games/remote/remote.c (each text and its key) and their translations
@@ -53,7 +54,7 @@ def voiced():
     """(text expression, key) of every thought the game says aloud."""
     src = open(os.path.join(GAME, "remote.c"), encoding="utf-8").read()
     table = re.search(r"\} voiced\[\] = \{(.*?)\n\};", src, re.S).group(1)
-    return [(norm(e), k) for e, k in re.findall(r"\{\s*([A-Z_0-9+* ]+?),\s*\"([a-z_]+)\"\s*\}", table)]
+    return [(norm(e), k) for e, k in re.findall(r"\{\s*([A-Z_0-9+* ]+?),\s*\"([a-z_0-9]+)\"\s*\}", table)]
 
 
 def texts():

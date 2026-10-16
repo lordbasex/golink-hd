@@ -186,10 +186,34 @@ shrinking red bar.
 | Urgent message | 30 real seconds | none: the answer is enough | +150 | -25 |
 | Screen share | 20 real seconds | 5 game minutes | +200 | -40 |
 | Production down, a hotfix | 40 real seconds | 20 game minutes deploying ("deploying"); then +150 points | +350 | -30 |
-| "Can you work this weekend?" | 30 real seconds, then an answer at the desk: A "of course" (-60, the weekend sold: -250 points at the end) or X "I have plans" (+60) | none | +150, and it counts as a yes | see the limit |
+| "Can you work this weekend?" | 30 real seconds | none: the answer sells all of it (-250 points at the end), half of it (a question follows; -120) or none | +150, and it counts as a yes | see the answers |
 | Video call with the camera on | 30 real seconds | 8 game minutes: the boss also sees the cat on the desk, the flatmate in the office, the worker asleep (+100 each, once) | +300 | -40 |
 
 The code's table (`boss_events`) keeps the first design's calm (-80, -100, -50, -80); `REMOTE_ANSWER_CALM` (50 %) halves it, which is what the table above shows.
+
+**Answers, like the adventures of the 90s (2026-10-15).** At the desk,
+every ask opens a dialogue at the bottom of the screen: the boss's question
+and four answers, chosen with up and down and said with A (the boss waits
+while the player chooses; the computer stops ringing). Each answer has a
+tone (`dialogues` in remote.c, `remote_answer_tone` for bots):
+
+| Tone | Points | Suspicion |
+|---|---|---|
+| Good: what the boss wants to hear | +40 | the event's "answered" calm |
+| Honest | +20 | half of it |
+| A joke | +60 while the boss is calm (suspicion under 400) | the calm, or +80 and -40 points when it already suspects |
+| Bad | -50 | +100 |
+
+The boss replies to each (its message on the phone; a joke has a reply
+for each mood) and an answer can lead somewhere else: no call ("my screen
+sharing is broken"), the boss calling again in 10 minutes ("in 10
+minutes?"; a second time it will not wait: it calls at once and minds it),
+or a question that follows: "yes, but half time" asks "Saturday or
+Sunday?" and "only if it's really small" asks "two hours, tops. Deal?",
+each with four answers of its own. The weekend can be sold (-250 at the
+end), half sold (-120) or kept. The day's end shows what the answers gave
+or took, apart from the other points. The 64 answers are said out loud in
+both main characters' voices and the three languages (`ans_<dialogue>_<answer>`).
 
 A day has at most one weekend question and one hotfix. Between events the
 boss also writes things that need no answer (log your hours, a meeting to
@@ -382,7 +406,7 @@ language of the texts (English, Spanish or Portuguese, switched from the
 title's menu) and in the voice of the character the player picked (a man
 or a woman, also from the title's menu): what an activity left ("Another
 coffee. Who's counting?"), "again?", the cat taken off, the hotfix out, the
-answers to the boss and the weekend's "no", and what happens in the house
+answers chosen for the boss, and what happens in the house
 (the bell, the drill, the internet, the washing machine). The boss, the
 flatmate and the cat are not voiced. A new thought cuts the one before
 short.

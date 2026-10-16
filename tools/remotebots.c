@@ -36,15 +36,15 @@ typedef struct
    int32_t react;                  /* frames before it notices the boss (up to twice as many) */
    int32_t bell, cat, phones;      /* answers the door, takes the cat off the keys, puts the headphones on */
    int32_t slack;                  /* wanders off to the fun things now and then */
-   int32_t weekend;                /* the weekend question: 1 "of course", 2 "I have plans" */
+   int32_t tone;                   /* the answers it gives the boss (REMOTE_TONE_*), and now and then another */
    int32_t rests[4];               /* what it does to rest */
 } style;
 
 static const style styles[] = {
-   { "careful", 350, 750, 30, 1, 1, 1, 0, 2, { RA_NAP, RA_COOK, RA_EAT, RA_COFFEE } },
-   { "casual", 300, 600, 120, 1, 1, 0, 0, 2, { RA_COFFEE, RA_SERIES, RA_EAT, RA_FRIDGE } },
-   { "slacker", 500, 900, 240, 0, 1, 0, 1, 2, { RA_SERIES, RA_CONSOLE, RA_GUITAR, RA_SUN } },
-   { "workaholic", 120, 300, 60, 0, 1, 1, 0, 1, { RA_COFFEE, RA_COFFEE, RA_FRIDGE, RA_COFFEE } },
+   { "careful", 350, 750, 30, 1, 1, 1, 0, REMOTE_TONE_GOOD, { RA_NAP, RA_COOK, RA_EAT, RA_COFFEE } },
+   { "casual", 300, 600, 120, 1, 1, 0, 0, REMOTE_TONE_HONEST, { RA_COFFEE, RA_SERIES, RA_EAT, RA_FRIDGE } },
+   { "slacker", 500, 900, 240, 0, 1, 0, 1, REMOTE_TONE_FUNNY, { RA_SERIES, RA_CONSOLE, RA_GUITAR, RA_SUN } },
+   { "workaholic", 120, 300, 60, 0, 1, 1, 0, REMOTE_TONE_GOOD, { RA_COFFEE, RA_COFFEE, RA_FRIDGE, RA_COFFEE } },
 };
 #define STYLES ((int)(sizeof styles / sizeof styles[0]))
 
@@ -85,7 +85,7 @@ static void walk_to(const hd_remote *g, hd_input *in, int32_t tx, int32_t tz)
 static int32_t play_day(const style *sty, uint32_t seed)
 {
    hd_remote *g = HD_GAME3D(&st, hd_remote);
-   int32_t f, want = RA_WORK, wait = 0, last_boss = 0, resting = 0, rest_pick = 0, slack_t = 0, peak = 0;
+   int32_t f, want = RA_WORK, wait = 0, last_boss = 0, resting = 0, rest_pick = 0, slack_t = 0, peak = 0, pick = -1, last_dlg = 0;
    uint32_t prev = 0;
    hd_reset(&st);
    st.rng = seed * 2654435761u;
@@ -99,6 +99,9 @@ static int32_t play_day(const style *sty, uint32_t seed)
       if (g->boss && !last_boss)
          wait = sty->react + dice(sty->react + 1);
       last_boss = g->boss;
+      if (g->dlg != last_dlg)
+         pick = -1;
+      last_dlg = g->dlg;
       if (wait > 0)
          wait--;
       urgent = g->boss && !g->boss_call && wait == 0;
@@ -108,11 +111,18 @@ static int32_t play_day(const style *sty, uint32_t seed)
          if (a == RA_WORK)
          {
             int free = !g->boss_call && !g->boss;
-            if (g->boss == RE_WEEKEND + 1 && !g->boss_call && wait == 0)
+            if (g->dlg)
             {
-               /* the weekend question: A for "of course", X for "I have plans" */
-               if (!(prev & (PAD_JUMP | PAD_RUN)))
-                  in[0].buttons |= sty->weekend == 1 ? PAD_JUMP : PAD_RUN;
+               /* a dialogue: down to the answer of its tone, then A */
+               if (pick < 0)
+               {
+                  int32_t tone = dice(5) ? sty->tone : dice(4), i;
+                  for (i = 0, pick = 0; i < REMOTE_DLG_ANSWERS; i++)
+                     if (remote_answer_tone(g->dlg - 1, i) == tone)
+                        pick = i;
+               }
+               if (!(prev & (PAD_JUMP | PAD_DOWN)) && g->dlg_t > 30)
+                  in[0].buttons |= g->dlg_sel == pick ? PAD_JUMP : PAD_DOWN;
             }
             else if (g->cat_keys == 2 && sty->cat)
                press = 1;

@@ -88,6 +88,57 @@ static const struct
    [RE_WEEKEND] = { 30, 0, 150, 120 }, /* answered "of course" (calm, the weekend sold) or "I have plans" (REMOTE_WEEKEND_NO) */
    [RE_CAMERA] = { 30, 8, 300, 80 },   /* the boss sees the cat, the flatmate, the worker asleep */
 };
+/*
+ * ---- the answers: every ask of the boss is a dialogue of four answers ----
+ * A tone says what an answer does: a good one pleases the boss (points, and
+ * the calm an answer always brought), an honest one half of that, a joke
+ * pleases it more while it is calm and costs when it already suspects, a
+ * bad one costs points and raises suspicion. What follows: the event goes
+ * on as before (its call), no call, the boss comes back later, a question
+ * follows, or the weekend sold, half sold or kept.
+ */
+enum { OUT_GO = 0, OUT_SKIP, OUT_LATER, OUT_FOLLOW, OUT_WEEKEND, OUT_HALF, OUT_FREE };
+enum { DLG_HALF = RE_BOSS_KINDS * 2, DLG_SMALL }; /* the questions that follow "yes, but half time" and "only if it's small" */
+
+/* Each dialogue's answers: their tone and what they lead to (texts: RT_DLG_ANSWER, RT_DLG_REPLY, RT_DLG_FUNNY_BAD). */
+static const struct
+{
+   int8_t tone, out;
+} dialogues[REMOTE_DLG_COUNT][REMOTE_DLG_ANSWERS] = {
+   /* the daily (a) */
+   { { REMOTE_TONE_GOOD, OUT_GO }, { REMOTE_TONE_FUNNY, OUT_GO }, { REMOTE_TONE_HONEST, OUT_GO }, { REMOTE_TONE_BAD, OUT_GO } },
+   /* the daily (b) */
+   { { REMOTE_TONE_HONEST, OUT_GO }, { REMOTE_TONE_GOOD, OUT_GO }, { REMOTE_TONE_BAD, OUT_GO }, { REMOTE_TONE_FUNNY, OUT_GO } },
+   /* a call (a) */
+   { { REMOTE_TONE_GOOD, OUT_GO }, { REMOTE_TONE_HONEST, OUT_LATER }, { REMOTE_TONE_FUNNY, OUT_GO }, { REMOTE_TONE_BAD, OUT_GO } },
+   /* a call (b) */
+   { { REMOTE_TONE_FUNNY, OUT_GO }, { REMOTE_TONE_GOOD, OUT_GO }, { REMOTE_TONE_BAD, OUT_LATER }, { REMOTE_TONE_HONEST, OUT_GO } },
+   /* yesterday's thing */
+   { { REMOTE_TONE_GOOD, OUT_GO }, { REMOTE_TONE_BAD, OUT_GO }, { REMOTE_TONE_HONEST, OUT_GO }, { REMOTE_TONE_FUNNY, OUT_GO } },
+   /* the urgent report */
+   { { REMOTE_TONE_HONEST, OUT_GO }, { REMOTE_TONE_FUNNY, OUT_GO }, { REMOTE_TONE_GOOD, OUT_GO }, { REMOTE_TONE_BAD, OUT_GO } },
+   /* share your screen */
+   { { REMOTE_TONE_GOOD, OUT_GO }, { REMOTE_TONE_HONEST, OUT_GO }, { REMOTE_TONE_BAD, OUT_SKIP }, { REMOTE_TONE_FUNNY, OUT_GO } },
+   /* show me the code */
+   { { REMOTE_TONE_FUNNY, OUT_GO }, { REMOTE_TONE_GOOD, OUT_GO }, { REMOTE_TONE_HONEST, OUT_GO }, { REMOTE_TONE_BAD, OUT_SKIP } },
+   /* production down (a) */
+   { { REMOTE_TONE_HONEST, OUT_GO }, { REMOTE_TONE_BAD, OUT_GO }, { REMOTE_TONE_GOOD, OUT_GO }, { REMOTE_TONE_FUNNY, OUT_GO } },
+   /* production down (b) */
+   { { REMOTE_TONE_GOOD, OUT_GO }, { REMOTE_TONE_FUNNY, OUT_GO }, { REMOTE_TONE_BAD, OUT_GO }, { REMOTE_TONE_HONEST, OUT_GO } },
+   /* the weekend (a) */
+   { { REMOTE_TONE_GOOD, OUT_WEEKEND }, { REMOTE_TONE_HONEST, OUT_FOLLOW }, { REMOTE_TONE_FUNNY, OUT_FREE }, { REMOTE_TONE_BAD, OUT_FREE } },
+   /* the weekend (b) */
+   { { REMOTE_TONE_FUNNY, OUT_FREE }, { REMOTE_TONE_HONEST, OUT_FOLLOW }, { REMOTE_TONE_BAD, OUT_FREE }, { REMOTE_TONE_GOOD, OUT_WEEKEND } },
+   /* camera on (a) */
+   { { REMOTE_TONE_HONEST, OUT_GO }, { REMOTE_TONE_GOOD, OUT_GO }, { REMOTE_TONE_FUNNY, OUT_GO }, { REMOTE_TONE_BAD, OUT_GO } },
+   /* camera on (b) */
+   { { REMOTE_TONE_BAD, OUT_GO }, { REMOTE_TONE_FUNNY, OUT_GO }, { REMOTE_TONE_GOOD, OUT_GO }, { REMOTE_TONE_HONEST, OUT_GO } },
+   /* half the weekend: which day */
+   { { REMOTE_TONE_GOOD, OUT_HALF }, { REMOTE_TONE_HONEST, OUT_HALF }, { REMOTE_TONE_FUNNY, OUT_HALF }, { REMOTE_TONE_BAD, OUT_FREE } },
+   /* a small deploy: two hours */
+   { { REMOTE_TONE_HONEST, OUT_HALF }, { REMOTE_TONE_BAD, OUT_FREE }, { REMOTE_TONE_GOOD, OUT_HALF }, { REMOTE_TONE_FUNNY, OUT_HALF } },
+};
+
 #define MEETING_WARN 40 /* 09:40: the meeting is announced */
 #define MEETING_AT 60   /* 10:00 */
 
@@ -114,6 +165,13 @@ static const int32_t mate_spots[][2] = { { 1300, 550 }, { 690, 250 }, { 800, 725
 #define MATE_SPOTS ((int32_t)(sizeof mate_spots / sizeof mate_spots[0]))
 #define MATE_SPEED FX_FRAC(20, 1000) /* 1.2 m/s */
 #define MATE_ROOM CM(55)             /* the worker cannot walk through it */
+
+int32_t remote_answer_tone(int32_t d, int32_t i)
+{
+   if (d < 0 || d >= REMOTE_DLG_COUNT || i < 0 || i >= REMOTE_DLG_ANSWERS)
+      return -1;
+   return dialogues[d][i].tone;
+}
 
 int32_t remote_place(int32_t kind, int32_t a, int32_t *x, int32_t *z)
 {
@@ -464,6 +522,8 @@ static void end_day(hd_remote *g, int32_t how)
       g->score = g->points + 1000 + (REMOTE_SUSPICION_MAX - g->suspicion) - 2 * hd_max(0, worked - REMOTE_OVERTIME);
    if (g->weekend == 1 && how != REND_FIRED)
       g->score -= REMOTE_WEEKEND_COST; /* the weekend sold */
+   if (g->weekend == 3 && how != REND_FIRED)
+      g->score -= REMOTE_WEEKEND_HALF_COST; /* half of it */
    g->screen = RSC_END;
    g->screen_t = 0;
    g->best_new = g->score > g->best && !g->attract;
@@ -521,6 +581,7 @@ static void fire(hd_state *s, hd_remote *g, int32_t kind)
       g->boss_t = kind == RE_MEETING ? hd_max(10 * 60, (MEETING_AT - g->t / FPM) * FPM) : boss_events[kind].seconds * 60;
       g->boss_limit = g->boss_t;
       ask = kind * 2 + rng_range(&s->rng, 2);
+      g->ask = ask;
       phone(g, RW_BOSS, RT_BOSS_ASK + ask);
       /* the worker reads it, then thinks what it really thinks of it */
       g->muse = RT_BOSS_MUSE + ask + 1;
@@ -585,10 +646,107 @@ static void on_call(hd_remote *g)
       }
 }
 
-/* The weekend question waits at the desk for an answer. */
-static int weekend_asked(const hd_remote *g)
+/* How many rows the day's end counts up (the points, what the answers gave, the hours, the weekend...). */
+static int32_t end_rows(const hd_remote *g)
 {
-   return g->boss == RE_WEEKEND + 1 && !g->boss_call && at_desk(g) && g->energy >= REMOTE_WORK_ASLEEP;
+   int32_t worked = g->work / REMOTE_WORK_UNIT;
+   return 1 + (g->dlg_points != 0) + (g->over == REND_MISSED) + (g->over == REND_SURVIVED ? 2 + (worked > REMOTE_OVERTIME) : 0) +
+          ((g->weekend == 1 || g->weekend == 3) && g->over != REND_FIRED);
+}
+
+/* The boss's ask is answered at the desk, awake: its dialogue opens there. */
+static int can_answer(const hd_remote *g)
+{
+   return g->boss && !g->boss_call && !g->dlg && at_desk(g) && g->energy >= REMOTE_WORK_ASLEEP;
+}
+
+/* The boss comes back at `minute` with the same kind of ask (put off): in the day's events, in time order. */
+static void put_off(hd_remote *g, int32_t kind, int32_t minute)
+{
+   int32_t i;
+   if (g->ev_count >= REMOTE_EVENTS_MAX)
+      return; /* no room: forgotten */
+   for (i = g->ev_count; i > g->ev_next && g->ev_at[i - 1] > minute; i--)
+   {
+      g->ev_at[i] = g->ev_at[i - 1];
+      g->ev_kind[i] = g->ev_kind[i - 1];
+   }
+   g->ev_at[i] = minute;
+   g->ev_kind[i] = kind;
+   g->ev_count++;
+}
+
+/* Answer `i` of dialogue `d` is chosen: said out loud, the boss replies, and what it leads to. */
+static void answer(hd_remote *g, int32_t d, int32_t i)
+{
+   int32_t kind = g->boss - 1, tone = dialogues[d][i].tone, out = dialogues[d][i].out, reply = RT_DLG_REPLY + d * REMOTE_DLG_ANSWERS + i;
+   int32_t calm = boss_events[kind].answered * REMOTE_ANSWER_CALM / 100, points = 0;
+   if (out == OUT_LATER && (g->postponed & (1 << kind)))
+   {
+      /* put off once already: the boss calls now, and minds it */
+      out = OUT_GO;
+      tone = REMOTE_TONE_BAD;
+      reply = RT_DLG_NOW;
+   }
+   if (tone == REMOTE_TONE_FUNNY && g->suspicion >= REMOTE_FUNNY_LIMIT)
+   {
+      /* the boss is not in the mood for jokes */
+      points = REMOTE_DLG_FUNNY_BAD;
+      suspect(g, REMOTE_DLG_FUNNY_RISE);
+      reply = RT_DLG_FUNNY_BAD + d;
+   }
+   else if (tone == REMOTE_TONE_GOOD || tone == REMOTE_TONE_FUNNY)
+   {
+      points = tone == REMOTE_TONE_GOOD ? REMOTE_DLG_GOOD : REMOTE_DLG_FUNNY;
+      suspect(g, -calm);
+   }
+   else if (tone == REMOTE_TONE_HONEST)
+   {
+      points = REMOTE_DLG_HONEST;
+      suspect(g, -calm / 2);
+   }
+   else
+   {
+      points = REMOTE_DLG_BAD;
+      suspect(g, REMOTE_DLG_BAD_RISE);
+   }
+   g->points += points;
+   g->dlg_points += points;
+   phone(g, RW_YOU, RT_DLG_ANSWER + d * REMOTE_DLG_ANSWERS + i);
+   phone(g, RW_BOSS, reply);
+   g->dlg = 0;
+   switch (out)
+   {
+   case OUT_FOLLOW:
+      /* a question follows: another dialogue, the same ask still under way */
+      g->dlg = (d == RE_WEEKEND * 2 ? DLG_HALF : DLG_SMALL) + 1;
+      g->dlg_sel = 0;
+      g->dlg_t = 0;
+      return;
+   case OUT_WEEKEND:
+   case OUT_HALF:
+   case OUT_FREE:
+      g->weekend = out == OUT_WEEKEND ? 1 : out == OUT_HALF ? 3 : 2;
+      g->boss = 0;
+      return;
+   case OUT_LATER:
+      g->postponed |= 1 << kind;
+      put_off(g, kind, g->t / FPM + REMOTE_LATER_MINUTES);
+      g->boss = 0;
+      return;
+   case OUT_SKIP:
+      g->boss = 0;
+      return;
+   default:
+      if (boss_events[kind].minutes)
+      {
+         g->boss_call = 1;
+         g->boss_t = boss_events[kind].minutes * FPM;
+         g->boss_noise = 0;
+      }
+      else
+         g->boss = 0;
+   }
 }
 
 static void day(hd_state *s, hd_remote *g, int32_t choice)
@@ -612,35 +770,18 @@ static void day(hd_state *s, hd_remote *g, int32_t choice)
       int32_t kind = g->boss - 1;
       if (!g->boss_call)
       {
-         if (kind == RE_WEEKEND && weekend_asked(g) && choice)
+         if (g->dlg)
          {
-            /* "of course" calms the boss and sells the weekend; "I have plans" costs a little suspicion */
-            g->weekend = choice;
-            if (choice == 1)
-            {
-               suspect(g, -boss_events[kind].answered * REMOTE_ANSWER_CALM / 100);
-               phone(g, RW_YOU, RT_BOSS_YES + kind);
-            }
-            else
-            {
-               suspect(g, REMOTE_WEEKEND_NO);
-               phone(g, RW_YOU, RT_WEEKEND_NO);
-               phone(g, RW_BOSS, RT_WEEKEND_NO_BOSS);
-            }
-            g->boss = 0;
+            /* the dialogue is open: the boss waits for the answer (its time stops) */
+            g->dlg_t = hd_min(g->dlg_t + 1, 1 << 20);
+            if (choice)
+               answer(g, g->dlg - 1, g->dlg_sel);
          }
-         else if (kind != RE_WEEKEND && at_desk(g) && g->energy >= REMOTE_WORK_ASLEEP)
+         else if (can_answer(g))
          {
-            suspect(g, -boss_events[kind].answered * REMOTE_ANSWER_CALM / 100);
-            phone(g, RW_YOU, RT_BOSS_YES + kind);
-            if (boss_events[kind].minutes)
-            {
-               g->boss_call = 1;
-               g->boss_t = boss_events[kind].minutes * FPM;
-               g->boss_noise = 0;
-            }
-            else
-               g->boss = 0;
+            g->dlg = g->ask + 1;
+            g->dlg_sel = 0;
+            g->dlg_t = 0;
          }
          else if (--g->boss_t <= 0)
          {
@@ -902,6 +1043,13 @@ static void attract_input(hd_remote *g, hd_input *in)
 {
    int32_t want = attract_plan[g->attract_goal % ATTRACT_PLAN], tx, tz, dx, dz;
    memset(in, 0, sizeof *in);
+   if (g->dlg)
+   {
+      /* the boss asks: the first answer, after reading them */
+      if (g->dlg_t > 150 && !(g->t & 1))
+         in->buttons = PAD_JUMP;
+      return;
+   }
    if (g->act)
    {
       /* a little of each, a little more of work */
@@ -951,11 +1099,22 @@ static void day_step(hd_state *s, hd_remote *g, const hd_input *in)
    int pressed = (b & ~g->buttons & PAD_JUMP) != 0, other = (b & ~g->buttons & PAD_RUN) != 0;
    int32_t dx, dz, tilt, want, top, choice = 0;
    g->buttons = b;
-   /* the weekend question at the desk: A says yes (and does not get up), X says no */
-   if (weekend_asked(g) && (pressed || other))
+   if (g->dlg)
    {
-      choice = pressed ? 1 : 2;
-      pressed = 0;
+      /* a dialogue at the desk: up and down choose an answer, A says it (and the worker stays seated) */
+      uint32_t nav = b & (PAD_UP | PAD_DOWN), fresh;
+      if (in->ly < -16000)
+         nav |= PAD_UP;
+      if (in->ly > 16000)
+         nav |= PAD_DOWN;
+      fresh = nav & ~(uint32_t)g->nav;
+      g->nav = (int32_t)nav;
+      if (fresh & PAD_UP)
+         g->dlg_sel = (g->dlg_sel + REMOTE_DLG_ANSWERS - 1) % REMOTE_DLG_ANSWERS;
+      if (fresh & PAD_DOWN)
+         g->dlg_sel = (g->dlg_sel + 1) % REMOTE_DLG_ANSWERS;
+      choice = pressed;
+      pressed = other = 0;
    }
    /* the camera: L and R or the right stick turn it, the right stick's up and down tilt it */
    if (b & PAD_L)
@@ -1132,9 +1291,22 @@ static const struct
    { RT_DONE + RA_SUN, "done_sun" }, { RT_DONE + RA_PLANTS, "done_plants" }, { RT_DONE + RA_SHOWER, "done_shower" },
    { RT_DONE + RA_WASHING, "done_washing" }, { RT_DONE + RA_DOOR, "done_door" }, { RT_DONE + RA_CAT, "done_cat" },
    { RT_DONE + RA_PHONES, "done_phones" }, { RT_AGAIN, "again" }, { RT_CAT_MOVED, "cat_moved" }, { RT_HOTFIX_DONE, "hotfix_done" },
-   { RT_BOSS_YES + RE_MEETING, "say_meeting" }, { RT_BOSS_YES + RE_CALL, "say_call" }, { RT_BOSS_YES + RE_MESSAGE, "say_message" },
-   { RT_BOSS_YES + RE_SHARE, "say_share" }, { RT_BOSS_YES + RE_HOTFIX, "say_hotfix" }, { RT_BOSS_YES + RE_WEEKEND, "say_weekend" },
-   { RT_BOSS_YES + RE_CAMERA, "say_camera" }, { RT_WEEKEND_NO, "say_weekend_no" },
+   { RT_DLG_ANSWER + 0, "ans_00_0" }, { RT_DLG_ANSWER + 1, "ans_00_1" }, { RT_DLG_ANSWER + 2, "ans_00_2" }, { RT_DLG_ANSWER + 3, "ans_00_3" },
+   { RT_DLG_ANSWER + 4, "ans_01_0" }, { RT_DLG_ANSWER + 5, "ans_01_1" }, { RT_DLG_ANSWER + 6, "ans_01_2" }, { RT_DLG_ANSWER + 7, "ans_01_3" },
+   { RT_DLG_ANSWER + 8, "ans_02_0" }, { RT_DLG_ANSWER + 9, "ans_02_1" }, { RT_DLG_ANSWER + 10, "ans_02_2" }, { RT_DLG_ANSWER + 11, "ans_02_3" },
+   { RT_DLG_ANSWER + 12, "ans_03_0" }, { RT_DLG_ANSWER + 13, "ans_03_1" }, { RT_DLG_ANSWER + 14, "ans_03_2" }, { RT_DLG_ANSWER + 15, "ans_03_3" },
+   { RT_DLG_ANSWER + 16, "ans_04_0" }, { RT_DLG_ANSWER + 17, "ans_04_1" }, { RT_DLG_ANSWER + 18, "ans_04_2" }, { RT_DLG_ANSWER + 19, "ans_04_3" },
+   { RT_DLG_ANSWER + 20, "ans_05_0" }, { RT_DLG_ANSWER + 21, "ans_05_1" }, { RT_DLG_ANSWER + 22, "ans_05_2" }, { RT_DLG_ANSWER + 23, "ans_05_3" },
+   { RT_DLG_ANSWER + 24, "ans_06_0" }, { RT_DLG_ANSWER + 25, "ans_06_1" }, { RT_DLG_ANSWER + 26, "ans_06_2" }, { RT_DLG_ANSWER + 27, "ans_06_3" },
+   { RT_DLG_ANSWER + 28, "ans_07_0" }, { RT_DLG_ANSWER + 29, "ans_07_1" }, { RT_DLG_ANSWER + 30, "ans_07_2" }, { RT_DLG_ANSWER + 31, "ans_07_3" },
+   { RT_DLG_ANSWER + 32, "ans_08_0" }, { RT_DLG_ANSWER + 33, "ans_08_1" }, { RT_DLG_ANSWER + 34, "ans_08_2" }, { RT_DLG_ANSWER + 35, "ans_08_3" },
+   { RT_DLG_ANSWER + 36, "ans_09_0" }, { RT_DLG_ANSWER + 37, "ans_09_1" }, { RT_DLG_ANSWER + 38, "ans_09_2" }, { RT_DLG_ANSWER + 39, "ans_09_3" },
+   { RT_DLG_ANSWER + 40, "ans_10_0" }, { RT_DLG_ANSWER + 41, "ans_10_1" }, { RT_DLG_ANSWER + 42, "ans_10_2" }, { RT_DLG_ANSWER + 43, "ans_10_3" },
+   { RT_DLG_ANSWER + 44, "ans_11_0" }, { RT_DLG_ANSWER + 45, "ans_11_1" }, { RT_DLG_ANSWER + 46, "ans_11_2" }, { RT_DLG_ANSWER + 47, "ans_11_3" },
+   { RT_DLG_ANSWER + 48, "ans_12_0" }, { RT_DLG_ANSWER + 49, "ans_12_1" }, { RT_DLG_ANSWER + 50, "ans_12_2" }, { RT_DLG_ANSWER + 51, "ans_12_3" },
+   { RT_DLG_ANSWER + 52, "ans_13_0" }, { RT_DLG_ANSWER + 53, "ans_13_1" }, { RT_DLG_ANSWER + 54, "ans_13_2" }, { RT_DLG_ANSWER + 55, "ans_13_3" },
+   { RT_DLG_ANSWER + 56, "ans_14_0" }, { RT_DLG_ANSWER + 57, "ans_14_1" }, { RT_DLG_ANSWER + 58, "ans_14_2" }, { RT_DLG_ANSWER + 59, "ans_14_3" },
+   { RT_DLG_ANSWER + 60, "ans_15_0" }, { RT_DLG_ANSWER + 61, "ans_15_1" }, { RT_DLG_ANSWER + 62, "ans_15_2" }, { RT_DLG_ANSWER + 63, "ans_15_3" },
    { RT_BOSS_ASK + RE_MEETING * 2, "read_meeting_a" }, { RT_BOSS_ASK + RE_MEETING * 2 + 1, "read_meeting_b" },
    { RT_BOSS_ASK + RE_CALL * 2, "read_call_a" }, { RT_BOSS_ASK + RE_CALL * 2 + 1, "read_call_b" },
    { RT_BOSS_ASK + RE_MESSAGE * 2, "read_message_a" }, { RT_BOSS_ASK + RE_MESSAGE * 2 + 1, "read_message_b" },
@@ -1303,7 +1475,7 @@ static void sound_loops(hd_state *s, const hd_remote *g)
    {
       int32_t a = g->act - 1, desk_x = ROOM3D_AT(activities[RA_WORK].ax), desk_z = ROOM3D_AT(activities[RA_WORK].az);
       /* the computer rings until the worker sits down: heard all over the house */
-      if (g->boss && !g->boss_call && g->boss != RE_MESSAGE + 1 && g->boss != RE_WEEKEND + 1 && (g->boss != RE_MEETING + 1 || g->boss_t < 15 * 60))
+      if (g->boss && !g->boss_call && !g->dlg && g->boss != RE_MESSAGE + 1 && g->boss != RE_WEEKEND + 1 && (g->boss != RE_MEETING + 1 || g->boss_t < 15 * 60))
          heard_at(g, desk_x, desk_z, 210, 110, &want[RF_RING], &pan[RF_RING]);
       /* the neighbor's drill comes and goes; the headphones take most of it away */
       if (g->drill_t > 0 && (g->t / 80) % 4 != 3)
@@ -1371,11 +1543,14 @@ static void sound_day(hd_state *s, const hd_remote *was, const hd_remote *g)
       }
    }
    /* an urgent message pings again every two and a half seconds until it is answered */
-   if ((g->boss == RE_MESSAGE + 1 || g->boss == RE_WEEKEND + 1) && !g->boss_call && was->boss == g->boss && g->boss_t % 150 == 0)
+   if ((g->boss == RE_MESSAGE + 1 || g->boss == RE_WEEKEND + 1) && !g->boss_call && !g->dlg && was->boss == g->boss && g->boss_t % 150 == 0)
       play(s, RF_BOSS_MESSAGE, 170, 0, FX_ONE);
    /* the last seconds to answer tick */
-   if (g->boss && !g->boss_call && g->boss_t <= 5 * 60 && g->boss_t > 0 && g->boss_t % 60 == 0)
+   if (g->boss && !g->boss_call && !g->dlg && g->boss_t <= 5 * 60 && g->boss_t > 0 && g->boss_t % 60 == 0)
       play(s, RF_TICK, 200, 0, FX_ONE);
+   /* the answers: a blip when the dialogue opens and when the choice moves */
+   if (g->dlg && (!was->dlg || was->dlg_sel != g->dlg_sel))
+      play(s, RF_UI_MOVE, 160, 0, FX_ONE);
    /* the bell: when it starts, and again every four seconds while the delivery waits */
    if (g->bell_t > 0 && (REMOTE_BELL_FRAMES - g->bell_t) % 240 == 0)
       play_at(s, g, RF_DOORBELL, door_x, door_z, 240, 120);
@@ -1421,7 +1596,7 @@ static void sound_end(hd_state *s, const hd_remote *g)
          play(s, RF_TYPEWRITER, 150, 0, FX_FRAC(90 + (g->over_t * 13) % 21, 100));
       return;
    }
-   rows = 1 + (g->over == REND_MISSED) + (g->over == REND_SURVIVED ? 2 + (g->work / REMOTE_WORK_UNIT > REMOTE_OVERTIME) : 0) + (g->weekend == 1);
+   rows = end_rows(g);
    total_at = rows * 30;
    if (k >= 0 && k < total_at + 40 && k % 3 == 0)
       play(s, RF_COUNT_UP, 110, 0, FX_ONE + (k < total_at ? (k % 30) * 600 : (k - total_at) * 500));
@@ -1665,7 +1840,7 @@ static void phone_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
       return;
    for (i = 0; i < shown; i++)
       h += (10 + 9 * wrap(sf, remote_text(g->phone_text[(g->phone_n - shown + i) % REMOTE_PHONE]), 0, 0, cols, scale, 0, 0) + 4) * scale;
-   if (g->boss && !g->boss_call)
+   if (g->boss && !g->boss_call && !g->dlg)
       h += 22 * scale;
    y = 26 * scale;
    panel(sf, x, y, w, h, 0x101418, 170);
@@ -1681,7 +1856,7 @@ static void phone_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
       y += 10 * scale;
       y += (9 * wrap(sf, remote_text(g->phone_text[k]), x + 7 * scale, y, cols, scale, newest ? 0xffffff : 0xd8dee9, 1) + 4) * scale;
    }
-   if (g->boss && !g->boss_call)
+   if (g->boss && !g->boss_call && !g->dlg)
    {
       /* to the desk before the bar runs out */
       int32_t left = (g->boss_t + 59) / 60;
@@ -1696,7 +1871,7 @@ static void phone_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
 static void end_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
 {
    int32_t worked = g->work / REMOTE_WORK_UNIT, title, y = 40 * scale, lx = HD_OUT_W / 2 - 150 * scale, rx = HD_OUT_W / 2 + 150 * scale;
-   int32_t start = g->over == REND_FIRED ? 150 : 30, k = g->over_t - start, rows = 0, labels[5], values[5], colors[5], i, total_at;
+   int32_t start = g->over == REND_FIRED ? 150 : 30, k = g->over_t - start, rows = 0, labels[8], values[8], colors[8], i, total_at;
    char line[64];
    if (g->over == REND_FIRED)
    {
@@ -1720,7 +1895,9 @@ static void end_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
       title = g->score < 1500 ? 2 : g->score <= 3000 ? 3 : 4;
    text_center(sf, remote_text(g->over == REND_FIRED ? RT_END_FIRED_MSG : RT_END_TIME), y, scale, 0xbfc7d5);
    /* the rows, one every half second, each counting up */
-   labels[rows] = RT_END_POINTS, values[rows] = g->points, colors[rows++] = 0xffe66d;
+   labels[rows] = RT_END_POINTS, values[rows] = g->points - g->dlg_points, colors[rows++] = 0xffe66d;
+   if (g->dlg_points)
+      labels[rows] = RT_END_ANSWERS, values[rows] = g->dlg_points, colors[rows++] = g->dlg_points > 0 ? 0x57cc99 : 0xe63946;
    if (g->over == REND_MISSED)
       labels[rows] = RT_END_HALF, values[rows] = -(g->points - g->points / 2), colors[rows++] = 0xe63946;
    if (g->over == REND_SURVIVED)
@@ -1732,6 +1909,8 @@ static void end_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
    }
    if (g->weekend == 1 && g->over != REND_FIRED)
       labels[rows] = RT_END_WEEKEND, values[rows] = -REMOTE_WEEKEND_COST, colors[rows++] = 0xe63946;
+   if (g->weekend == 3 && g->over != REND_FIRED)
+      labels[rows] = RT_END_WEEKEND_HALF, values[rows] = -REMOTE_WEEKEND_HALF_COST, colors[rows++] = 0xe63946;
    y = 112 * scale;
    for (i = 0; i < rows && k >= i * 30; i++)
    {
@@ -1773,6 +1952,38 @@ static void end_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
  * time left; with the camera on the worker's own picture beside it with a
  * red dot, else "your camera: off". A hotfix shows the deploy instead.
  */
+/*
+ * The dialogue at the bottom, like the adventures of the 90s: the boss's
+ * question, the four answers (the chosen one bright, with an arrow) and how
+ * to choose.
+ */
+static void dialogue_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
+{
+   int32_t d = g->dlg - 1, i, w, h, x, y;
+   int32_t question = d == DLG_HALF ? RT_DLG_REPLY + RE_WEEKEND * 2 * REMOTE_DLG_ANSWERS + 1
+                      : d == DLG_SMALL ? RT_DLG_REPLY + (RE_WEEKEND * 2 + 1) * REMOTE_DLG_ANSWERS + 1
+                                       : RT_BOSS_ASK + d;
+   char line[160];
+   w = hd_max(text_width(remote_text(question), scale), text_width(remote_text(RT_DLG_HINT), scale));
+   for (i = 0; i < REMOTE_DLG_ANSWERS; i++)
+   {
+      snprintf(line, sizeof line, "> %s", remote_text(RT_DLG_ANSWER + d * REMOTE_DLG_ANSWERS + i));
+      w = hd_max(w, text_width(line, scale));
+   }
+   w += 20 * scale;
+   h = (16 + REMOTE_DLG_ANSWERS * 11 + 14) * scale;
+   x = (HD_OUT_W - w) / 2, y = HD_OUT_H - h - 8 * scale;
+   panel(sf, x, y, w, h, 0x101418, 205);
+   text_draw(sf, remote_text(question), x + 10 * scale, y + 5 * scale, scale, 0xff8fa3, 1, -1);
+   for (i = 0; i < REMOTE_DLG_ANSWERS; i++)
+   {
+      int on = i == g->dlg_sel;
+      snprintf(line, sizeof line, "%s%s", on ? "> " : "  ", remote_text(RT_DLG_ANSWER + d * REMOTE_DLG_ANSWERS + i));
+      text_draw(sf, line, x + 10 * scale, y + (18 + i * 11) * scale, scale, on ? 0xffe66d : 0xbfc7d5, 1, -1);
+   }
+   text_center(sf, remote_text(RT_DLG_HINT), y + h - 11 * scale, scale, 0x8a93a6);
+}
+
 static void call_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
 {
    int32_t kind = g->boss - 1, w = 230 * scale, h = 86 * scale, x = (HD_OUT_W - w) / 2, y = 8 * scale, left = (g->boss_t + 59) / 60;
@@ -1859,13 +2070,8 @@ static void hud(hd_surface *sf, const hd_remote *g)
    if (g->boss && g->boss_call)
       call_hud(sf, g, scale);
    /* bottom: what the button does, or what is being done and how far it went */
-   if (weekend_asked(g))
-   {
-      const char *what = remote_text(RT_WEEKEND_CHOICE);
-      int32_t w = text_width(what, scale) + 24 * scale, y = HD_OUT_H - 34 * scale;
-      panel(sf, (HD_OUT_W - w) / 2, y, w, 20 * scale, 0x101418, 190);
-      text_center(sf, what, y + 6 * scale, scale, (g->t / 20) & 1 ? 0xffe66d : 0xffffff);
-   }
+   if (g->dlg)
+      dialogue_hud(sf, g, scale);
    else if (g->act)
    {
       int32_t a = g->act - 1, total = activities[a].minutes * FPM;
@@ -2511,7 +2717,13 @@ void hd_remote_sanitize(hd_state *s)
    g->best_new = hd_clamp(g->best_new, 0, 1);
    g->nav &= PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
    g->music_resume = hd_clamp(g->music_resume, 0, 1 << 30);
-   g->weekend = hd_clamp(g->weekend, 0, 2);
+   g->weekend = hd_clamp(g->weekend, 0, 3);
+   g->ask = hd_clamp(g->ask, 0, RE_BOSS_KINDS * 2 - 1);
+   g->dlg = hd_clamp(g->dlg, 0, REMOTE_DLG_COUNT);
+   g->dlg_sel = hd_clamp(g->dlg_sel, 0, REMOTE_DLG_ANSWERS - 1);
+   g->dlg_t = hd_clamp(g->dlg_t, 0, 1 << 20);
+   g->dlg_points = hd_clamp(g->dlg_points, -1000000, 1000000);
+   g->postponed &= (1 << RE_BOSS_KINDS) - 1;
    g->hotfixes = hd_clamp(g->hotfixes, 0, REMOTE_EVENTS_MAX);
    g->chatter_at = hd_clamp(g->chatter_at, 0, REMOTE_DAY_MINUTES * 2);
 }

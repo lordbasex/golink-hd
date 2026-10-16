@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-15
+
+### Added
+- TELETRABAJO: the boss's asks are answered in dialogues, like the adventures of the 90s: at the desk the question and four answers show at the bottom (up and down to choose, A to say it, the boss waits). Each answer has a tone: good (+40 points and the usual calm), honest (+20, half the calm), a joke (+60 while the boss is calm, -40 and more suspicion once it suspects) or bad (-50, +100 suspicion). The boss replies to each, and an answer can skip the call, put it off 10 minutes (once) or lead to another question ("yes, but half time": Saturday or Sunday?). The weekend can be sold, half sold (-120 at the end) or kept; the day's end shows what the answers gave. 64 answers in three languages, said out loud in both main characters' voices (`ans_*`); `remote_answer_tone`; `tools/remotebots` answers in each style's tone.
+
+### Changed
+- TELETRABAJO's package is 0.6.0 (the answers' voices).
+
 ## [0.3.1] - 2026-10-15
 
 ### Fixed
