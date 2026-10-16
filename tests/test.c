@@ -1142,6 +1142,85 @@ static void test_remote_boss(void)
    hd_draw(&a, fb);
 }
 
+/* Whether the day's events (from ev_next on) hold one of `kind`. */
+static int remote_planned(const hd_remote *g, int32_t kind)
+{
+   int32_t i;
+   for (i = g->ev_next; i < g->ev_count; i++)
+      if (g->ev_kind[i] == kind)
+         return 1;
+   return 0;
+}
+
+/* TELETRABAJO: the boss remembers: a promise of work kept or checked, excuses checked later, caught twice, the cat's birthday the next day. */
+static void test_remote_memory(void)
+{
+   static hd_state a;
+   hd_remote *g = HD_GAME3D(&a, hd_remote);
+   const int32_t fpm = REMOTE_FRAMES_PER_MINUTE, reckon = RE_KINDS;
+   int32_t s0, p0, f;
+   hd_reset(&a);
+   hd_remote_new_day(&a);
+   g->ev_next = g->ev_count; /* a quiet day: only what the test brings */
+   g->chatter_at = 100000;
+   g->x = ROOM3D_AT(950), g->z = ROOM3D_AT(1035), g->energy = 900;
+   remote_steps(&a, 1, 0);
+   remote_steps(&a, 1, PAD_JUMP);
+   CHECK(g->act == RA_WORK + 1);
+   /* "almost done, sending it in a bit", then half an hour of work: the boss gets it */
+   remote_ask(&a, RE_MESSAGE, 0);
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(!g->boss && g->promise_at == g->t / fpm + REMOTE_PROMISE_MINUTES + 1);
+   p0 = g->points;
+   remote_steps(&a, (REMOTE_PROMISE_WORK + 1) * fpm, 0);
+   CHECK(!g->promise_at && g->points == p0 + REMOTE_PROMISE_POINTS && g->caught == 0);
+   for (f = 0; f < REMOTE_PHONE && g->phone_text[f] != RT_PROMISE_KEPT; f++)
+      ;
+   CHECK(f < REMOTE_PHONE);
+   /* "give me an hour", and no work by then: the boss comes back to check, finds out, and waits for an answer at the desk */
+   remote_ask(&a, RE_MESSAGE, 1);
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(g->promise_at);
+   g->promise_work = g->work + 1000 * REMOTE_WORK_UNIT; /* as if nothing were done */
+   g->suspicion = 0;
+   remote_steps(&a, (REMOTE_PROMISE_MINUTES + 1) * fpm + 2, 0);
+   CHECK(!g->promise_at && g->boss == RE_MESSAGE + 1 && g->reckon == REMOTE_RECKON_PROMISE + 1 && g->caught == 1 &&
+         g->suspicion >= REMOTE_CAUGHT - 2 && g->dlg == RE_BOSS_KINDS * 2 + 2 + REMOTE_RECKON_PROMISE + 1);
+   p0 = g->points;
+   remote_steps(&a, 2, PAD_UP); /* the last: "I never said that" */
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(!g->boss && !g->reckon && g->points == p0 + REMOTE_DLG_BAD &&
+         g->phone_text[(g->phone_n - 1) % REMOTE_PHONE] == RT_DLG_REPLY + (RE_BOSS_KINDS * 2 + 2) * REMOTE_DLG_ANSWERS + 3);
+   /* "my screen sharing is broken": checked 75 minutes later, once a day */
+   remote_ask(&a, RE_SHARE, 0);
+   remote_steps(&a, 2, PAD_DOWN);
+   remote_steps(&a, 2, PAD_DOWN);
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK((g->checked & (1 << REMOTE_RECKON_BROKEN)) && remote_planned(g, reckon + REMOTE_RECKON_BROKEN));
+   /* found out a second time: the boss says it will check everything, and a good answer counts half */
+   g->ev_at[g->ev_count - 1] = g->t / fpm;
+   s0 = g->suspicion;
+   remote_steps(&a, 3, 0);
+   CHECK(g->caught == 2 && g->distrust && g->suspicion >= s0 + REMOTE_CAUGHT - 1 && g->dlg == RE_BOSS_KINDS * 2 + 2 + REMOTE_RECKON_BROKEN + 1);
+   for (f = 0; f < REMOTE_PHONE && g->phone_text[f] != RT_DISTRUST; f++)
+      ;
+   CHECK(f < REMOTE_PHONE);
+   p0 = g->points;
+   remote_steps(&a, 2, PAD_JUMP); /* "Fixed! It was a driver." */
+   CHECK(g->points == p0 + REMOTE_DLG_GOOD / 2);
+   /* "it's my cat's birthday": the next day the boss asks how the party was, before the daily */
+   remote_ask(&a, RE_WEEKEND, 0);
+   remote_steps(&a, 2, PAD_UP);
+   remote_steps(&a, 2, PAD_UP);
+   remote_steps(&a, 2, PAD_JUMP);
+   CHECK(g->cat_party && g->weekend == 2);
+   g->t = REMOTE_DAY_MINUTES * fpm - 1;
+   remote_steps(&a, 1, 0);
+   remote_steps(&a, 100, 0);
+   remote_steps(&a, 1, PAD_START);
+   CHECK(g->screen == RSC_MORNING && !g->cat_party && !g->caught && !g->distrust && remote_planned(g, reckon + REMOTE_RECKON_CAT));
+}
+
 /* Every text of TELETRABAJO exists in the three languages and fits the 640 logical pixels at the size it is drawn (the help's lines wrap). */
 static void test_remote_texts(void)
 {
@@ -3204,6 +3283,7 @@ int main(void)
    test_remote_places();
    test_remote_texts();
    test_remote_boss();
+   test_remote_memory();
    test_remote_screens();
    test_remote_sound();
    test_remote_keep();

@@ -1,5 +1,5 @@
 {
- "version": "0.6.0",
+ "version": "0.7.0",
  "tracks": {
   "title": {
    "title": "Chill lofi inspired (loop edit)",
@@ -710,6 +710,24 @@
     "engine": "kokoro",
     "voice": "pf_dora",
     "speed": 0.95
+   }
+  },
+  "b": {
+   "en": {
+    "engine": "kokoro",
+    "voice": "bm_george",
+    "speed": 1.0
+   },
+   "es": {
+    "engine": "kokoro",
+    "voice": "em_santa",
+    "speed": 1.0,
+    "phonemes": "es-419"
+   },
+   "pt": {
+    "engine": "kokoro",
+    "voice": "pm_santa",
+    "speed": 1.0
    }
   }
  }

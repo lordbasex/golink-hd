@@ -215,6 +215,27 @@ end), half sold (-120) or kept. The day's end shows what the answers gave
 or took, apart from the other points. The 64 answers are said out loud in
 both main characters' voices and the three languages (`ans_<dialogue>_<answer>`).
 
+**The boss remembers (2026-10-16).** Some answers are promises or excuses,
+and the boss comes back to them (`remembered` in remote.c, its checks are
+dialogues of their own, `REMOTE_RECKON_*`):
+
+| Said | What the boss does |
+|---|---|
+| "Good news: it's almost done", "Almost done, sending it in a bit", "Give me an hour to finish it", "On its way!" | A promise of work: with 30 minutes of work in the next hour it arrives ("Got it. Thanks!", +30 points, -50 suspicion); else, when the hour is up, the boss asks "An hour ago you said it was almost done. Where is it?" |
+| "My screen sharing is broken", "My camera is broken" | 75 game minutes later: "Is it fixed now? The thing that was 'broken'." |
+| "Not me. Must be the intern." | 90 game minutes later: "Funny thing: the intern was on vacation this week." |
+| "I can't, it's my cat's birthday." | The next day, before the daily: "So, how was your cat's birthday party?" (only asked, never found out) |
+
+A check comes like an urgent message (answered at the desk within 30
+seconds; ignored, it is missed like one) with four answers of the four
+tones. A promise or an excuse found out raises suspicion by 100 before the
+answer (`REMOTE_CAUGHT`), and the second of the day makes the boss say it
+will check everything: good answers then give half their points and calm
+(`hd_remote.distrust`). Each excuse is checked once a day; a second promise
+while one is open is not counted. The balance bots: careful 98 % survive,
+casual 74 % (76 % before), slacker 0 % (20 % fired), workaholic short of the
+hours.
+
 A day has at most one weekend question and one hotfix. Between events the
 boss also writes things that need no answer (log your hours, a meeting to
 plan meetings, can the AI do your ticket), every 40 to 80 game minutes, so
@@ -407,21 +428,36 @@ title's menu) and in the voice of the character the player picked (a man
 or a woman, also from the title's menu): what an activity left ("Another
 coffee. Who's counting?"), "again?", the cat taken off, the hotfix out, the
 answers chosen for the boss, and what happens in the house
-(the bell, the drill, the internet, the washing machine). The boss, the
-flatmate and the cat are not voiced. A new thought cuts the one before
-short.
+(the bell, the drill, the internet, the washing machine). The flatmate and
+the cat are not voiced; the boss has its own voice (below). A new thought
+cuts the one before short.
 
 | Who | English | Spanish | Portuguese |
 |---|---|---|---|
 | The man | Kokoro `am_michael` | Kokoro `em_alex`, Latin American sounds (espeak-ng `es-419`) | Kokoro `pm_alex` |
 | The woman | Kokoro `af_heart` | Piper `es_AR-daniela-high` (an Argentinian voice), 20 % slower (`length_scale` 1.2) | Kokoro `pf_dora` |
 
-- The game: the `voiced` table in `remote.c` (63 lines, each a text and a key); `say()` plays `voice_<m|w>_<en|es|pt>_<key>`, a named effect of the package, when a toast or a phone line appears (`think()` for a thought, which cuts the line before). A line without a recording says nothing.
+- The game: the `voiced` table in `remote.c` (135 lines, each a text and a key); `say()` plays `voice_<m|w>_<en|es|pt>_<key>`, a named effect of the package, when a toast or a phone line appears (`think()` for a thought, which cuts the line before). A line without a recording says nothing.
 - The recordings: `examples/remote/voices.py` reads the `voiced` table and `remote_text.c` (with the woman's words where they differ), so a text changed in the game is recorded again with its new words. Its engines run on the processor of any computer (no server, no account): Kokoro-82M (Apache 2.0, by hexgrad) through `kokoro-onnx`, and Piper voices through `piper-tts`; the phonemes come from the system's espeak-ng for both. audio.json's `"voices"` says who says what. They land in `source/voices/<m|w>/<lang>/` (not in git, like the other recordings).
 - The sound: `build.py` makes each thought sound inside the head (a little bass and treble off, a short echo of a small room) and leaves what is said out loud dry (keys `read_*` and `say_*`), levels them over the music and packs them as ADPCM with `"on_demand": true`: 378 recordings, about 23 MB in the package, but only the ones played become samples in memory (one character, one language).
 - Licenses: Kokoro's voices are Apache 2.0; Daniela was trained by larcanio on Google's Argentinian Spanish recordings (OpenSLR 61, CC BY-SA 4.0), so the woman's Spanish recordings are shared under CC BY-SA 4.0 too, with that credit (the game's credits and CREDITS.md).
 - Chosen by ear from seven Spanish voices (Kokoro Alex neutral and Rioplatense, Santa, Dora; Piper's Mexican Ald and Claude; Daniela). No open Argentinian man's voice exists yet: a fine-tuned Orpheus 3B ("Rioplatense") needs a graphics card, and a small zero-shot one is only a proof of concept.
 - Over VoiceStudio (an AGPL desktop app of about 5 GB whose model has its own terms) and the public demos of Kokoro (no API, only English, or paused).
+
+#### The boss's voice
+
+The boss speaks (2026-10-16): its greeting, its replies to every answer,
+being left unanswered, what it hears and sees on a call, its comments, its
+checks and "Got it. Thanks!": 133 lines (the `boss_voiced` table in
+remote.c). Its asks still come as messages, which the worker reads aloud.
+
+| Who | English | Spanish | Portuguese |
+|---|---|---|---|
+| The boss | Kokoro `bm_george` | Kokoro `em_santa`, Latin American sounds | Kokoro `pm_santa` |
+
+- It sounds through the computer's call: `build.py` cuts the bass and the treble (300 to 3,400 Hz, a telephone's band) and compresses it a little (`PHONE`), so it is never mistaken for a thought.
+- The lines that name the worker ("Morning, Alberto") are recorded again for the woman ("Alberta"): `voices.py` writes `source/voices/bw/` only for the lines whose words differ (3 lines in each language), and the game plays `voice_bw_<lang>_<key>` for her when there is one, else `voice_b_<lang>_<key>`.
+- A reply goes after the answer it replies to (both queued), so the conversation is heard in turn.
 
 #### Read, thought over, answered
 
@@ -443,9 +479,9 @@ To voice another game: a table like `voiced` in its code, a copy of `voices.py` 
 
 The main character is **Alberto Teja**, or **Alberta Teja**: "Alberto Teja"
 uses exactly the letters of TELETRABAJO, and Alberta borrows one more A
-from CÁMARA APAGADA. The boss calls them by name in the morning's greeting
-and when they miss the daily (the woman's in the `woman` table, in every
-language); the name is never voiced.
+from CÁMARA APAGADA. The boss calls them by name in the morning's greeting,
+when they miss the daily and when it finds a promise in the chat (the
+woman's in the `woman` table, in every language), out loud in its voice.
 
 The title's menu has a line "Main character: < Alberto Teja | Alberta Teja >" (`hd_remote.hero`, kept from day to day and back at the title). It picks the model (the package's `worker` or `worker_woman`: Quaternius's CC0 "Animated Woman", a Mixamo rig whose bones and clips `hdm.py --rename mixamo --clips Idle,Walk=Walking,Run=Running` names as the engine knows them; without her the man stands in), the voice above, and the words in Spanish and Portuguese that change with a woman ("Dormida", "Reunida", "Limpia, fresca", "Despedida", "Empleada ejemplar"...: the `woman` table in `remote_text.c`, read through `remote_text_hero`).
 

@@ -81,3 +81,6 @@ and, for the music, looped and stored as IMA ADPCM.
 | voices `voice_w_en_*` (the woman: af_heart) | Kokoro-82M | hexgrad | Apache 2.0 | https://huggingface.co/hexgrad/Kokoro-82M |
 | voices `voice_w_es_*` (the woman: es_AR-daniela-high) | Piper: es_AR daniela | larcanio, from Google's Argentinian Spanish recordings (OpenSLR 61) | CC BY-SA 4.0 | https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_AR/daniela/high |
 | voices `voice_w_pt_*` (the woman: pf_dora) | Kokoro-82M | hexgrad | Apache 2.0 | https://huggingface.co/hexgrad/Kokoro-82M |
+| voices `voice_b_en_*` (the boss: bm_george) | Kokoro-82M | hexgrad | Apache 2.0 | https://huggingface.co/hexgrad/Kokoro-82M |
+| voices `voice_b_es_*` (the boss: em_santa) | Kokoro-82M | hexgrad | Apache 2.0 | https://huggingface.co/hexgrad/Kokoro-82M |
+| voices `voice_b_pt_*` (the boss: pm_santa) | Kokoro-82M | hexgrad | Apache 2.0 | https://huggingface.co/hexgrad/Kokoro-82M |

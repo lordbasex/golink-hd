@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+- TELETRABAJO: the boss speaks. Its greeting, its replies to every answer, being left unanswered, what it hears on a call, its comments and its checks are said out loud in a voice of its own (Kokoro `bm_george`, `em_santa`, `pm_santa`), through a call's sound (a telephone's band), after the answer it replies to; the lines that name the worker are recorded again for the woman (`voice_b_*`, `voice_bw_*`, the `boss_voiced` table). Its asks still come as messages the worker reads.
+- TELETRABAJO: the boss remembers. A promise of work ("almost done", "give me an hour", "on its way") arrives with 30 minutes of work in the next hour (+30 points, the boss calmer); else the boss comes back asking where it is. "Broken" cameras and screens and the intern blamed are checked later, the cat's birthday is asked about the next day: four new dialogues of four answers, voiced for both main characters. Found out, suspicion +100; twice in a day, good answers count half.
+
+### Changed
+- TELETRABAJO's package is 0.7.0 (the boss's voice, the checks' answers).
+
 ## [0.3.3] - 2026-10-16
 
 ### Added

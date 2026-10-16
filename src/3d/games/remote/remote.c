@@ -98,7 +98,8 @@ static const struct
  * follows, or the weekend sold, half sold or kept.
  */
 enum { OUT_GO = 0, OUT_SKIP, OUT_LATER, OUT_FOLLOW, OUT_WEEKEND, OUT_HALF, OUT_FREE };
-enum { DLG_HALF = RE_BOSS_KINDS * 2, DLG_SMALL }; /* the questions that follow "yes, but half time" and "only if it's small" */
+enum { DLG_HALF = RE_BOSS_KINDS * 2, DLG_SMALL, DLG_RECKON }; /* the questions that follow "yes, but half time" and "only if it's small", then the boss's checks (REMOTE_RECKONS) */
+#define RE_RECKON RE_KINDS /* + REMOTE_RECKON_*: an event of the day, the boss back to check what it was told */
 
 /* Each dialogue's answers: their tone and what they lead to (texts: RT_DLG_ANSWER, RT_DLG_REPLY, RT_DLG_FUNNY_BAD). */
 static const struct
@@ -137,7 +138,37 @@ static const struct
    { { REMOTE_TONE_GOOD, OUT_HALF }, { REMOTE_TONE_HONEST, OUT_HALF }, { REMOTE_TONE_FUNNY, OUT_HALF }, { REMOTE_TONE_BAD, OUT_FREE } },
    /* a small deploy: two hours */
    { { REMOTE_TONE_HONEST, OUT_HALF }, { REMOTE_TONE_BAD, OUT_FREE }, { REMOTE_TONE_GOOD, OUT_HALF }, { REMOTE_TONE_FUNNY, OUT_HALF } },
+   /* the boss checks: the promised work */
+   { { REMOTE_TONE_HONEST, OUT_GO }, { REMOTE_TONE_GOOD, OUT_GO }, { REMOTE_TONE_FUNNY, OUT_GO }, { REMOTE_TONE_BAD, OUT_GO } },
+   /* the "broken" camera or screen */
+   { { REMOTE_TONE_GOOD, OUT_GO }, { REMOTE_TONE_HONEST, OUT_GO }, { REMOTE_TONE_FUNNY, OUT_GO }, { REMOTE_TONE_BAD, OUT_GO } },
+   /* the intern, on vacation */
+   { { REMOTE_TONE_HONEST, OUT_GO }, { REMOTE_TONE_FUNNY, OUT_GO }, { REMOTE_TONE_BAD, OUT_GO }, { REMOTE_TONE_GOOD, OUT_GO } },
+   /* the cat's birthday, the next day */
+   { { REMOTE_TONE_FUNNY, OUT_GO }, { REMOTE_TONE_HONEST, OUT_GO }, { REMOTE_TONE_GOOD, OUT_GO }, { REMOTE_TONE_BAD, OUT_GO } },
 };
+
+/*
+ * The answers the boss remembers: a promise of work, looked at an hour
+ * later, or an excuse it comes back to check (REMOTE_RECKON_*); "it's my
+ * cat's birthday" is asked about the next day.
+ */
+static const struct
+{
+   int8_t d, i, what;
+} remembered[] = {
+   { RE_MEETING * 2 + 1, 1, REMOTE_RECKON_PROMISE }, /* "Good news: it's almost done." */
+   { RE_MESSAGE * 2, 0, REMOTE_RECKON_PROMISE },     /* "Almost done, sending it in a bit." */
+   { RE_MESSAGE * 2 + 1, 0, REMOTE_RECKON_PROMISE }, /* "Give me an hour to finish it." */
+   { RE_MESSAGE * 2 + 1, 2, REMOTE_RECKON_PROMISE }, /* "On its way!" */
+   { RE_SHARE * 2, 2, REMOTE_RECKON_BROKEN },        /* "My screen sharing is broken." */
+   { RE_CAMERA * 2, 3, REMOTE_RECKON_BROKEN },       /* "My camera is broken." */
+   { RE_HOTFIX * 2, 1, REMOTE_RECKON_INTERN },       /* "Not me. Must be the intern." */
+   { RE_WEEKEND * 2, 2, REMOTE_RECKON_CAT },         /* "I can't, it's my cat's birthday." */
+};
+#define REMEMBERED ((int32_t)(sizeof remembered / sizeof remembered[0]))
+/* how long after an excuse the boss comes back to check it, in game minutes */
+static const int32_t reckon_after[REMOTE_RECKONS] = { 0, 75, 90, 0 };
 
 #define MEETING_WARN 40 /* 09:40: the meeting is announced */
 #define MEETING_AT 60   /* 10:00 */
@@ -571,9 +602,16 @@ static void plan_day(hd_state *s, hd_remote *g)
    g->ev_count = n + 1;
 }
 
+static void reckon(hd_remote *g, int32_t what);
+
 static void fire(hd_state *s, hd_remote *g, int32_t kind)
 {
    int32_t ask;
+   if (kind >= RE_RECKON)
+   {
+      reckon(g, hd_clamp(kind - RE_RECKON, 0, REMOTE_RECKONS - 1));
+      return;
+   }
    if (kind < RE_BOSS_KINDS)
    {
       g->boss = kind + 1;
@@ -676,6 +714,53 @@ static void put_off(hd_remote *g, int32_t kind, int32_t minute)
    g->ev_count++;
 }
 
+/* What the boss keeps of answer `i` of dialogue `d`: a promise of work to look at, an excuse to check later. */
+static void remember(hd_remote *g, int32_t d, int32_t i)
+{
+   int32_t k, what, now = g->t / FPM;
+   for (k = 0; k < REMEMBERED; k++)
+   {
+      if (remembered[k].d != d || remembered[k].i != i)
+         continue;
+      what = remembered[k].what;
+      if (what == REMOTE_RECKON_PROMISE)
+      {
+         if (!g->promise_at)
+         {
+            g->promise_at = now + REMOTE_PROMISE_MINUTES + 1;
+            g->promise_work = g->work;
+         }
+      }
+      else if (what == REMOTE_RECKON_CAT)
+         g->cat_party = 1;
+      else if (!(g->checked & (1 << what)))
+      {
+         g->checked |= 1 << what;
+         put_off(g, RE_RECKON + what, now + reckon_after[what]);
+      }
+   }
+}
+
+/* The boss back to check what it was told: a question at the desk (answered like a message); a promise or an excuse found out costs. */
+static void reckon(hd_remote *g, int32_t what)
+{
+   g->boss = RE_MESSAGE + 1;
+   g->boss_call = 0;
+   g->boss_t = g->boss_limit = boss_events[RE_MESSAGE].seconds * 60;
+   g->reckon = what + 1;
+   g->ask = DLG_RECKON + what;
+   if (what != REMOTE_RECKON_CAT)
+   {
+      suspect(g, REMOTE_CAUGHT);
+      if (++g->caught == 2)
+      {
+         g->distrust = 1;
+         phone(g, RW_BOSS, RT_DISTRUST);
+      }
+   }
+   phone(g, RW_BOSS, RT_RECKON + what);
+}
+
 /* Answer `i` of dialogue `d` is chosen: said out loud, the boss replies, and what it leads to. */
 static void answer(hd_remote *g, int32_t d, int32_t i)
 {
@@ -698,6 +783,8 @@ static void answer(hd_remote *g, int32_t d, int32_t i)
    else if (tone == REMOTE_TONE_GOOD || tone == REMOTE_TONE_FUNNY)
    {
       points = tone == REMOTE_TONE_GOOD ? REMOTE_DLG_GOOD : REMOTE_DLG_FUNNY;
+      if (tone == REMOTE_TONE_GOOD && g->distrust)
+         points /= 2, calm /= 2; /* caught twice today: it believes half */
       suspect(g, -calm);
    }
    else if (tone == REMOTE_TONE_HONEST)
@@ -715,6 +802,8 @@ static void answer(hd_remote *g, int32_t d, int32_t i)
    phone(g, RW_YOU, RT_DLG_ANSWER + d * REMOTE_DLG_ANSWERS + i);
    phone(g, RW_BOSS, reply);
    g->dlg = 0;
+   g->reckon = 0;
+   remember(g, d, i);
    switch (out)
    {
    case OUT_FOLLOW:
@@ -756,7 +845,7 @@ static void day(hd_state *s, hd_remote *g, int32_t choice)
    if (g->ev_next < g->ev_count && g->t >= g->ev_at[g->ev_next] * FPM)
    {
       int32_t kind = g->ev_kind[g->ev_next];
-      if (kind < RE_BOSS_KINDS && (g->boss || g->net_t))
+      if ((kind < RE_BOSS_KINDS || kind >= RE_RECKON) && (g->boss || g->net_t))
          g->ev_at[g->ev_next] += 5;
       else
       {
@@ -790,6 +879,7 @@ static void day(hd_state *s, hd_remote *g, int32_t choice)
             suspect(g, boss_events[kind].missed);
             phone(g, RW_BOSS, RT_BOSS_MISS + kind);
             g->boss = 0;
+            g->reckon = 0;
          }
       }
       else
@@ -807,6 +897,24 @@ static void day(hd_state *s, hd_remote *g, int32_t choice)
             }
             g->boss = 0, g->boss_call = 0;
          }
+      }
+   }
+   /* a promise of work: kept once enough work is done, else the boss comes to check when it is due */
+   if (g->promise_at && minute)
+   {
+      if (g->work - g->promise_work >= REMOTE_PROMISE_WORK * REMOTE_WORK_UNIT)
+      {
+         g->promise_at = 0;
+         g->points += REMOTE_PROMISE_POINTS;
+         g->dlg_points += REMOTE_PROMISE_POINTS;
+         suspect(g, -REMOTE_PROMISE_CALM);
+         phone(g, RW_BOSS, RT_PROMISE_KEPT);
+         toast(g, RT_PROMISE_KEPT, REMOTE_PROMISE_POINTS);
+      }
+      else if (g->t / FPM + 1 >= g->promise_at)
+      {
+         g->promise_at = 0;
+         put_off(g, RE_RECKON + REMOTE_RECKON_PROMISE, g->t / FPM);
       }
    }
    /* the house's timers */
@@ -914,7 +1022,7 @@ static void doing(hd_state *s, hd_remote *g, int pressed)
 /* Everything of a new day, the session's record kept; the worker in the hall. */
 static void new_day(hd_state *s, hd_remote *g)
 {
-   int32_t best = g->best, hero = g->hero;
+   int32_t best = g->best, hero = g->hero, cat_party = g->cat_party;
    memset(g, 0, sizeof *g);
    g->best = best;
    g->hero = hero;
@@ -936,6 +1044,9 @@ static void new_day(hd_state *s, hd_remote *g)
    g->cat_mode = CAT_REST;
    g->cat_t = 40 * 60;
    plan_day(s, g);
+   /* "it's my cat's birthday" yesterday: the boss asks how the party was, before the daily */
+   if (cat_party)
+      put_off(g, RE_RECKON + REMOTE_RECKON_CAT, 20);
    g->chatter_at = 30 + rng_range(&s->rng, 30);
    phone(g, RW_BOSS, RT_GREETING);
    g->phone_new_t = 0;
@@ -1307,6 +1418,10 @@ static const struct
    { RT_DLG_ANSWER + 52, "ans_13_0" }, { RT_DLG_ANSWER + 53, "ans_13_1" }, { RT_DLG_ANSWER + 54, "ans_13_2" }, { RT_DLG_ANSWER + 55, "ans_13_3" },
    { RT_DLG_ANSWER + 56, "ans_14_0" }, { RT_DLG_ANSWER + 57, "ans_14_1" }, { RT_DLG_ANSWER + 58, "ans_14_2" }, { RT_DLG_ANSWER + 59, "ans_14_3" },
    { RT_DLG_ANSWER + 60, "ans_15_0" }, { RT_DLG_ANSWER + 61, "ans_15_1" }, { RT_DLG_ANSWER + 62, "ans_15_2" }, { RT_DLG_ANSWER + 63, "ans_15_3" },
+   { RT_DLG_ANSWER + 64, "ans_16_0" }, { RT_DLG_ANSWER + 65, "ans_16_1" }, { RT_DLG_ANSWER + 66, "ans_16_2" }, { RT_DLG_ANSWER + 67, "ans_16_3" },
+   { RT_DLG_ANSWER + 68, "ans_17_0" }, { RT_DLG_ANSWER + 69, "ans_17_1" }, { RT_DLG_ANSWER + 70, "ans_17_2" }, { RT_DLG_ANSWER + 71, "ans_17_3" },
+   { RT_DLG_ANSWER + 72, "ans_18_0" }, { RT_DLG_ANSWER + 73, "ans_18_1" }, { RT_DLG_ANSWER + 74, "ans_18_2" }, { RT_DLG_ANSWER + 75, "ans_18_3" },
+   { RT_DLG_ANSWER + 76, "ans_19_0" }, { RT_DLG_ANSWER + 77, "ans_19_1" }, { RT_DLG_ANSWER + 78, "ans_19_2" }, { RT_DLG_ANSWER + 79, "ans_19_3" },
    { RT_BOSS_ASK + RE_MEETING * 2, "read_meeting_a" }, { RT_BOSS_ASK + RE_MEETING * 2 + 1, "read_meeting_b" },
    { RT_BOSS_ASK + RE_CALL * 2, "read_call_a" }, { RT_BOSS_ASK + RE_CALL * 2 + 1, "read_call_b" },
    { RT_BOSS_ASK + RE_MESSAGE * 2, "read_message_a" }, { RT_BOSS_ASK + RE_MESSAGE * 2 + 1, "read_message_b" },
@@ -1325,8 +1440,69 @@ static const struct
    { RT_NET, "net" }, { RT_NET_BACK, "net_back" }, { RT_WASHER, "washer" },
 };
 #define VOICED ((int32_t)(sizeof voiced / sizeof voiced[0]))
+
+/*
+ * The boss's voice: what it says to the worker (its greeting, its replies,
+ * what it hears on a call, its comments, its checks), recorded once for the
+ * man ("voice_b_<lang>_<key>") and again for the woman where the words
+ * differ ("voice_bw_<lang>_<key>": her name). Its asks come as messages:
+ * the worker reads them.
+ */
+static const struct
+{
+   int32_t text;
+   const char *key;
+} boss_voiced[] = {
+   { RT_GREETING, "boss_greeting" }, { RT_BOSS_MISS + RE_MEETING, "boss_miss_meeting" }, { RT_BOSS_MISS + RE_CALL, "boss_miss_call" },
+   { RT_BOSS_MISS + RE_MESSAGE, "boss_miss_message" }, { RT_BOSS_MISS + RE_SHARE, "boss_miss_share" },
+   { RT_BOSS_MISS + RE_HOTFIX, "boss_miss_hotfix" }, { RT_BOSS_MISS + RE_WEEKEND, "boss_miss_weekend" },
+   { RT_BOSS_MISS + RE_CAMERA, "boss_miss_camera" }, { RT_HEARD + 0, "boss_heard_0" }, { RT_HEARD + 1, "boss_heard_1" },
+   { RT_HEARD + 2, "boss_heard_2" }, { RT_HEARD + 3, "boss_heard_3" }, { RT_HEARD + 4, "boss_heard_4" }, { RT_HEARD + 5, "boss_heard_5" },
+   { RT_HEARD + 6, "boss_heard_6" }, { RT_HEARD + 7, "boss_heard_7" }, { RT_CHATTER + 0, "boss_chatter_0" },
+   { RT_CHATTER + 1, "boss_chatter_1" }, { RT_CHATTER + 2, "boss_chatter_2" }, { RT_CHATTER + 3, "boss_chatter_3" },
+   { RT_CHATTER + 4, "boss_chatter_4" }, { RT_CHATTER + 5, "boss_chatter_5" }, { RT_CHATTER + 6, "boss_chatter_6" },
+   { RT_CHATTER + 7, "boss_chatter_7" }, { RT_CHATTER + 8, "boss_chatter_8" }, { RT_CHATTER + 9, "boss_chatter_9" },
+   { RT_DLG_REPLY + 0, "boss_reply_00_0" }, { RT_DLG_REPLY + 1, "boss_reply_00_1" }, { RT_DLG_REPLY + 2, "boss_reply_00_2" },
+   { RT_DLG_REPLY + 3, "boss_reply_00_3" }, { RT_DLG_REPLY + 4, "boss_reply_01_0" }, { RT_DLG_REPLY + 5, "boss_reply_01_1" },
+   { RT_DLG_REPLY + 6, "boss_reply_01_2" }, { RT_DLG_REPLY + 7, "boss_reply_01_3" }, { RT_DLG_REPLY + 8, "boss_reply_02_0" },
+   { RT_DLG_REPLY + 9, "boss_reply_02_1" }, { RT_DLG_REPLY + 10, "boss_reply_02_2" }, { RT_DLG_REPLY + 11, "boss_reply_02_3" },
+   { RT_DLG_REPLY + 12, "boss_reply_03_0" }, { RT_DLG_REPLY + 13, "boss_reply_03_1" }, { RT_DLG_REPLY + 14, "boss_reply_03_2" },
+   { RT_DLG_REPLY + 15, "boss_reply_03_3" }, { RT_DLG_REPLY + 16, "boss_reply_04_0" }, { RT_DLG_REPLY + 17, "boss_reply_04_1" },
+   { RT_DLG_REPLY + 18, "boss_reply_04_2" }, { RT_DLG_REPLY + 19, "boss_reply_04_3" }, { RT_DLG_REPLY + 20, "boss_reply_05_0" },
+   { RT_DLG_REPLY + 21, "boss_reply_05_1" }, { RT_DLG_REPLY + 22, "boss_reply_05_2" }, { RT_DLG_REPLY + 23, "boss_reply_05_3" },
+   { RT_DLG_REPLY + 24, "boss_reply_06_0" }, { RT_DLG_REPLY + 25, "boss_reply_06_1" }, { RT_DLG_REPLY + 26, "boss_reply_06_2" },
+   { RT_DLG_REPLY + 27, "boss_reply_06_3" }, { RT_DLG_REPLY + 28, "boss_reply_07_0" }, { RT_DLG_REPLY + 29, "boss_reply_07_1" },
+   { RT_DLG_REPLY + 30, "boss_reply_07_2" }, { RT_DLG_REPLY + 31, "boss_reply_07_3" }, { RT_DLG_REPLY + 32, "boss_reply_08_0" },
+   { RT_DLG_REPLY + 33, "boss_reply_08_1" }, { RT_DLG_REPLY + 34, "boss_reply_08_2" }, { RT_DLG_REPLY + 35, "boss_reply_08_3" },
+   { RT_DLG_REPLY + 36, "boss_reply_09_0" }, { RT_DLG_REPLY + 37, "boss_reply_09_1" }, { RT_DLG_REPLY + 38, "boss_reply_09_2" },
+   { RT_DLG_REPLY + 39, "boss_reply_09_3" }, { RT_DLG_REPLY + 40, "boss_reply_10_0" }, { RT_DLG_REPLY + 41, "boss_reply_10_1" },
+   { RT_DLG_REPLY + 42, "boss_reply_10_2" }, { RT_DLG_REPLY + 43, "boss_reply_10_3" }, { RT_DLG_REPLY + 44, "boss_reply_11_0" },
+   { RT_DLG_REPLY + 45, "boss_reply_11_1" }, { RT_DLG_REPLY + 46, "boss_reply_11_2" }, { RT_DLG_REPLY + 47, "boss_reply_11_3" },
+   { RT_DLG_REPLY + 48, "boss_reply_12_0" }, { RT_DLG_REPLY + 49, "boss_reply_12_1" }, { RT_DLG_REPLY + 50, "boss_reply_12_2" },
+   { RT_DLG_REPLY + 51, "boss_reply_12_3" }, { RT_DLG_REPLY + 52, "boss_reply_13_0" }, { RT_DLG_REPLY + 53, "boss_reply_13_1" },
+   { RT_DLG_REPLY + 54, "boss_reply_13_2" }, { RT_DLG_REPLY + 55, "boss_reply_13_3" }, { RT_DLG_REPLY + 56, "boss_reply_14_0" },
+   { RT_DLG_REPLY + 57, "boss_reply_14_1" }, { RT_DLG_REPLY + 58, "boss_reply_14_2" }, { RT_DLG_REPLY + 59, "boss_reply_14_3" },
+   { RT_DLG_REPLY + 60, "boss_reply_15_0" }, { RT_DLG_REPLY + 61, "boss_reply_15_1" }, { RT_DLG_REPLY + 62, "boss_reply_15_2" },
+   { RT_DLG_REPLY + 63, "boss_reply_15_3" }, { RT_DLG_REPLY + 64, "boss_reply_16_0" }, { RT_DLG_REPLY + 65, "boss_reply_16_1" },
+   { RT_DLG_REPLY + 66, "boss_reply_16_2" }, { RT_DLG_REPLY + 67, "boss_reply_16_3" }, { RT_DLG_REPLY + 68, "boss_reply_17_0" },
+   { RT_DLG_REPLY + 69, "boss_reply_17_1" }, { RT_DLG_REPLY + 70, "boss_reply_17_2" }, { RT_DLG_REPLY + 71, "boss_reply_17_3" },
+   { RT_DLG_REPLY + 72, "boss_reply_18_0" }, { RT_DLG_REPLY + 73, "boss_reply_18_1" }, { RT_DLG_REPLY + 74, "boss_reply_18_2" },
+   { RT_DLG_REPLY + 75, "boss_reply_18_3" }, { RT_DLG_REPLY + 76, "boss_reply_19_0" }, { RT_DLG_REPLY + 77, "boss_reply_19_1" },
+   { RT_DLG_REPLY + 78, "boss_reply_19_2" }, { RT_DLG_REPLY + 79, "boss_reply_19_3" }, { RT_DLG_FUNNY_BAD + 0, "boss_fbad_00" },
+   { RT_DLG_FUNNY_BAD + 1, "boss_fbad_01" }, { RT_DLG_FUNNY_BAD + 2, "boss_fbad_02" }, { RT_DLG_FUNNY_BAD + 3, "boss_fbad_03" },
+   { RT_DLG_FUNNY_BAD + 4, "boss_fbad_04" }, { RT_DLG_FUNNY_BAD + 5, "boss_fbad_05" }, { RT_DLG_FUNNY_BAD + 6, "boss_fbad_06" },
+   { RT_DLG_FUNNY_BAD + 7, "boss_fbad_07" }, { RT_DLG_FUNNY_BAD + 8, "boss_fbad_08" }, { RT_DLG_FUNNY_BAD + 9, "boss_fbad_09" },
+   { RT_DLG_FUNNY_BAD + 10, "boss_fbad_10" }, { RT_DLG_FUNNY_BAD + 11, "boss_fbad_11" }, { RT_DLG_FUNNY_BAD + 12, "boss_fbad_12" },
+   { RT_DLG_FUNNY_BAD + 13, "boss_fbad_13" }, { RT_DLG_FUNNY_BAD + 14, "boss_fbad_14" }, { RT_DLG_FUNNY_BAD + 15, "boss_fbad_15" },
+   { RT_DLG_FUNNY_BAD + 16, "boss_fbad_16" }, { RT_DLG_FUNNY_BAD + 17, "boss_fbad_17" }, { RT_DLG_FUNNY_BAD + 18, "boss_fbad_18" },
+   { RT_DLG_FUNNY_BAD + 19, "boss_fbad_19" }, { RT_DLG_NOW, "boss_now" }, { RT_RECKON + REMOTE_RECKON_PROMISE, "boss_reckon_promise" },
+   { RT_RECKON + REMOTE_RECKON_BROKEN, "boss_reckon_broken" }, { RT_RECKON + REMOTE_RECKON_INTERN, "boss_reckon_intern" },
+   { RT_RECKON + REMOTE_RECKON_CAT, "boss_reckon_cat" }, { RT_PROMISE_KEPT, "boss_kept" }, { RT_DISTRUST, "boss_distrust" },
+};
+#define BOSS_VOICED ((int32_t)(sizeof boss_voiced / sizeof boss_voiced[0]))
 static const char *const voice_langs[LANGS] = { "en", "es", "pt" };
 static int32_t voice_sample[2][LANGS][VOICED];
+static int32_t boss_sample[2][LANGS][BOSS_VOICED];
 
 /* The samples and tracks of the content loaded now (looked up again when it changes). */
 static void sound_names(void)
@@ -1351,6 +1527,13 @@ static void sound_names(void)
       snprintf(name, sizeof name, "voice_%c_%s_%s", who ? 'w' : 'm', voice_langs[lang], voiced[i % VOICED].key);
       voice_sample[who][lang][i % VOICED] = hd_effect(name);
    }
+   for (i = 0; i < 2 * LANGS * BOSS_VOICED; i++)
+   {
+      char name[48];
+      int32_t who = i / (LANGS * BOSS_VOICED), lang = i / BOSS_VOICED % LANGS;
+      snprintf(name, sizeof name, "voice_%s_%s_%s", who ? "bw" : "b", voice_langs[lang], boss_voiced[i % BOSS_VOICED].key);
+      boss_sample[who][lang][i % BOSS_VOICED] = hd_effect(name);
+   }
 }
 
 /* The recording of a line in the language of the texts and the main character's voice, -1 when there is none. */
@@ -1363,15 +1546,39 @@ static int32_t voice_of(const hd_remote *g, int32_t text)
    return -1;
 }
 
+/* The boss's recording of a line in the language of the texts (hers for the woman where it differs), -1 when there is none. */
+static int32_t boss_voice_of(const hd_remote *g, int32_t text)
+{
+   int32_t i, lang = hd_clamp(hd_lang, 0, LANGS - 1);
+   for (i = 0; i < BOSS_VOICED; i++)
+      if (boss_voiced[i].text == text)
+         return g->hero && boss_sample[1][lang][i] >= 0 ? boss_sample[1][lang][i] : boss_sample[0][lang][i];
+   return -1;
+}
+
+/* A sample is a line said (the worker's or the boss's). */
+static int is_voice(int32_t sample)
+{
+   const int32_t *all = &voice_sample[0][0][0], *boss = &boss_sample[0][0][0];
+   int32_t k;
+   if (sample < 0)
+      return 0;
+   for (k = 0; k < 2 * LANGS * VOICED; k++)
+      if (all[k] == sample)
+         return 1;
+   for (k = 0; k < 2 * LANGS * BOSS_VOICED; k++)
+      if (boss[k] == sample)
+         return 1;
+   return 0;
+}
+
 /* Output samples until every line said now (and waiting) is over. */
 static int32_t voice_left(const hd_state *s)
 {
-   const int32_t *all = &voice_sample[0][0][0];
-   int32_t c, k, left = 0;
+   int32_t c, left = 0;
    for (c = 0; c < MAX_CHANNELS; c++)
-      for (k = 0; k < 2 * LANGS * VOICED; k++)
-         if (s->ch[c].sample >= 0 && s->ch[c].sample == all[k])
-            left = hd_max(left, hd_sample_len(all[k]) - s->ch[c].pos);
+      if (is_voice(s->ch[c].sample))
+         left = hd_max(left, hd_sample_len(s->ch[c].sample) - s->ch[c].pos);
    return left;
 }
 
@@ -1383,10 +1590,9 @@ static int32_t voice_left(const hd_state *s)
  * `queued`, once they are over; `wait` output samples of silence first.
  * Returns how long it lasts, 0 when it has no recording.
  */
-static int32_t say(hd_state *s, const hd_remote *g, int32_t text, int32_t vol, int32_t wait, int queued)
+static int32_t say_sample(hd_state *s, int32_t sample, int32_t vol, int32_t wait, int queued)
 {
-   const int32_t *all = &voice_sample[0][0][0];
-   int32_t k, c, sample = voice_of(g, text);
+   int32_t c;
    if (sample < 0)
       return 0;
    if (queued)
@@ -1396,13 +1602,17 @@ static int32_t say(hd_state *s, const hd_remote *g, int32_t text, int32_t vol, i
    }
    else if (!wait)
       for (c = 0; c < MAX_CHANNELS; c++)
-         for (k = 0; k < 2 * LANGS * VOICED; k++)
-            if (s->ch[c].sample >= 0 && s->ch[c].sample == all[k])
-               s->ch[c].sample = -1;
+         if (is_voice(s->ch[c].sample))
+            s->ch[c].sample = -1;
    c = hd_play_at(s, sample, vol, 0, FX_ONE);
    if (c >= 0)
       s->ch[c].pos = -wait;
    return c >= 0 ? hd_sample_len(sample) : 0;
+}
+
+static int32_t say(hd_state *s, const hd_remote *g, int32_t text, int32_t vol, int32_t wait, int queued)
+{
+   return say_sample(s, voice_of(g, text), vol, wait, queued);
 }
 
 /* A thought, cutting short the line before. */
@@ -1532,6 +1742,8 @@ static void sound_day(hd_state *s, const hd_remote *was, const hd_remote *g)
       who = g->phone_who[k % REMOTE_PHONE];
       if (who == RW_YOU)
          say(s, g, text, 230, 0, 1); /* the answer to the boss, once the ask was read and thought over */
+      else if (who == RW_BOSS && !(text >= RT_BOSS_ASK && text < RT_BOSS_ASK + RE_BOSS_KINDS * 2))
+         say_sample(s, boss_voice_of(g, text), 230, 0, 1); /* the boss, after what is being said */
       else if (who == RW_HOUSE)
          think(s, g, text);
       else if (text >= RT_BOSS_ASK && text < RT_BOSS_ASK + RE_BOSS_KINDS * 2)
@@ -1962,7 +2174,8 @@ static void dialogue_hud(hd_surface *sf, const hd_remote *g, int32_t scale)
    int32_t d = g->dlg - 1, i, w, h, x, y;
    int32_t question = d == DLG_HALF ? RT_DLG_REPLY + RE_WEEKEND * 2 * REMOTE_DLG_ANSWERS + 1
                       : d == DLG_SMALL ? RT_DLG_REPLY + (RE_WEEKEND * 2 + 1) * REMOTE_DLG_ANSWERS + 1
-                                       : RT_BOSS_ASK + d;
+                      : d >= DLG_RECKON ? RT_RECKON + d - DLG_RECKON
+                                        : RT_BOSS_ASK + d;
    char line[160];
    w = hd_max(text_width(remote_text(question), scale), text_width(remote_text(RT_DLG_HINT), scale));
    for (i = 0; i < REMOTE_DLG_ANSWERS; i++)
@@ -2583,7 +2796,7 @@ void hd_remote_sanitize(hd_state *s)
    for (i = 0; i < REMOTE_EVENTS_MAX; i++)
    {
       g->ev_at[i] = hd_clamp(g->ev_at[i], 0, 1 << 20);
-      g->ev_kind[i] = hd_clamp(g->ev_kind[i], 0, RE_KINDS - 1);
+      g->ev_kind[i] = hd_clamp(g->ev_kind[i], 0, RE_RECKON + REMOTE_RECKONS - 1);
    }
    g->boss = hd_clamp(g->boss, 0, RE_BOSS_KINDS);
    g->boss_call = hd_clamp(g->boss_call, 0, 1);
@@ -2647,7 +2860,7 @@ void hd_remote_sanitize(hd_state *s)
    g->nav &= PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
    g->music_resume = hd_clamp(g->music_resume, 0, 1 << 30);
    g->weekend = hd_clamp(g->weekend, 0, 3);
-   g->ask = hd_clamp(g->ask, 0, RE_BOSS_KINDS * 2 - 1);
+   g->ask = hd_clamp(g->ask, 0, REMOTE_DLG_COUNT - 1);
    g->dlg = hd_clamp(g->dlg, 0, REMOTE_DLG_COUNT);
    g->dlg_sel = hd_clamp(g->dlg_sel, 0, REMOTE_DLG_ANSWERS - 1);
    g->dlg_t = hd_clamp(g->dlg_t, 0, 1 << 20);
@@ -2655,4 +2868,11 @@ void hd_remote_sanitize(hd_state *s)
    g->postponed &= (1 << RE_BOSS_KINDS) - 1;
    g->hotfixes = hd_clamp(g->hotfixes, 0, REMOTE_EVENTS_MAX);
    g->chatter_at = hd_clamp(g->chatter_at, 0, REMOTE_DAY_MINUTES * 2);
+   g->promise_at = hd_clamp(g->promise_at, 0, REMOTE_DAY_MINUTES + REMOTE_PROMISE_MINUTES + 1);
+   g->promise_work = hd_clamp(g->promise_work, 0, g->work);
+   g->reckon = hd_clamp(g->reckon, 0, REMOTE_RECKONS);
+   g->checked &= (1 << REMOTE_RECKONS) - 1;
+   g->cat_party = hd_clamp(g->cat_party, 0, 1);
+   g->caught = hd_clamp(g->caught, 0, REMOTE_EVENTS_MAX);
+   g->distrust = hd_clamp(g->distrust, 0, 1);
 }

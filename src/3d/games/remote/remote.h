@@ -146,6 +146,14 @@ typedef struct
    int32_t dlg_t;              /* frames it has been open */
    int32_t dlg_points;         /* what the day's answers gave or took (part of `points`) */
    int32_t postponed;          /* the boss's kinds already put off ("in 10 minutes?"), a bit each */
+   /* what the boss remembers: a promise of work, the excuses it checks later */
+   int32_t promise_at;         /* the game minute a promise of work is due + 1, 0: none */
+   int32_t promise_work;       /* `work` when it was made */
+   int32_t reckon;             /* the boss's check under way (REMOTE_RECKON_*) + 1, 0: an ask of the day */
+   int32_t checked;            /* the checks already planned today (REMOTE_RECKON_*), a bit each */
+   int32_t cat_party;          /* 1: "it's my cat's birthday" was said: the boss asks about it the next day (kept by new_day) */
+   int32_t caught;             /* checks of the day the boss caught (a broken promise or excuse) */
+   int32_t distrust;           /* 1: caught twice today: good answers count half */
 } hd_remote;
 
 /* Every number that balances the game, in one place. */
@@ -194,7 +202,9 @@ typedef struct
 #define REMOTE_WEEKEND_HALF_COST 120 /* half of it sold */
 /* the answers: each dialogue has 4, of a tone that says what it does (remote.c) */
 #define REMOTE_DLG_ANSWERS 4
-#define REMOTE_DLG_COUNT (RE_BOSS_KINDS * 2 + 2) /* the asks, then the two questions that follow an answer about the weekend */
+/* What the boss checks later: a promise of work not kept, a "broken" camera or screen, the intern blamed, the cat's birthday (the next day). */
+enum { REMOTE_RECKON_PROMISE = 0, REMOTE_RECKON_BROKEN, REMOTE_RECKON_INTERN, REMOTE_RECKON_CAT, REMOTE_RECKONS };
+#define REMOTE_DLG_COUNT (RE_BOSS_KINDS * 2 + 2 + REMOTE_RECKONS) /* the asks, the two questions that follow an answer about the weekend, then the boss's checks */
 #define REMOTE_DLG_GOOD 40        /* points of an answer that pleases the boss (and calms it as an answer always did) */
 #define REMOTE_DLG_HONEST 20      /* an honest one (half the calm) */
 #define REMOTE_DLG_FUNNY 60       /* a joke the boss takes well (the calm of a good one), */
@@ -205,6 +215,11 @@ typedef struct
 #define REMOTE_DLG_BAD_RISE 100
 #define REMOTE_LATER_MINUTES 10   /* "in 10 minutes?": the boss comes back then (once; a second time it will not wait) */
 #define REMOTE_HOTFIX_POINTS 150
+#define REMOTE_PROMISE_MINUTES 60 /* "almost done": the boss looks again an hour later */
+#define REMOTE_PROMISE_WORK 30    /* minutes of work by then keep the promise, */
+#define REMOTE_PROMISE_POINTS 30  /* which pays this and calms the boss: */
+#define REMOTE_PROMISE_CALM 50
+#define REMOTE_CAUGHT 100         /* suspicion when the boss comes back to check and finds out */
 
 /* The game's texts, each in English, Spanish and Portuguese (remote_text.c). */
 enum
@@ -290,6 +305,9 @@ enum
    RT_DLG_NOW,       /* the boss, put off a second time: it will not wait */
    RT_END_ANSWERS,   /* the end's rows: what the answers gave, half the weekend sold */
    RT_END_WEEKEND_HALF,
+   RT_RECKON,        /* REMOTE_RECKONS: the boss comes back to check */
+   RT_PROMISE_KEPT = RT_RECKON + REMOTE_RECKONS, /* the promised work arrived */
+   RT_DISTRUST,      /* caught twice: the boss will check everything */
    RT_COUNT
 };
 const char *remote_text(int32_t id);

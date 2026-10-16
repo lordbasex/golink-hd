@@ -24,11 +24,13 @@ made stereo at 48 kHz, its loop blended the same way (unless it is
 "seamless" already). Everything is stored as IMA ADPCM (tools/glhd adpcm), a
 quarter of the size. CREDITS.md lists every recording.
 
-The main character's voice (audio.json's "voices") is recorded by
-voices.py into source/voices/<m|w>/<lang>/; here the thoughts are made to
-sound inside the head (softer, closer, a little room), what is said out
-loud (the boss's asks read, read_*, and the answers chosen, ans_*) stays dry, and
-all are packed as the effects "voice_<m|w>_<lang>_<key>".
+The main character's voice and the boss's (audio.json's "voices") are
+recorded by voices.py into source/voices/<m|w|b|bw>/<lang>/; here the
+thoughts are made to sound inside the head (softer, closer, a little room),
+what is said out loud (the boss's asks read, read_*, and the answers chosen,
+ans_*) stays dry, the boss sounds through a call (b, and bw for the lines
+that name the woman), and all are packed as the effects
+"voice_<m|w|b|bw>_<lang>_<key>".
 """
 import array
 import json
@@ -53,6 +55,7 @@ BLEND = 0.25         # seconds of a loop's end blended into its start
 VOICE_PEAK = 15000   # a thought over the music and the house
 THOUGHT = "apad=pad_dur=0.3,highpass=f=120,lowpass=f=5500,aecho=0.8:0.5:40|75:0.25|0.15"  # inside the head
 SAID = "highpass=f=90,lowpass=f=9000"  # out loud: the boss's asks read (read_*) and the answers chosen (ans_*)
+PHONE = "highpass=f=300,lowpass=f=3400,acompressor=threshold=0.1:ratio=4:attack=5:release=80"  # the boss, through the computer's call
 
 
 def decode(path, channels, start=0.0, length=None, filters=None):
@@ -205,15 +208,18 @@ def build(spec, resolution="720p"):
             entry["volume"] = e["volume"]
         effects[name] = entry if len(entry) > 1 else out
     if spec.get("voices"):
-        for who in ("m", "w"):
+        for who in ("m", "w", "b", "bw"):
             for lang in ("en", "es", "pt"):
                 folder = os.path.join(SOURCE, "voices", who, lang)
                 if not os.path.isdir(folder):
-                    sys.exit("the thoughts are not recorded: run examples/remote/voices.py (python3 examples/remote/voices.py for its help)")
+                    if who == "bw":
+                        continue  # only the lines that name the woman
+                    sys.exit("the voices are not recorded: run examples/remote/voices.py (python3 examples/remote/voices.py for its help)")
                 for f in sorted(os.listdir(folder)):
                     if f.endswith(".wav"):
                         said = f.startswith(("read_", "ans_"))
-                        pcm = level(fade_out(trim(decode(os.path.join(folder, f), 1, filters=SAID if said else THOUGHT)), 1), VOICE_PEAK)
+                        filters = PHONE if who in ("b", "bw") else SAID if said else THOUGHT
+                        pcm = level(fade_out(trim(decode(os.path.join(folder, f), 1, filters=filters)), 1), VOICE_PEAK)
                         name = f"voice_{who}_{lang}_{f[:-4]}"
                         adpcm(pcm, 1, os.path.join(OUT, name + ".wav"))
                         effects[name] = {"file": name + ".wav", "on_demand": True}  # a game plays one character's, in one language
@@ -239,7 +245,7 @@ def build(spec, resolution="720p"):
     manifest = {
         "format": 3,
         "title": "TELETRABAJO: CÁMARA APAGADA",
-        "version": spec.get("version", "0.6.0"),
+        "version": spec.get("version", "0.7.0"),
         "game": "remote",
         "resolution": resolution,
         "players": 1,
@@ -270,7 +276,7 @@ HEADINGS = {
     "by": {"en": "by", "es": "por", "pt": "por"},
     "sounds": {"en": "SOUND EFFECTS", "es": "EFECTOS DE SONIDO", "pt": "EFEITOS SONOROS"},
     "models": {"en": "3D MODELS", "es": "MODELOS 3D", "pt": "MODELOS 3D"},
-    "voices": {"en": "THE THOUGHTS' VOICE", "es": "LA VOZ DE LOS PENSAMIENTOS", "pt": "A VOZ DOS PENSAMENTOS"},
+    "voices": {"en": "THE VOICES", "es": "LAS VOCES", "pt": "AS VOZES"},
     "license": {"en": "models, music and sounds: public domain (CC0)", "es": "modelos, música y sonidos: dominio público (CC0)", "pt": "modelos, música e sons: domínio público (CC0)"},
     "plays": {"en": "PLAYED WITH", "es": "SE JUEGA CON", "pt": "SE JOGA COM"},
     "logo": {"en": "GO-LINK LOGO", "es": "LOGO DE GO-LINK", "pt": "LOGO DO GO-LINK"},
@@ -336,7 +342,7 @@ def credits(spec):
         for name, e in spec[kind].items():
             lines.append(f"| {kind[:-1]} `{name}` | {e.get('title', '')} | {e.get('author', '')} | {e['license']} | {e.get('page', e['url'])} |")
     if spec.get("voices"):
-        for who, name in (("m", "the man"), ("w", "the woman")):
+        for who, name in (("m", "the man"), ("w", "the woman"), ("b", "the boss")):
             for lang, v in spec["voices"][who].items():
                 engine = next(c for c in spec["voices"]["credits"] if c["title"].lower().startswith(v["engine"]))
                 lines.append(f"| voices `voice_{who}_{lang}_*` ({name}: {v.get('voice', v.get('model'))}) | {engine['title']} | {engine['author']} | {engine['license']} | {engine['page']} |")

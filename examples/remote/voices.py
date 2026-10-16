@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Federico Pereira <lord.basex@gmail.com>
-"""Records the main character's voice for TELETRABAJO: CÁMARA APAGADA in
-English, Spanish and Portuguese, for both main characters (a man and a
-woman), with speech models that run on the computer, into
+"""Records the voices of TELETRABAJO: CÁMARA APAGADA in English, Spanish and
+Portuguese, with speech models that run on the computer: the main
+character's, for both (a man and a woman), into
 source/voices/<m|w>/<lang>/<key>.wav: the thoughts, the boss's asks read
 aloud (read_*), what the worker thinks of each (muse_*) and the answers
-chosen in the dialogues (ans_<dialogue>_<answer>); build.py makes the
-thoughts sound inside the head.
+chosen in the dialogues (ans_<dialogue>_<answer>); and the boss's (boss_*:
+its greeting, replies, comments and checks) into source/voices/b/, and into
+source/voices/bw/ the lines whose words differ for the woman (her name).
+build.py makes the thoughts sound inside the head and the boss through a
+call.
 
-The lines are the game's own: the `voiced` table in
+The lines are the game's own: the `voiced` and `boss_voiced` tables in
 src/3d/games/remote/remote.c (each text and its key) and their translations
 in remote_text.c (with the woman's words where they differ, its `woman`
 table), so a text changed there is recorded again here. Who says what is
-audio.json's "voices": for each character and language an engine and a
-voice:
+audio.json's "voices": for each character (m, w, and b the boss) and
+language an engine and a voice:
 
   kokoro  Kokoro-82M (Apache 2.0) through kokoro-onnx: "voice", "speed",
           "phonemes" (espeak-ng's language for the sounds, es-419 for a
@@ -50,10 +53,10 @@ def norm(expr):
     return re.sub(r"\s+", "", expr)
 
 
-def voiced():
-    """(text expression, key) of every thought the game says aloud."""
+def voiced(name="voiced"):
+    """(text expression, key) of every line the game says aloud: the main character's (voiced) or the boss's (boss_voiced)."""
     src = open(os.path.join(GAME, "remote.c"), encoding="utf-8").read()
-    table = re.search(r"\} voiced\[\] = \{(.*?)\n\};", src, re.S).group(1)
+    table = re.search(r"\} " + name + r"\[\] = \{(.*?)\n\};", src, re.S).group(1)
     return [(norm(e), k) for e, k in re.findall(r"\{\s*([A-Z_0-9+* ]+?),\s*\"([a-z_0-9]+)\"\s*\}", table)]
 
 
@@ -130,19 +133,26 @@ def main():
     speakers = Speakers(sys.argv[1])
     only = set(sys.argv[2:])
     lines = texts()
-    for expr, key in voiced():
+    jobs = [(expr, key, who, who) for expr, key in voiced() for who in ("m", "w")]
+    # the boss: once with the man's words, again where the woman's differ (her name)
+    for expr, key in voiced("boss_voiced"):
+        jobs.append((expr, key, "b", "b"))
+        jobs.append((expr, key, "bw", "b"))
+    for expr, key, folder_name, voice in jobs:
         if only and key not in only:
             continue
         if expr not in lines:
             sys.exit(f"{key}: {expr} is not in remote_text.c")
-        for who in ("m", "w"):
-            for i, lang in enumerate(LANGS):
-                folder = os.path.join(OUT, who, lang)
-                os.makedirs(folder, exist_ok=True)
-                text = spoken(lines[expr][who][i])
-                samples, rate = speakers.say(spec[who][lang], lang, text)
-                soundfile.write(os.path.join(folder, f"{key}.wav"), samples, rate)
-                print(f"{who} {lang} {key}: {text}")
+        for i, lang in enumerate(LANGS):
+            words = lines[expr]["w" if folder_name in ("w", "bw") else "m"][i]
+            if folder_name == "bw" and words == lines[expr]["m"][i]:
+                continue
+            folder = os.path.join(OUT, folder_name, lang)
+            os.makedirs(folder, exist_ok=True)
+            text = spoken(words)
+            samples, rate = speakers.say(spec[voice][lang], lang, text)
+            soundfile.write(os.path.join(folder, f"{key}.wav"), samples, rate)
+            print(f"{folder_name} {lang} {key}: {text}")
 
 
 if __name__ == "__main__":
