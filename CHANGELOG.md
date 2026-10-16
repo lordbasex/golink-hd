@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+- The 3D picture is drawn in two passes: first which triangle is the nearest at each pixel (`idbuf`), then each pixel lit, textured and toned once by it, a run of pixels of the same triangle at a time; shadows and glass go over it after. About a quarter of the pixels were colored and then covered. A texture's holes are found as it is added (`r3d_tex.holes`), so the first pass reads only textures that have them. The picture is the same but for rounding (162 of 921,600 pixels by at most 6 levels in a TELETRABAJO frame).
+- The threads that draw rows stay between passes, asleep, instead of starting for each of the ten or so passes of a frame (`hd_rows_stop` ends them; `golinkhd_destroy` calls it).
+- TELETRABAJO's 720p frame on an Intel i9-10900: 12.87 to 12.55 ms on average, its slowest frames from 21–28 ms to 17–21 ms; on one core the triangles' fill from 25.2 to 24.0 ms.
+
 ## [0.3.2] - 2026-10-15
 
 ### Added

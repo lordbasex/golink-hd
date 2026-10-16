@@ -27,6 +27,7 @@ typedef struct
 {
    int32_t wlog, hlog;
    uint32_t *px;
+   int32_t holes; /* some texel's alpha is under 128 (a hole), as it was added */
 } r3d_tex;
 
 static r3d_tex texs[R3D_MAX_TEX];
@@ -39,6 +40,12 @@ int32_t r3d_tex_add(int32_t wlog, int32_t hlog, uint32_t *px)
    texs[tex_count].wlog = wlog;
    texs[tex_count].hlog = hlog;
    texs[tex_count].px = px;
+   texs[tex_count].holes = 0;
+   {
+      int32_t i;
+      for (i = 0; i < (1 << (wlog + hlog)) && !texs[tex_count].holes; i++)
+         texs[tex_count].holes = (px[i] >> 24) < 128;
+   }
    return tex_count++;
 }
 
@@ -1670,31 +1677,188 @@ static inline uint32_t mix4(uint32_t a, uint32_t b, uint32_t f)
    return lo | hi;
 }
 
-static void fill_one(hd_surface *s, const r3d_px *t, int32_t row0, int32_t row1)
+/*
+ * Filling a triangle's pixels, in three ways: DRAW tests the depth and
+ * writes the color (decals and glass, which go over what is drawn), DEPTH
+ * only finds which triangle is the nearest at each pixel (its depth and its
+ * number in idbuf; a texture's holes are not taken), and SHADE colors the
+ * pixels found for it, each once, so nothing hidden is ever lit, textured
+ * or toned.
+ */
+enum { FILL_DRAW = 0, FILL_DEPTH, FILL_SHADE };
+static uint32_t idbuf[HD_OUT_MAX_W * HD_OUT_MAX_H]; /* the nearest triangle at each pixel: its index in drawn + 1, 0 none */
+
+/* What a triangle's pixels need, worked out once per triangle (or per run of pixels). */
+typedef struct
+{
+   const r3d_px *t;
+   const r3d_tex *tx;
+   const uint32_t *tpx, *lmp;
+   uint32_t umask, vmask, wlog;
+   int decal, glowing, lm;
+   int32_t glass, smooth_tex, zs, rs, gs, bs, us, ts, lss, lts, lmw, smax, tmax, sun_r, sun_g, sun_b;
+} px_ctx;
+
+static void px_prep(const r3d_px *t, px_ctx *c)
+{
+   const r3d_tex *tx = t->tex >= 0 ? &texs[t->tex] : NULL;
+   c->t = t;
+   c->tx = tx;
+   c->umask = tx ? ((1u << tx->wlog) - 1) : 0, c->vmask = tx ? ((1u << tx->hlog) - 1) : 0, c->wlog = tx ? (uint32_t)tx->wlog : 0;
+   c->tpx = tx ? tx->px : NULL;
+   c->decal = t->flags & TF_DECAL, c->glowing = bloom_on && (t->flags & TF_GLOW);
+   c->glass = t->glass, c->smooth_tex = t->smooth_tex;
+   /* the sums' steps per pixel: 1/z with 4 bits of fraction, light 16, texture 8 */
+   c->zs = (int32_t)((t->a[A_Z].dx * 16) >> 12), c->rs = (int32_t)(t->a[A_R].dx * 16), c->gs = (int32_t)(t->a[A_G].dx * 16), c->bs = (int32_t)(t->a[A_B].dx * 16);
+   c->us = tx ? (int32_t)((t->a[A_U].dx * 16) >> 8) : 0, c->ts = tx ? (int32_t)((t->a[A_T].dx * 16) >> 8) : 0;
+   c->lm = t->lm >= 0;
+   c->lmp = c->lm ? lm_px + t->lmbase : NULL;
+   c->lmw = t->lmw, c->smax = (t->lmw - 1) * 256, c->tmax = (t->lmh - 1) * 256;
+   c->lss = c->lm ? (int32_t)((t->a[A_LS].dx * 16) >> 8) : 0, c->lts = c->lm ? (int32_t)((t->a[A_LT].dx * 16) >> 8) : 0;
+   c->sun_r = t->sun_r, c->sun_g = t->sun_g, c->sun_b = t->sun_b;
+}
+
+/* The texel under (uf, tf) (8 bits of fraction): the nearest one, or between the four nearest. */
+static inline uint32_t texel_at(const px_ctx *c, int32_t uf, int32_t tf)
+{
+   if (c->smooth_tex)
+   {
+      /* between the four nearest texels (every channel, alpha too) */
+      uint32_t su = (uint32_t)uf - 32768u, sv = (uint32_t)tf - 32768u, fx = (su >> 8) & 255, fy = (sv >> 8) & 255;
+      uint32_t x0 = (su >> 16) & c->umask, x1 = (x0 + 1) & c->umask, y0 = ((sv >> 16) & c->vmask) << c->wlog, y1 = ((((sv >> 16) + 1) & c->vmask)) << c->wlog;
+      return mix4(mix4(c->tpx[y0 | x0], c->tpx[y0 | x1], fx), mix4(c->tpx[y1 | x0], c->tpx[y1 | x1], fx), fy);
+   }
+   return c->tpx[(((uint32_t)tf >> 16) & c->vmask) << c->wlog | (((uint32_t)uf >> 16) & c->umask)];
+}
+
+/* Pixels xs..xe of row y of a triangle, in one of the FILL_* ways (id: its index in drawn + 1); fill_span makes one copy per way. */
+static inline void fill_span_as(hd_surface *s, const px_ctx *c, int32_t y, int32_t xs, int32_t xe, int mode, uint32_t id)
+{
+   const r3d_px *t = c->t;
+   int64_t oy = (int64_t)y * 16 + 8 - t->y[0], ox = (int64_t)xs * 16 + 8 - t->x[0];
+   int32_t x, zf, rf = 0, gf = 0, bf = 0, uf = 0, tf = 0, lsf = 0, ltf = 0;
+   uint32_t *row = s->px + (int64_t)y * s->w, *zrow = zbuf + (int64_t)y * s->w, *irow = idbuf + (int64_t)y * s->w;
+   zf = plane_at(&t->a[A_Z], ox, oy, 12);
+   if (c->tx)
+   {
+      uf = plane_at(&t->a[A_U], ox, oy, 8);
+      tf = plane_at(&t->a[A_T], ox, oy, 8);
+   }
+   if (mode == FILL_DEPTH)
+   {
+      for (x = xs; x <= xe; x++, zf += c->zs, uf += c->us, tf += c->ts)
+      {
+         uint32_t z = (uint32_t)(zf >> 4);
+         if (z <= zrow[x])
+            continue;
+         if (c->tx && c->tx->holes && (texel_at(c, uf, tf) >> 24) < 128)
+            continue; /* the texture's holes */
+         zrow[x] = z;
+         irow[x] = id;
+      }
+      return;
+   }
+   rf = plane_at(&t->a[A_R], ox, oy, 0);
+   gf = plane_at(&t->a[A_G], ox, oy, 0);
+   bf = plane_at(&t->a[A_B], ox, oy, 0);
+   if (c->lm)
+   {
+      lsf = plane_at(&t->a[A_LS], ox, oy, 8);
+      ltf = plane_at(&t->a[A_LT], ox, oy, 8);
+   }
+   for (x = xs; x <= xe; x++, zf += c->zs, rf += c->rs, gf += c->gs, bf += c->bs, uf += c->us, tf += c->ts, lsf += c->lss, ltf += c->lts)
+   {
+      uint32_t z = (uint32_t)(zf >> 4), texel = 0xffffffffu;
+      int32_t lr, lg, lb;
+      if (mode == FILL_DRAW && (c->decal ? z + 64 < zrow[x] : z <= zrow[x]))
+         continue;
+      if (c->tx)
+         texel = texel_at(c, uf, tf);
+      lr = rf >> 16, lg = gf >> 16, lb = bf >> 16;
+      if (c->lm)
+      {
+         /* the light map, between its four nearest texels: how much sun (low lane) and sky (high lane) arrive */
+         int32_t ls = hd_clamp((lsf >> 8) - 128, 0, c->smax), lt = hd_clamp((ltf >> 8) - 128, 0, c->tmax);
+         int32_t ix = ls >> 8, iy = lt >> 8, fx = ls & 255, fy = lt & 255, ix1 = ix + (ix * 256 < c->smax), iy1 = iy + (iy * 256 < c->tmax);
+         uint32_t a0 = c->lmp[iy * c->lmw + ix], a1 = c->lmp[iy * c->lmw + ix1], b0 = c->lmp[iy1 * c->lmw + ix], b1 = c->lmp[iy1 * c->lmw + ix1];
+         uint32_t h0 = ((a0 * (uint32_t)(256 - fx) + a1 * (uint32_t)fx) >> 8) & 0x00ff00ffu;
+         uint32_t h1 = ((b0 * (uint32_t)(256 - fx) + b1 * (uint32_t)fx) >> 8) & 0x00ff00ffu;
+         uint32_t mv = ((h0 * (uint32_t)(256 - fy) + h1 * (uint32_t)fy) >> 8) & 0x00ff00ffu;
+         int32_t sun = (int32_t)(mv & 0xff), sky = (int32_t)(mv >> 16);
+         lr = (lr * sky + c->sun_r * sun) >> 8;
+         lg = (lg * sky + c->sun_g * sun) >> 8;
+         lb = (lb * sky + c->sun_b * sun) >> 8;
+      }
+      if (c->decal)
+      {
+         /* darken toward the decal's color by its texture's alpha */
+         uint32_t d = row[x], a = texel >> 24, inv = 255 - a;
+         uint32_t r = ((d >> 16) & 0xff) * (inv + a * (uint32_t)hd_clamp(lr, 0, 256) / 256) / 255;
+         uint32_t g = ((d >> 8) & 0xff) * (inv + a * (uint32_t)hd_clamp(lg, 0, 256) / 256) / 255;
+         uint32_t b = (d & 0xff) * (inv + a * (uint32_t)hd_clamp(lb, 0, 256) / 256) / 255;
+         row[x] = r << 16 | g << 8 | b;
+         continue;
+      }
+      if ((texel >> 24) < 128)
+         continue; /* the texture's holes */
+      {
+         int32_t r = (srgb_lin[(texel >> 16) & 0xff] * hd_max(0, lr)) >> 8;
+         int32_t g = (srgb_lin[(texel >> 8) & 0xff] * hd_max(0, lg)) >> 8;
+         int32_t b = (srgb_lin[texel & 0xff] * hd_max(0, lb)) >> 8;
+         uint32_t col = (uint32_t)tone[hd_min(r, TONE_IN - 1)] << 16 | (uint32_t)tone[hd_min(g, TONE_IN - 1)] << 8 | tone[hd_min(b, TONE_IN - 1)];
+         if (c->glass)
+         {
+            /* glass shows what is behind it, tinted; it keeps no depth, so what is behind was drawn first */
+            row[x] = gfx_mix(row[x], col, c->glass);
+            continue;
+         }
+         zrow[x] = z;
+         row[x] = col;
+         if (c->glowing && (r > BLOOM_FROM || g > BLOOM_FROM || b > BLOOM_FROM))
+         {
+            int64_t at = (int64_t)y * s->w + x;
+            if (glow_row[y] != glow_frame)
+            {
+               /* the row's first glow this frame (a row is filled by one core): forget the old ones */
+               memset(glow_src + (int64_t)y * s->w, 0, sizeof(uint32_t) * (size_t)s->w);
+               glow_row[y] = glow_frame;
+            }
+            {
+               /* the light above white, in the light's own color (each channel in proportion, so a warm lamp glows warm, not red) */
+               int32_t m = hd_max(r, hd_max(g, b)), over = m - BLOOM_FROM;
+               glow_src[at] = (uint32_t)hd_clamp((int32_t)((int64_t)r * over / m) >> 3, 0, 1023) << 20 | (uint32_t)hd_clamp((int32_t)((int64_t)g * over / m) >> 3, 0, 1023) << 10 |
+                              (uint32_t)hd_clamp((int32_t)((int64_t)b * over / m) >> 3, 0, 1023);
+            }
+            glow_z[at] = z;
+         }
+      }
+   }
+}
+
+static void fill_span(hd_surface *s, const px_ctx *c, int32_t y, int32_t xs, int32_t xe, int mode, uint32_t id)
+{
+   if (mode == FILL_DEPTH)
+      fill_span_as(s, c, y, xs, xe, FILL_DEPTH, id);
+   else if (mode == FILL_SHADE)
+      fill_span_as(s, c, y, xs, xe, FILL_SHADE, id);
+   else
+      fill_span_as(s, c, y, xs, xe, FILL_DRAW, id);
+}
+
+/* A triangle's rows row0..row1-1, each from where it starts to where it ends on that row, in one of the FILL_* ways. */
+static void fill_one(hd_surface *s, const r3d_px *t, int32_t row0, int32_t row1, int mode, uint32_t id)
 {
    int64_t x0 = t->x[0], y0 = t->y[0], x1 = t->x[1], y1 = t->y[1], x2 = t->x[2], y2 = t->y[2];
-   int32_t ya = hd_max(row0, t->y0), yb = hd_min(row1 - 1, t->y1), xa = t->xa, xb = t->xb, y, x;
-   const r3d_tex *tx = t->tex >= 0 ? &texs[t->tex] : NULL;
-   uint32_t umask = tx ? ((1u << tx->wlog) - 1) : 0, vmask = tx ? ((1u << tx->hlog) - 1) : 0, wlog = tx ? (uint32_t)tx->wlog : 0;
-   const uint32_t *tpx = tx ? tx->px : NULL;
-   int decal = t->flags & TF_DECAL, glowing = bloom_on && (t->flags & TF_GLOW);
-   int32_t glass = t->glass, smooth_tex = t->smooth_tex;
+   int32_t ya = hd_max(row0, t->y0), yb = hd_min(row1 - 1, t->y1), xa = t->xa, xb = t->xb, y;
    /* each edge: its value at (xa, row) and its step per pixel */
    int64_t s0 = -(y2 - y1) * 16, s1 = -(y0 - y2) * 16, s2 = -(y1 - y0) * 16;
-   /* the sums' steps per pixel: 1/z with 4 bits of fraction, light 16, texture 8 */
-   int32_t zs = (int32_t)((t->a[A_Z].dx * 16) >> 12), rs = (int32_t)(t->a[A_R].dx * 16), gs = (int32_t)(t->a[A_G].dx * 16), bs = (int32_t)(t->a[A_B].dx * 16);
-   int32_t us = tx ? (int32_t)((t->a[A_U].dx * 16) >> 8) : 0, ts = tx ? (int32_t)((t->a[A_T].dx * 16) >> 8) : 0;
-   int lm = t->lm >= 0;
-   const uint32_t *lmp = lm ? lm_px + t->lmbase : NULL;
-   int32_t lmw = t->lmw, smax = (t->lmw - 1) * 256, tmax = (t->lmh - 1) * 256;
-   int32_t lss = lm ? (int32_t)((t->a[A_LS].dx * 16) >> 8) : 0, lts = lm ? (int32_t)((t->a[A_LT].dx * 16) >> 8) : 0;
-   int32_t sun_r = t->sun_r, sun_g = t->sun_g, sun_b = t->sun_b;
+   px_ctx c;
+   px_prep(t, &c);
    for (y = ya; y <= yb; y++)
    {
-      int64_t py = (int64_t)y * 16 + 8, px = (int64_t)xa * 16 + 8, oy = py - y0, ox;
+      int64_t py = (int64_t)y * 16 + 8, px = (int64_t)xa * 16 + 8;
       int64_t we[3], se[3];
-      int32_t xs = xa, xe = xb, e, zf, rf, gf, bf, uf = 0, tf = 0, lsf = 0, ltf = 0;
-      uint32_t *row = s->px + (int64_t)y * s->w, *zrow = zbuf + (int64_t)y * s->w;
+      int32_t xs = xa, xe = xb, e;
       we[0] = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1);
       we[1] = (x0 - x2) * (py - y2) - (y0 - y2) * (px - x2);
       we[2] = (x1 - x0) * (py - y0) - (y1 - y0) * (px - x0);
@@ -1717,116 +1881,62 @@ static void fill_one(hd_surface *s, const r3d_px *t, int32_t row0, int32_t row1)
          else
             xe = hd_min(xe, xa + (int32_t)hd_min((int64_t)(xb - xa), we[e] / -se[e]));
       }
-      if (xs > xe)
-         continue;
-      ox = (int64_t)xs * 16 + 8 - x0;
-      zf = plane_at(&t->a[A_Z], ox, oy, 12);
-      rf = plane_at(&t->a[A_R], ox, oy, 0);
-      gf = plane_at(&t->a[A_G], ox, oy, 0);
-      bf = plane_at(&t->a[A_B], ox, oy, 0);
-      if (tx)
-      {
-         uf = plane_at(&t->a[A_U], ox, oy, 8);
-         tf = plane_at(&t->a[A_T], ox, oy, 8);
-      }
-      if (lm)
-      {
-         lsf = plane_at(&t->a[A_LS], ox, oy, 8);
-         ltf = plane_at(&t->a[A_LT], ox, oy, 8);
-      }
-      for (x = xs; x <= xe; x++, zf += zs, rf += rs, gf += gs, bf += bs, uf += us, tf += ts, lsf += lss, ltf += lts)
-      {
-         uint32_t z = (uint32_t)(zf >> 4), texel = 0xffffffffu;
-         int32_t lr, lg, lb;
-         if (decal ? z + 64 < zrow[x] : z <= zrow[x])
-            continue;
-         if (tx)
-         {
-            if (smooth_tex)
-            {
-               /* between the four nearest texels (every channel, alpha too) */
-               uint32_t su = (uint32_t)uf - 32768u, sv = (uint32_t)tf - 32768u, fx = (su >> 8) & 255, fy = (sv >> 8) & 255;
-               uint32_t x0 = (su >> 16) & umask, x1 = (x0 + 1) & umask, y0 = ((sv >> 16) & vmask) << wlog, y1 = ((((sv >> 16) + 1) & vmask)) << wlog;
-               texel = mix4(mix4(tpx[y0 | x0], tpx[y0 | x1], fx), mix4(tpx[y1 | x0], tpx[y1 | x1], fx), fy);
-            }
-            else
-               texel = tpx[(((uint32_t)tf >> 16) & vmask) << wlog | (((uint32_t)uf >> 16) & umask)];
-         }
-         lr = rf >> 16, lg = gf >> 16, lb = bf >> 16;
-         if (lm)
-         {
-            /* the light map, between its four nearest texels: how much sun (low lane) and sky (high lane) arrive */
-            int32_t ls = hd_clamp((lsf >> 8) - 128, 0, smax), lt = hd_clamp((ltf >> 8) - 128, 0, tmax);
-            int32_t ix = ls >> 8, iy = lt >> 8, fx = ls & 255, fy = lt & 255, ix1 = ix + (ix * 256 < smax), iy1 = iy + (iy * 256 < tmax);
-            uint32_t a0 = lmp[iy * lmw + ix], a1 = lmp[iy * lmw + ix1], b0 = lmp[iy1 * lmw + ix], b1 = lmp[iy1 * lmw + ix1];
-            uint32_t h0 = ((a0 * (uint32_t)(256 - fx) + a1 * (uint32_t)fx) >> 8) & 0x00ff00ffu;
-            uint32_t h1 = ((b0 * (uint32_t)(256 - fx) + b1 * (uint32_t)fx) >> 8) & 0x00ff00ffu;
-            uint32_t mv = ((h0 * (uint32_t)(256 - fy) + h1 * (uint32_t)fy) >> 8) & 0x00ff00ffu;
-            int32_t sun = (int32_t)(mv & 0xff), sky = (int32_t)(mv >> 16);
-            lr = (lr * sky + sun_r * sun) >> 8;
-            lg = (lg * sky + sun_g * sun) >> 8;
-            lb = (lb * sky + sun_b * sun) >> 8;
-         }
-         if (decal)
-         {
-            /* darken toward the decal's color by its texture's alpha */
-            uint32_t d = row[x], a = texel >> 24, inv = 255 - a;
-            uint32_t r = ((d >> 16) & 0xff) * (inv + a * (uint32_t)hd_clamp(lr, 0, 256) / 256) / 255;
-            uint32_t g = ((d >> 8) & 0xff) * (inv + a * (uint32_t)hd_clamp(lg, 0, 256) / 256) / 255;
-            uint32_t b = (d & 0xff) * (inv + a * (uint32_t)hd_clamp(lb, 0, 256) / 256) / 255;
-            row[x] = r << 16 | g << 8 | b;
-            continue;
-         }
-         if ((texel >> 24) < 128)
-            continue; /* the texture's holes */
-         {
-            int32_t r = (srgb_lin[(texel >> 16) & 0xff] * hd_max(0, lr)) >> 8;
-            int32_t g = (srgb_lin[(texel >> 8) & 0xff] * hd_max(0, lg)) >> 8;
-            int32_t b = (srgb_lin[texel & 0xff] * hd_max(0, lb)) >> 8;
-            uint32_t c = (uint32_t)tone[hd_min(r, TONE_IN - 1)] << 16 | (uint32_t)tone[hd_min(g, TONE_IN - 1)] << 8 | tone[hd_min(b, TONE_IN - 1)];
-            if (glass)
-            {
-               /* glass shows what is behind it, tinted; it keeps no depth, so what is behind was drawn first */
-               row[x] = gfx_mix(row[x], c, glass);
-               continue;
-            }
-            zrow[x] = z;
-            row[x] = c;
-            if (glowing && (r > BLOOM_FROM || g > BLOOM_FROM || b > BLOOM_FROM))
-            {
-               int64_t at = (int64_t)y * s->w + x;
-               if (glow_row[y] != glow_frame)
-               {
-                  /* the row's first glow this frame (a row is filled by one core): forget the old ones */
-                  memset(glow_src + (int64_t)y * s->w, 0, sizeof(uint32_t) * (size_t)s->w);
-                  glow_row[y] = glow_frame;
-               }
-               {
-                  /* the light above white, in the light's own color (each channel in proportion, so a warm lamp glows warm, not red) */
-                  int32_t m = hd_max(r, hd_max(g, b)), over = m - BLOOM_FROM;
-                  glow_src[at] = (uint32_t)hd_clamp((int32_t)((int64_t)r * over / m) >> 3, 0, 1023) << 20 | (uint32_t)hd_clamp((int32_t)((int64_t)g * over / m) >> 3, 0, 1023) << 10 |
-                                 (uint32_t)hd_clamp((int32_t)((int64_t)b * over / m) >> 3, 0, 1023);
-               }
-               glow_z[at] = z;
-            }
-         }
-      }
+      if (xs <= xe)
+         fill_span(s, &c, y, xs, xe, mode, id);
    }
 }
 
+/*
+ * A band of rows: the nearest solid triangle at each pixel first (in the
+ * frame's order, so the same one wins as when drawing them one after
+ * another), then each pixel colored once by it, a run of pixels of the same
+ * triangle at a time; then the decals over what is drawn (shadows), and the
+ * glass over everything.
+ */
 static void fill_rows(void *ctx, int32_t row0, int32_t row1)
 {
    hd_surface *s = ((fill_job *)ctx)->s;
-   int32_t p, i, pass;
-   /* everything solid first, then the glass over it */
-   for (pass = 0; pass < 2; pass++)
-      for (p = 0; p < SEGS; p++)
-         for (i = 0; i < seg_n[p]; i++)
+   int32_t p, i, y;
+   memset(idbuf + (int64_t)row0 * s->w, 0, sizeof(uint32_t) * (size_t)s->w * (size_t)(row1 - row0));
+   for (p = 0; p < SEGS; p++)
+      for (i = 0; i < seg_n[p]; i++)
+      {
+         const r3d_px *t = &drawn[seg_first[p] + i];
+         if (!t->glass && !(t->flags & TF_DECAL) && t->y0 <= t->y1 && t->y1 >= row0 && t->y0 < row1)
+            fill_one(s, t, row0, row1, FILL_DEPTH, (uint32_t)(seg_first[p] + i + 1));
+      }
+   for (y = row0; y < row1; y++)
+   {
+      const uint32_t *irow = idbuf + (int64_t)y * s->w;
+      int32_t x = 0, end;
+      while (x < s->w)
+      {
+         uint32_t id = irow[x];
+         for (end = x + 1; end < s->w && irow[end] == id; end++)
+            ;
+         if (id)
          {
-            const r3d_px *t = &drawn[seg_first[p] + i];
-            if ((t->glass != 0) == pass && t->y0 <= t->y1 && t->y1 >= row0 && t->y0 < row1)
-               fill_one(s, t, row0, row1);
+            px_ctx c;
+            px_prep(&drawn[id - 1], &c);
+            fill_span(s, &c, y, x, end - 1, FILL_SHADE, id);
          }
+         x = end;
+      }
+   }
+   for (p = 0; p < SEGS; p++)
+      for (i = 0; i < seg_n[p]; i++)
+      {
+         const r3d_px *t = &drawn[seg_first[p] + i];
+         if ((t->flags & TF_DECAL) && !t->glass && t->y0 <= t->y1 && t->y1 >= row0 && t->y0 < row1)
+            fill_one(s, t, row0, row1, FILL_DRAW, 0);
+      }
+   for (p = 0; p < SEGS; p++)
+      for (i = 0; i < seg_n[p]; i++)
+      {
+         const r3d_px *t = &drawn[seg_first[p] + i];
+         if (t->glass && t->y0 <= t->y1 && t->y1 >= row0 && t->y0 < row1)
+            fill_one(s, t, row0, row1, FILL_DRAW, 0);
+      }
 }
 
 /* A mesh's triangles toward the screen (an instance's, or a stretch of the world's). */

@@ -11,6 +11,7 @@
 #include <string.h>
 #include "hd.h"
 #include "pack.h"
+#include "gfx.h"
 
 struct golinkhd_engine
 {
@@ -86,6 +87,7 @@ void golinkhd_destroy(golinkhd_engine *e)
    if (the_engine == e)
       the_engine = NULL;
    hd_content_builtin();
+   hd_rows_stop();
    free(e);
 }
 

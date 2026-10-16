@@ -73,30 +73,166 @@ static int32_t cores(void)
    return n;
 }
 
+/*
+ * The threads stay: started on the first big pass and asleep between
+ * passes (a frame makes about ten), instead of a new thread for every
+ * pass. A pass wakes them all, each takes bands until none is left, and
+ * the caller, which works too, waits for the last. hd_rows_stop ends them
+ * (golinkhd_destroy, before the library can be unloaded).
+ */
 #if defined(_WIN32)
-static unsigned __stdcall run_band(void *arg)
+typedef HANDLE pool_thread;
+static CRITICAL_SECTION pool_lock;
+static CONDITION_VARIABLE pool_go, pool_done;
+static volatile LONG pool_ready; /* 0 not made, 1 being made, 2 ready */
+#define POOL_LOCK() EnterCriticalSection(&pool_lock)
+#define POOL_UNLOCK() LeaveCriticalSection(&pool_lock)
+#define POOL_WAIT(c) SleepConditionVariableCS(&(c), &pool_lock, INFINITE)
+#define POOL_WAKE_ALL(c) WakeAllConditionVariable(&(c))
+#define POOL_WAKE(c) WakeConditionVariable(&(c))
+#elif !defined(HD_NO_THREADS)
+typedef pthread_t pool_thread;
+static pthread_mutex_t pool_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t pool_go = PTHREAD_COND_INITIALIZER, pool_done = PTHREAD_COND_INITIALIZER;
+#define POOL_LOCK() pthread_mutex_lock(&pool_lock)
+#define POOL_UNLOCK() pthread_mutex_unlock(&pool_lock)
+#define POOL_WAIT(c) pthread_cond_wait(&(c), &pool_lock)
+#define POOL_WAKE_ALL(c) pthread_cond_broadcast(&(c))
+#define POOL_WAKE(c) pthread_cond_signal(&(c))
+#endif
+
+#if defined(_WIN32) || !defined(HD_NO_THREADS)
+static struct
 {
-   work((pass *)arg);
+   pool_thread th[PAR_MAX];
+   int32_t n;      /* threads running (the caller is one more) */
+   int32_t quit;   /* 1: the threads end */
+   uint32_t gen;   /* bumped by every pass */
+   int32_t busy;   /* threads still on the pass */
+   pass *job;
+} pool;
+static volatile long pool_in_use; /* a pass under way (another thread's pass runs on its own) */
+
+static void pool_thread_loop(void)
+{
+   uint32_t seen = 0;
+   POOL_LOCK();
+   for (;;)
+   {
+      pass *p;
+      while (pool.gen == seen && !pool.quit)
+         POOL_WAIT(pool_go);
+      if (pool.quit)
+         break;
+      seen = pool.gen;
+      p = pool.job;
+      POOL_UNLOCK();
+      work(p);
+      POOL_LOCK();
+      if (--pool.busy == 0)
+         POOL_WAKE(pool_done);
+   }
+   POOL_UNLOCK();
+}
+
+#if defined(_WIN32)
+static unsigned __stdcall pool_main(void *arg)
+{
+   (void)arg;
+   pool_thread_loop();
    return 0;
 }
-#elif !defined(HD_NO_THREADS)
-static void *run_band(void *arg)
+
+static void pool_init(void)
 {
-   work((pass *)arg);
+   /* made once, by whichever thread comes first */
+   if (InterlockedCompareExchange(&pool_ready, 1, 0) == 0)
+   {
+      InitializeCriticalSection(&pool_lock);
+      InitializeConditionVariable(&pool_go);
+      InitializeConditionVariable(&pool_done);
+      InterlockedExchange(&pool_ready, 2);
+   }
+   while (pool_ready != 2)
+      Sleep(0);
+}
+#else
+static void *pool_main(void *arg)
+{
+   (void)arg;
+   pool_thread_loop();
    return NULL;
 }
+
+static void pool_init(void)
+{
+}
 #endif
+
+/* The threads for `want` of them besides the caller (started once; the ones that cannot start are left out). */
+static void pool_start(int32_t want)
+{
+   POOL_LOCK();
+   while (pool.n < want && pool.n < PAR_MAX)
+   {
+#if defined(_WIN32)
+      HANDLE t = (HANDLE)_beginthreadex(NULL, 0, pool_main, NULL, 0, NULL);
+      if (!t)
+         break;
+      pool.th[pool.n++] = t;
+#else
+      if (pthread_create(&pool.th[pool.n], NULL, pool_main, NULL) != 0)
+         break;
+      pool.n++;
+#endif
+   }
+   POOL_UNLOCK();
+}
+
+static int pool_enter(void)
+{
+#if defined(_MSC_VER)
+   return InterlockedCompareExchange(&pool_in_use, 1, 0) == 0;
+#else
+   return __sync_bool_compare_and_swap(&pool_in_use, 0, 1);
+#endif
+}
+#endif
+
+void hd_rows_stop(void)
+{
+#if defined(_WIN32) || !defined(HD_NO_THREADS)
+   int32_t k, n;
+#if defined(_WIN32)
+   if (pool_ready != 2)
+      return;
+#endif
+   POOL_LOCK();
+   pool.quit = 1;
+   POOL_WAKE_ALL(pool_go);
+   n = pool.n;
+   POOL_UNLOCK();
+   for (k = 0; k < n; k++)
+   {
+#if defined(_WIN32)
+      WaitForSingleObject(pool.th[k], INFINITE);
+      CloseHandle(pool.th[k]);
+#else
+      pthread_join(pool.th[k], NULL);
+#endif
+   }
+   POOL_LOCK();
+   pool.n = 0;
+   pool.quit = 0;
+   pool.gen = 0;
+   POOL_UNLOCK();
+#endif
+}
 
 void hd_rows(int32_t w, int32_t h, hd_rows_fn fn, void *ctx)
 {
    pass p;
-   int32_t n = (int64_t)w * h < PAR_MIN_PIXELS ? 1 : cores(), k;
-#if defined(_WIN32)
-   HANDLE th[PAR_MAX];
-#elif !defined(HD_NO_THREADS)
-   pthread_t th[PAR_MAX];
-   int started[PAR_MAX];
-#endif
+   int32_t n = (int64_t)w * h < PAR_MIN_PIXELS ? 1 : cores();
    if (n <= 1 || h < n)
    {
       fn(ctx, 0, h);
@@ -107,24 +243,30 @@ void hd_rows(int32_t w, int32_t h, hd_rows_fn fn, void *ctx)
    p.h = h;
    p.size = hd_max(1, h / (n * PAR_BANDS));
    p.next = 0;
-   /* the other threads start, this one works too; a thread that cannot start leaves its share to the others */
-#if defined(_WIN32)
-   for (k = 1; k < n; k++)
-      th[k] = (HANDLE)_beginthreadex(NULL, 0, run_band, &p, 0, NULL);
+#if defined(_WIN32) || !defined(HD_NO_THREADS)
+   if (!pool_enter())
+   {
+      work(&p); /* another thread's pass has the pool: this one on its own */
+      return;
+   }
+   pool_init();
+   pool_start(n - 1);
+   POOL_LOCK();
+   pool.job = &p;
+   pool.busy = pool.n;
+   pool.gen++;
+   POOL_WAKE_ALL(pool_go);
+   POOL_UNLOCK();
    work(&p);
-   for (k = 1; k < n; k++)
-      if (th[k])
-      {
-         WaitForSingleObject(th[k], INFINITE);
-         CloseHandle(th[k]);
-      }
-#elif !defined(HD_NO_THREADS)
-   for (k = 1; k < n; k++)
-      started[k] = pthread_create(&th[k], NULL, run_band, &p) == 0;
-   work(&p);
-   for (k = 1; k < n; k++)
-      if (started[k])
-         pthread_join(th[k], NULL);
+   POOL_LOCK();
+   while (pool.busy > 0)
+      POOL_WAIT(pool_done);
+   POOL_UNLOCK();
+#if defined(_MSC_VER)
+   InterlockedExchange(&pool_in_use, 0);
+#else
+   __sync_lock_release(&pool_in_use);
+#endif
 #else
    work(&p);
 #endif

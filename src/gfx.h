@@ -129,5 +129,7 @@ int gfx_mode7_project(const hd_mode7 *m, int32_t wx, int32_t wy, int32_t screen_
  */
 typedef void (*hd_rows_fn)(void *ctx, int32_t y0, int32_t y1);
 void hd_rows(int32_t w, int32_t h, hd_rows_fn fn, void *ctx);
+/* Ends the threads hd_rows keeps between passes (the next pass starts them again). */
+void hd_rows_stop(void);
 
 #endif
