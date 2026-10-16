@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-10-16
+
 ### Added
 - API 5: `golinkhd_set_draw_budget(e, microseconds)`, how long the 3D picture may take to draw. While 20 pictures in a row average over it, the 3D is drawn with fewer lines (7/8, 3/4, 2/3, down to 1/2) and enlarged to the screen, the HUD over it still sharp; it goes back up a step after 3 seconds when that step fits, or tries one after 10 seconds under 85 % of the budget. 0 (the default) always draws every line; only the picture changes, never the game. `golinkhd_draw_detail(e)` says the lines drawn now, in percent. Inside, `r3d_draw_screen`, `r3d_budget` and `r3d_detail_now`; TELETRABAJO and the 3D room use them (the 3D room at 1080p is now drawn at 720p and enlarged, like TELETRABAJO).
 
