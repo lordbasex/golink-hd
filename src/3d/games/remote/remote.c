@@ -2214,77 +2214,6 @@ static int32_t place_person(int32_t who, const actor3d_pose *pose, r3d_instance 
 }
 
 /* The house seen from `v` with the worker (in `worker`'s pose), the flatmate and the cat. */
-/*
- * The 3D picture: drawn at 720p at most, and at 1080p made 1.5 times bigger
- * (bilinear, in integers, on every core), so the game keeps 60 frames a
- * second there; the HUD's texts are drawn over it at the full size, sharp.
- */
-#define LOW_W 1280
-#define LOW_H 720
-static uint32_t low_px[LOW_W * LOW_H];
-
-typedef struct
-{
-   const hd_surface *src;
-   hd_surface *dst;
-   const int32_t *col; /* each destination column's place in the source, 16.16 */
-} enlarge_job;
-
-static void enlarge_rows(void *ctx, int32_t y0, int32_t y1)
-{
-   const enlarge_job *j = (const enlarge_job *)ctx;
-   const hd_surface *a = j->src;
-   hd_surface *b = j->dst;
-   int32_t x, y;
-   for (y = y0; y < y1; y++)
-   {
-      /* the destination pixel's center in the source, 16.16 */
-      int32_t sy = (int32_t)hd_clamp((int32_t)((((int64_t)y * 2 + 1) * a->h << 16) / (2 * b->h)) - 32768, 0, (a->h - 1) << 16);
-      int32_t y0s = sy >> 16, y1s = hd_min(y0s + 1, a->h - 1), fy = (sy >> 8) & 255;
-      const uint32_t *r0 = a->px + (size_t)y0s * a->w, *r1 = a->px + (size_t)y1s * a->w;
-      uint32_t *out = b->px + (size_t)y * b->w;
-      for (x = 0; x < b->w; x++)
-      {
-         int32_t sx = j->col[x];
-         int32_t x0s = sx >> 16, x1s = hd_min(x0s + 1, a->w - 1), fx = (sx >> 8) & 255, k;
-         uint32_t p00 = r0[x0s], p01 = r0[x1s], p10 = r1[x0s], p11 = r1[x1s], v = 0;
-         for (k = 0; k < 24; k += 8)
-         {
-            int32_t top = (int32_t)((p00 >> k) & 255) * (256 - fx) + (int32_t)((p01 >> k) & 255) * fx;
-            int32_t bot = (int32_t)((p10 >> k) & 255) * (256 - fx) + (int32_t)((p11 >> k) & 255) * fx;
-            v |= (uint32_t)(((top * (256 - fy) + bot * fy) >> 16) & 255) << k;
-         }
-         out[x] = v;
-      }
-   }
-}
-
-#define HD_OUT_W_MAX 1920
-static void draw3d(hd_surface *sf, const r3d_view *v, const r3d_instance *inst, int32_t n)
-{
-   static int32_t col[HD_OUT_W_MAX];
-   hd_surface low;
-   enlarge_job j;
-   int32_t x;
-   if (sf->w <= LOW_W && sf->h <= LOW_H)
-   {
-      r3d_draw(sf, v, room3d_scene(), inst, n);
-      return;
-   }
-   low.px = low_px;
-   low.w = LOW_W;
-   low.h = LOW_H;
-   r3d_draw(&low, v, room3d_scene(), inst, n);
-   if (sf->w > HD_OUT_W_MAX)
-      return;
-   for (x = 0; x < sf->w; x++)
-      col[x] = hd_clamp((int32_t)((((int64_t)x * 2 + 1) * LOW_W << 16) / (2 * sf->w)) - 32768, 0, (LOW_W - 1) << 16);
-   j.src = &low;
-   j.dst = sf;
-   j.col = col;
-   hd_rows(sf->w, sf->h, enlarge_rows, &j);
-}
-
 static void scene(hd_surface *sf, const hd_remote *g, r3d_view *v, const actor3d_pose *worker)
 {
    r3d_instance inst[ACT_INSTANCES * 2 + PET_INSTANCES + 1];
@@ -2343,7 +2272,7 @@ static void scene(hd_surface *sf, const hd_remote *g, r3d_view *v, const actor3d
       w->at.y = CM(ROOM3D_SHOWER_Y) - CM((g->t * 7) % 28);
       w->at.z = ROOM3D_AT(ROOM3D_SHOWER_Z);
    }
-   draw3d(sf, v, inst, n);
+   r3d_draw_screen(sf, v, room3d_scene(), inst, n);
 }
 
 /* The title's view: the whole house turning slowly, seen from above like a model, the worker at the desk and the cat on the bed. */

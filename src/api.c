@@ -12,6 +12,9 @@
 #include "hd.h"
 #include "pack.h"
 #include "gfx.h"
+#ifndef HD_NO_3D
+#include "3d/r3d.h"
+#endif
 
 struct golinkhd_engine
 {
@@ -73,6 +76,9 @@ golinkhd_engine *golinkhd_create(const golinkhd_config *config, const char **err
    e->config = *config;
    e->music = 1;
    hd_res_host = 0;
+#ifndef HD_NO_3D
+   r3d_budget(0);
+#endif
    hd_static_init();
    hd_content_builtin();
    hd_reset(&e->state);
@@ -170,6 +176,26 @@ void golinkhd_set_resolution(golinkhd_engine *e, int32_t lines)
 {
    (void)e;
    hd_res_host = lines >= 1080 ? 3 : lines >= 720 ? 2 : lines > 0 ? 1 : 0;
+}
+
+void golinkhd_set_draw_budget(golinkhd_engine *e, int32_t microseconds)
+{
+   (void)e;
+#ifndef HD_NO_3D
+   r3d_budget(microseconds);
+#else
+   (void)microseconds;
+#endif
+}
+
+int32_t golinkhd_draw_detail(golinkhd_engine *e)
+{
+   (void)e;
+#ifndef HD_NO_3D
+   return r3d_detail_now();
+#else
+   return 100;
+#endif
 }
 
 /* One frame of the game and its sound; its picture too when `draw` (else the last one stays). */

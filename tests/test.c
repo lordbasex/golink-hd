@@ -666,6 +666,105 @@ static void test_3d(void)
    CHECK(a.show.on == 2 && memcmp(&a, &b, sizeof a) == 0);
 }
 
+/* A draw budget: the 3D's lines go down when pictures take longer and back up when they fit; the game never changes. */
+static void test_3d_detail(void)
+{
+   static hd_state a, b;
+   static uint32_t full[1280 * 720];
+   hd_input in[MAX_PLAYERS];
+   int32_t f;
+   int64_t diff = 0;
+   size_t i;
+   /* no budget: always every line */
+   r3d_budget(0);
+   for (f = 0; f < 100; f++)
+      r3d_detail_feed(1000000);
+   CHECK(r3d_detail_now() == 100);
+   /* late for 20 pictures in a row: one step down each time, never under 1/2 */
+   r3d_budget(10000);
+   for (f = 0; f < 19; f++)
+      r3d_detail_feed(15000);
+   CHECK(r3d_detail_now() == 100);
+   r3d_detail_feed(15000);
+   CHECK(r3d_detail_now() == 87);
+   for (f = 0; f < 20; f++)
+      r3d_detail_feed(15000);
+   CHECK(r3d_detail_now() == 75);
+   for (f = 0; f < 20; f++)
+      r3d_detail_feed(15000);
+   CHECK(r3d_detail_now() == 66);
+   for (f = 0; f < 200; f++)
+      r3d_detail_feed(15000);
+   CHECK(r3d_detail_now() == 50);
+   /* one slow picture alone does not lower it */
+   r3d_budget(10000);
+   r3d_detail_feed(500000);
+   for (f = 0; f < 179; f++)
+      r3d_detail_feed(4000);
+   CHECK(r3d_detail_now() == 100);
+   /* up again a step at a time, each after 3 seconds with room to spare */
+   r3d_budget(10000);
+   for (f = 0; f < 40; f++)
+      r3d_detail_feed(15000);
+   CHECK(r3d_detail_now() == 75);
+   for (f = 0; f < 179; f++)
+      r3d_detail_feed(4000);
+   CHECK(r3d_detail_now() == 75);
+   r3d_detail_feed(4000);
+   CHECK(r3d_detail_now() == 87);
+   for (f = 0; f < 180; f++)
+      r3d_detail_feed(4000);
+   CHECK(r3d_detail_now() == 100);
+   /* just under the budget: no room to spare, it stays */
+   for (f = 0; f < 20; f++)
+      r3d_detail_feed(15000);
+   for (f = 0; f < 1000; f++)
+      r3d_detail_feed(9000);
+   CHECK(r3d_detail_now() == 87);
+   /* under it but not by the pixels' measure: one more step tried after 10 seconds */
+   r3d_budget(10000);
+   for (f = 0; f < 60; f++)
+      r3d_detail_feed(15000);
+   CHECK(r3d_detail_now() == 66);
+   for (f = 0; f < 599; f++)
+      r3d_detail_feed(8000);
+   CHECK(r3d_detail_now() == 66);
+   r3d_detail_feed(8000);
+   CHECK(r3d_detail_now() == 75);
+   /* the 3D room at 720p drawn with every line and with 2/3 of them: the same game, a softer but close picture */
+   hd_res = 2;
+   r3d_budget(0);
+   hd_reset(&a);
+   hd_r3d_start(&a);
+   hd_reset(&b);
+   hd_r3d_start(&b);
+   memset(in, 0, sizeof in);
+   for (f = 0; f < 10; f++)
+   {
+      hd_step(&a, in);
+      hd_step(&b, in);
+   }
+   hd_draw(&a, fb);
+   memcpy(full, fb, sizeof full);
+   r3d_budget(5000000);
+   for (f = 0; f < 60; f++)
+      r3d_detail_feed(10000000);
+   CHECK(r3d_detail_now() == 66);
+   hd_draw(&b, fb);
+   CHECK(r3d_detail_now() == 66);
+   for (i = 0; i < 1280 * 720; i++)
+   {
+      int32_t k;
+      for (k = 0; k < 24; k += 8)
+         diff += abs((int32_t)((full[i] >> k) & 255) - (int32_t)((fb[i] >> k) & 255));
+   }
+   CHECK(memcmp(full, fb, sizeof full) != 0);
+   CHECK(diff / (1280 * 720 * 3) < 8);
+   CHECK(memcmp(&a, &b, sizeof a) == 0);
+   r3d_budget(0);
+   hd_res = 1;
+}
+
 /* TELETRABAJO: CÁMARA APAGADA, phase 2: an activity's points and energy, the repeat rule, and work at the desk. */
 static void test_remote_activities(void)
 {
@@ -2385,6 +2484,12 @@ static void test_api(void)
       return;
    CHECK(golinkhd_create(&cfg, &err) == NULL); /* one at a time in this version */
    CHECK(golinkhd_api_version() == GOLINKHD_API_VERSION && strcmp(golinkhd_version(), HD_VERSION) == 0);
+   /* API 5: no budget at first, every line */
+   CHECK(golinkhd_draw_detail(e) == 100);
+   golinkhd_set_draw_budget(e, 10000);
+   r3d_detail_feed(15000);
+   golinkhd_set_draw_budget(e, 0);
+   CHECK(golinkhd_draw_detail(e) == 100);
    golinkhd_get_info(e, &info);
    CHECK(info.width == 640 && info.height == 360 && info.fps == 60 && info.sample_rate == 48000 && info.players == 4);
 
@@ -3092,6 +3197,7 @@ int main(void)
    test_showcase();
 #ifndef HD_NO_3D
    test_3d();
+   test_3d_detail();
    test_remote();
    test_remote_activities();
    test_remote_day();

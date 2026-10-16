@@ -20,6 +20,9 @@
 #include <pthread.h>
 #include <unistd.h>
 #endif
+#if !defined(_WIN32)
+#include <time.h>
+#endif
 
 /* Under this many pixels a pass is not worth the threads. */
 #define PAR_MIN_PIXELS (1280 * 720)
@@ -269,5 +272,21 @@ void hd_rows(int32_t w, int32_t h, hd_rows_fn fn, void *ctx)
 #endif
 #else
    work(&p);
+#endif
+}
+
+int64_t hd_clock_us(void)
+{
+#if defined(_WIN32)
+   static LARGE_INTEGER hz;
+   LARGE_INTEGER t;
+   if (!hz.QuadPart)
+      QueryPerformanceFrequency(&hz);
+   QueryPerformanceCounter(&t);
+   return (int64_t)(t.QuadPart / hz.QuadPart * 1000000 + t.QuadPart % hz.QuadPart * 1000000 / hz.QuadPart);
+#else
+   struct timespec t;
+   clock_gettime(CLOCK_MONOTONIC, &t);
+   return (int64_t)t.tv_sec * 1000000 + t.tv_nsec / 1000;
 #endif
 }

@@ -594,7 +594,7 @@ python3 examples/remote/build.py --resolution 1080p && tools/glhd pack examples/
 Two packages, like ANTÍDOTO: `remote-720p.glhd` and `remote-1080p.glhd`,
 the same game whose manifest says the size it is drawn at. At 1080p the 3D
 picture is drawn at 720p and made 1.5 times bigger (bilinear, in integers,
-on every core: `draw3d`), and the HUD's texts are drawn over it at the full
+on every core: `r3d_draw_screen`), and the HUD's texts are drawn over it at the full
 size, sharp: 16.6 ms a frame on average on an Intel i9-10900, against 31 ms
 drawing the 3D at 1080p (13 ms at 720p).
 
@@ -626,6 +626,14 @@ its 1/60 s of sound: short frames, short sound. API 4's
 `golinkhd_frame_skip` runs a frame without its picture, so the host keeps
 the game at 60 and its sound whole while it shows fewer pictures; the rows
 are now shared between the cores in small bands (13.6 to 12.7 ms a frame).
+
+**Fewer lines on a slow computer (2026-10-16).** The user chose the
+picture that adapts: with API 5's draw budget (go-link Console gives 60 %
+of a frame) the 3D is drawn with fewer lines while it is late and enlarged
+(docs/3d.md, "A slow computer"). In go-link Console's worker on the Intel
+Mac, 30 seconds of the game with two other cores busy (like the video
+encoder): 116 frames without their picture before, 37 after; idle, 128
+before and 70 after. The detail moves between 2/3 and 7/8 there.
 
 **A name (2026-10-15).** The user asked for a name with an anagram of the
 title as its surname: Alberto Teja (TELETRABAJO), Alberta Teja for the

@@ -2,7 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+- API 5: `golinkhd_set_draw_budget(e, microseconds)`, how long the 3D picture may take to draw. While 20 pictures in a row average over it, the 3D is drawn with fewer lines (7/8, 3/4, 2/3, down to 1/2) and enlarged to the screen, the HUD over it still sharp; it goes back up a step after 3 seconds when that step fits, or tries one after 10 seconds under 85 % of the budget. 0 (the default) always draws every line; only the picture changes, never the game. `golinkhd_draw_detail(e)` says the lines drawn now, in percent. Inside, `r3d_draw_screen`, `r3d_budget` and `r3d_detail_now`; TELETRABAJO and the 3D room use them (the 3D room at 1080p is now drawn at 720p and enlarged, like TELETRABAJO).
+
 ### Changed
+- Enlarging the 3D (1080p, or with fewer lines) mixes the two source rows into one first and then stretches it, red and blue together in one integer: TELETRABAJO's frame at 2/3 of the lines from 9.8 to 9.1 ms.
 - The 3D picture is drawn in two passes: first which triangle is the nearest at each pixel (`idbuf`), then each pixel lit, textured and toned once by it, a run of pixels of the same triangle at a time; shadows and glass go over it after. About a quarter of the pixels were colored and then covered. A texture's holes are found as it is added (`r3d_tex.holes`), so the first pass reads only textures that have them. The picture is the same but for rounding (162 of 921,600 pixels by at most 6 levels in a TELETRABAJO frame).
 - The threads that draw rows stay between passes, asleep, instead of starting for each of the ten or so passes of a frame (`hd_rows_stop` ends them; `golinkhd_destroy` calls it).
 - TELETRABAJO's 720p frame on an Intel i9-10900: 12.87 to 12.55 ms on average, its slowest frames from 21–28 ms to 17–21 ms; on one core the triangles' fill from 25.2 to 24.0 ms.

@@ -2361,3 +2361,145 @@ void r3d_draw(hd_surface *s, const r3d_view *v, const r3d_mesh *scene, const r3d
    }
    PROF(6);
 }
+
+/* ---- the size the 3D is drawn at ---- */
+
+/*
+ * A screen's 3D is drawn at 720p at most, and at 1080p made 1.5 times
+ * bigger (bilinear, in integers, on every core), so a game keeps 60 frames a
+ * second there; the HUD's texts are drawn over it at the full size, sharp.
+ * With a budget (r3d_budget) it is drawn smaller still while it takes longer
+ * than that, and enlarged the same way: a slow computer shows a softer
+ * picture instead of fewer pictures. Only the picture changes, never the
+ * game.
+ */
+#define LOW_W 1280
+#define LOW_H 720
+static uint32_t low_px[LOW_W * LOW_H];
+
+/* The lines drawn at each detail, as a part of the screen's (at most 720p): all, 7/8, 3/4, 2/3, and 1/2 for a very slow computer. */
+static const int32_t detail_num[] = {1, 7, 3, 2, 1}, detail_den[] = {1, 8, 4, 3, 2};
+#define DETAILS 5
+#define DETAIL_DOWN 20  /* frames measured before drawing less */
+#define DETAIL_UP 180   /* and before drawing more (3 seconds at 60) */
+#define DETAIL_TRY 600  /* under the budget this long: one more step is tried (10 seconds at 60) */
+
+static int32_t budget_us, detail, detail_since, detail_avg;
+
+void r3d_budget(int32_t us)
+{
+   budget_us = hd_clamp(us, 0, 10000000); /* 10 s at most */
+   detail = detail_since = detail_avg = 0;
+}
+
+int32_t r3d_detail_now(void)
+{
+   return detail_num[detail] * 100 / detail_den[detail];
+}
+
+/* A detail's pixels as a part of all of them, in 1/256. */
+static int32_t detail_area(int32_t d)
+{
+   return 256 * detail_num[d] * detail_num[d] / (detail_den[d] * detail_den[d]);
+}
+
+void r3d_detail_feed(int32_t us)
+{
+   if (!budget_us)
+   {
+      detail = 0;
+      return;
+   }
+   /* a frame far over (a scene being built) counts as twice the budget, so one alone does not lower the detail */
+   us = hd_clamp(us, 0, 2 * budget_us);
+   detail_avg = detail_since ? detail_avg + (us - detail_avg) / 8 : us;
+   detail_since++;
+   if (detail_since >= DETAIL_DOWN && detail_avg > budget_us && detail < DETAILS - 1)
+   {
+      detail++;
+      detail_since = 0;
+   }
+   /*
+    * more lines when they would fit with room to spare (the cost grows at
+    * most like the pixels), or tried after a while under the budget: part
+    * of the cost does not grow with the pixels, and a step too far comes
+    * back down in 20 pictures
+    */
+   else if (detail > 0 &&
+            ((detail_since >= DETAIL_UP && (int64_t)detail_avg * detail_area(detail - 1) / detail_area(detail) < (int64_t)budget_us * 4 / 5) ||
+             (detail_since >= DETAIL_TRY && (int64_t)detail_avg < (int64_t)budget_us * 17 / 20)))
+   {
+      detail--;
+      detail_since = 0;
+   }
+}
+
+typedef struct
+{
+   const hd_surface *src;
+   hd_surface *dst;
+   const int32_t *col; /* each destination column's place in the source, 16.16 */
+} enlarge_job;
+
+static void enlarge_rows(void *ctx, int32_t y0, int32_t y1)
+{
+   const enlarge_job *j = (const enlarge_job *)ctx;
+   const hd_surface *a = j->src;
+   hd_surface *b = j->dst;
+   uint32_t mid[LOW_W + 1];
+   int32_t x, y;
+   for (y = y0; y < y1; y++)
+   {
+      /* the destination pixel's center in the source, 16.16 */
+      int32_t sy = (int32_t)hd_clamp((int32_t)((((int64_t)y * 2 + 1) * a->h << 16) / (2 * b->h)) - 32768, 0, (a->h - 1) << 16);
+      int32_t y0s = sy >> 16, y1s = hd_min(y0s + 1, a->h - 1);
+      uint32_t fy = (uint32_t)(sy >> 8) & 255, gy = 256 - fy;
+      const uint32_t *r0 = a->px + (size_t)y0s * a->w, *r1 = a->px + (size_t)y1s * a->w;
+      uint32_t *out = b->px + (size_t)y * b->w;
+      /* first the two source rows mixed into one, then that row stretched: red and blue mixed together (a byte each, 16 bits apart), then green */
+      for (x = 0; x < a->w; x++)
+      {
+         uint32_t p = r0[x], q = r1[x];
+         mid[x] = ((((p & 0xff00ffu) * gy + (q & 0xff00ffu) * fy) >> 8) & 0xff00ffu) | ((((p & 0xff00u) * gy + (q & 0xff00u) * fy) >> 8) & 0xff00u);
+      }
+      mid[a->w] = mid[a->w - 1];
+      for (x = 0; x < b->w; x++)
+      {
+         uint32_t sx = (uint32_t)j->col[x], fx = (sx >> 8) & 255, gx = 256 - fx;
+         uint32_t p = mid[sx >> 16], q = mid[(sx >> 16) + 1];
+         out[x] = ((((p & 0xff00ffu) * gx + (q & 0xff00ffu) * fx) >> 8) & 0xff00ffu) | ((((p & 0xff00u) * gx + (q & 0xff00u) * fx) >> 8) & 0xff00u);
+      }
+   }
+}
+
+void r3d_draw_screen(hd_surface *s, const r3d_view *v, const r3d_mesh *scene, const r3d_instance *inst, int32_t count)
+{
+   static int32_t col[HD_OUT_MAX_W];
+   int64_t start = budget_us ? hd_clock_us() : 0;
+   int32_t base_w = hd_min(s->w, LOW_W), base_h = (int32_t)((int64_t)s->h * base_w / hd_max(1, s->w)), x;
+   hd_surface low;
+   enlarge_job j;
+   base_h = hd_min(base_h, LOW_H);
+   low.w = hd_max(2, base_w * detail_num[detail] / detail_den[detail] & ~1);
+   low.h = hd_max(2, base_h * detail_num[detail] / detail_den[detail] & ~1);
+   low.px = low_px;
+   if (s->w > HD_OUT_MAX_W || s->h > HD_OUT_MAX_H)
+      return;
+   if (low.w == s->w && low.h == s->h)
+      r3d_draw(s, v, scene, inst, count);
+   else
+   {
+      r3d_draw(&low, v, scene, inst, count);
+      for (x = 0; x < s->w; x++)
+         col[x] = hd_clamp((int32_t)((((int64_t)x * 2 + 1) * low.w << 16) / (2 * s->w)) - 32768, 0, (low.w - 1) << 16);
+      j.src = &low;
+      j.dst = s;
+      j.col = col;
+      hd_rows(s->w, s->h, enlarge_rows, &j);
+   }
+   if (budget_us)
+   {
+      int64_t took = hd_clock_us() - start;
+      r3d_detail_feed(took > (1 << 30) ? 1 << 30 : (int32_t)took);
+   }
+}

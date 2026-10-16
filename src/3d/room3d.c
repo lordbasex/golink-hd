@@ -1929,7 +1929,7 @@ void hd_r3d_draw(const hd_state *s, void *screen)
    pose.phase = (w->t * 64) & 4095;
    pose.wave = ((w->t / 600) % 3) == 1 && leg < 60;
    n += actor3d_place(&people[1], &pose, inst + n);
-   r3d_draw(sf, &v, &scene, inst, n);
+   r3d_draw_screen(sf, &v, &scene, inst, n);
    snprintf(line, sizeof line, hd_lang == 1 ? "3D  %d TRI\xc3\x81NGULOS, %d EN PANTALLA" : hd_lang == 2 ? "3D  %d TRI\xc3\x82NGULOS, %d NA TELA" : "3D  %d TRIANGLES, %d ON SCREEN",
             (int)r3d_triangles(), (int)r3d_drawn());
    text_draw(sf, line, 8 * scale, 8 * scale, scale, 0xffffff, 1, -1);

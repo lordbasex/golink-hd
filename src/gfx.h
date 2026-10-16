@@ -131,5 +131,7 @@ typedef void (*hd_rows_fn)(void *ctx, int32_t y0, int32_t y1);
 void hd_rows(int32_t w, int32_t h, hd_rows_fn fn, void *ctx);
 /* Ends the threads hd_rows keeps between passes (the next pass starts them again). */
 void hd_rows_stop(void);
+/* A clock in microseconds that only goes forward (how long a picture took to draw, never the game's time). */
+int64_t hd_clock_us(void);
 
 #endif

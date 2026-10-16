@@ -175,6 +175,23 @@ r3d_vec r3d_rot_apply(const int32_t m[9], r3d_vec v);
 
 /* The world (every triangle in `scene`) and the instances, seen from the view, into the surface. */
 void r3d_draw(hd_surface *s, const r3d_view *v, const r3d_mesh *scene, const r3d_instance *inst, int32_t count);
+/*
+ * The same for a game's screen: drawn at 720p at most and enlarged (1080p),
+ * and with a budget smaller still while it is late (r3d_budget). The HUD
+ * goes over it at the screen's size.
+ */
+void r3d_draw_screen(hd_surface *s, const r3d_view *v, const r3d_mesh *scene, const r3d_instance *inst, int32_t count);
+/*
+ * How long r3d_draw_screen may take, in microseconds: when it takes longer
+ * the 3D is drawn with fewer lines (7/8, 3/4, 2/3, down to 1/2) and
+ * enlarged,
+ * and with more again once they fit. 0 (the default) always draws them all.
+ */
+void r3d_budget(int32_t us);
+/* The lines drawn now, in percent of the screen's (100, 87, 75, 66, 50). */
+int32_t r3d_detail_now(void);
+/* What r3d_draw_screen tells the budget after each picture: it took `us` (the tests feed it directly). */
+void r3d_detail_feed(int32_t us);
 /* How many triangles the last r3d_draw put on screen. */
 int32_t r3d_drawn(void);
 /* Where a point of the world lands on screen (16.16 meters in, pixels out); 0 when it is behind the eye. */
